@@ -24,7 +24,9 @@ const routes = [
       { path: 'categories', component: () => import('@/views/admin/CategoryManage.vue'), meta: { title: '分类管理' } },
       { path: 'tags', component: () => import('@/views/admin/TagManage.vue'), meta: { title: '标签管理' } },
       { path: 'comments', component: () => import('@/views/admin/CommentManage.vue'), meta: { title: '评论管理' } },
-      { path: 'settings', component: () => import('@/views/admin/Placeholder.vue'), meta: { title: '系统设置' } }
+      { path: 'deepseek', component: () => import('@/views/admin/DeepseekBalance.vue'), meta: { title: 'DeepSeek 余额' } },
+      { path: 'settings', component: () => import('@/views/admin/Settings.vue'), meta: { title: '系统设置' } },
+      { path: 'logs', component: () => import('@/views/admin/LoginLog.vue'), meta: { title: '登录日志' } }
     ]
   }
 ]

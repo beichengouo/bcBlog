@@ -114,6 +114,8 @@ const menus = [
   { path: '/admin/categories', title: '分类管理', icon: 'Menu' },
   { path: '/admin/tags', title: '标签管理', icon: 'CollectionTag' },
   { path: '/admin/comments', title: '评论管理', icon: 'ChatDotRound' },
+  { path: '/admin/logs', title: '登录日志', icon: 'List' },
+  { path: '/admin/deepseek', title: 'DeepSeek 余额', icon: 'Wallet' },
   { path: '/admin/settings', title: '系统设置', icon: 'Setting' }
 ]
 

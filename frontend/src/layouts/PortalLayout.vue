@@ -2,7 +2,7 @@
   <div class="portal">
     <header class="portal-header">
       <div class="header-inner">
-        <router-link to="/portal" class="brand">bcBlog</router-link>
+        <router-link to="/portal" class="brand">{{ siteName }}</router-link>
         <div class="search-box">
           <el-input v-model="keyword" placeholder="搜索文章..." clearable @keyup.enter="onSearch">
             <template #append>
@@ -19,12 +19,14 @@
 </template>
 
 <script setup>
-import { ref, watch } from 'vue'
+import { ref, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { getPortalConfig } from '@/api/config'
 
 const route = useRoute()
 const router = useRouter()
 const keyword = ref(route.query.keyword || '')
+const siteName = ref('bcBlog')
 
 // 从地址栏读取关键词，保持输入框与路由同步
 watch(
@@ -42,6 +44,15 @@ function onSearch() {
     router.push({ path: '/portal' })
   }
 }
+
+onMounted(async () => {
+  try {
+    const config = await getPortalConfig()
+    siteName.value = config.siteName || 'bcBlog'
+  } catch (e) {
+    // 配置加载失败时使用默认站点名
+  }
+})
 </script>
 
 <style scoped>
