@@ -7,7 +7,6 @@ spring:
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
     url: jdbc:mysql://localhost:3306/bc_blog?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
-    # 本地运行请填写数据库账号密码（提交前请清空，避免泄露）
     username:
     password:
   jackson:
@@ -20,6 +19,8 @@ spring:
 # 本地图片上传目录（相对项目根目录）
 bcblog:
   upload-dir: ./uploads
+  # 敏感词（英文逗号分隔，会与内置默认词合并；留空则仅用内置默认词）
+  sensitive-words:
 
 mybatis-plus:
   configuration:

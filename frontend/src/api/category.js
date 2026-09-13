@@ -5,6 +5,11 @@ export function categoryTree() {
   return request.get('/admin/category/tree')
 }
 
+// 前台获取分类树（游客可访问）
+export function portalCategoryTree() {
+  return request.get('/portal/category/tree')
+}
+
 // 新增分类
 export function saveCategory(data) {
   return request.post('/admin/category/save', data)

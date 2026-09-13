@@ -3,10 +3,11 @@ package com.bc.bcblog.service;
 import com.bc.bcblog.common.PageResult;
 import com.bc.bcblog.dto.ArticleDTO;
 import com.bc.bcblog.entity.BlogArticle;
+import com.bc.bcblog.vo.PortalArticleDetailVO;
 
 public interface ArticleService {
-    PageResult<BlogArticle> pagePublished(long page, long size);
-    BlogArticle detail(Long id);
+    PageResult<BlogArticle> pagePublished(long page, long size, Long categoryId, Long tagId, String keyword);
+    PortalArticleDetailVO portalDetail(Long id);
     PageResult<BlogArticle> pageAdmin(long page, long size, String keyword);
     /** 新增文章 */
     void save(ArticleDTO dto);

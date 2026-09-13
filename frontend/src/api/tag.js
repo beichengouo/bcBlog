@@ -5,6 +5,11 @@ export function tagList() {
   return request.get('/admin/tag/list')
 }
 
+// 前台获取全部标签（游客可访问）
+export function portalTagList() {
+  return request.get('/portal/tag/list')
+}
+
 // 新增标签
 export function saveTag(data) {
   return request.post('/admin/tag/save', data)

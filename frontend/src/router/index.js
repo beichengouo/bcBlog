@@ -3,7 +3,14 @@ import { useUserStore } from '@/store/user'
 
 const routes = [
   { path: '/', redirect: '/portal' },
-  { path: '/portal', component: () => import('@/views/portal/Home.vue') },
+  {
+    path: '/portal',
+    component: () => import('@/layouts/PortalLayout.vue'),
+    children: [
+      { path: '', component: () => import('@/views/portal/Home.vue') },
+      { path: 'article/:id', component: () => import('@/views/portal/ArticleDetail.vue') }
+    ]
+  },
   { path: '/login', component: () => import('@/views/Login.vue') },
   {
     path: '/admin',
@@ -16,7 +23,7 @@ const routes = [
       { path: 'articles/edit/:id', component: () => import('@/views/admin/ArticleEdit.vue'), meta: { title: '编辑文章' } },
       { path: 'categories', component: () => import('@/views/admin/CategoryManage.vue'), meta: { title: '分类管理' } },
       { path: 'tags', component: () => import('@/views/admin/TagManage.vue'), meta: { title: '标签管理' } },
-      { path: 'comments', component: () => import('@/views/admin/Placeholder.vue'), meta: { title: '评论管理' } },
+      { path: 'comments', component: () => import('@/views/admin/CommentManage.vue'), meta: { title: '评论管理' } },
       { path: 'settings', component: () => import('@/views/admin/Placeholder.vue'), meta: { title: '系统设置' } }
     ]
   }

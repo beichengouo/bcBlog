@@ -1,68 +1,126 @@
 <template>
-  <div class="portal">
-    <div class="header">bcBlog</div>
-    <el-main class="content">
-      <el-card v-for="a in list" :key="a.id" class="article-card" shadow="hover" @click="open(a.id)">
-        <template #header>
-          <div class="article-title">{{ a.title }}</div>
-        </template>
-        <div class="summary">{{ a.summary }}</div>
-        <div class="meta">{{ a.createTime }}</div>
+  <div class="home">
+    <aside class="sidebar">
+      <el-card class="side-card">
+        <template #header>分类</template>
+        <el-tree
+          :data="categories"
+          :props="catProps"
+          node-key="id"
+          :default-expand-all="true"
+          :current-node-key="currentCategory"
+          highlight-current
+          @node-click="onCategoryClick"
+        >
+          <template #default="{ data }">
+            <span>{{ data.name }}</span>
+          </template>
+        </el-tree>
+        <div v-if="currentCategory" class="clear-filter" @click="clearFilter">清除筛选</div>
       </el-card>
-      <el-empty v-if="!list.length" description="暂无文章" />
-    </el-main>
+
+      <el-card class="side-card">
+        <template #header>标签</template>
+        <div class="tag-cloud">
+          <el-tag
+            v-for="t in tags"
+            :key="t.id"
+            :type="currentTag === t.id ? 'primary' : 'info'"
+            class="tag-item"
+            @click="onTagClick(t)"
+          >{{ t.name }}</el-tag>
+        </div>
+      </el-card>
+    </aside>
+
+    <section class="content">
+      <ArticleList :params="listParams" />
+    </section>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
-import { listPortalArticles } from '@/api/article'
+import { ref, computed, onMounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { portalCategoryTree } from '@/api/category'
+import { portalTagList } from '@/api/tag'
+import ArticleList from '@/components/portal/ArticleList.vue'
 
-const list = ref([])
+const route = useRoute()
+const router = useRouter()
 
-async function load() {
-  const data = await listPortalArticles({ page: 1, size: 10 })
-  list.value = data.list
+const categories = ref([])
+const tags = ref([])
+const catProps = { label: 'name', children: 'children' }
+
+const currentCategory = computed(() => (route.query.category ? Number(route.query.category) : null))
+const currentTag = computed(() => (route.query.tag ? Number(route.query.tag) : null))
+const currentKeyword = computed(() => route.query.keyword || '')
+
+// 根据地址栏筛选条件生成列表请求参数
+const listParams = computed(() => {
+  const params = {}
+  if (currentCategory.value) params.categoryId = currentCategory.value
+  if (currentTag.value) params.tagId = currentTag.value
+  if (currentKeyword.value) params.keyword = currentKeyword.value
+  return params
+})
+
+function onCategoryClick(node) {
+  router.push({ path: '/portal', query: { category: node.id } })
 }
 
-function open(id) {
-  window.alert('文章详情页待实现，文章ID：' + id)
+function onTagClick(tag) {
+  router.push({ path: '/portal', query: { tag: tag.id } })
 }
 
-onMounted(load)
+function clearFilter() {
+  router.push({ path: '/portal' })
+}
+
+onMounted(async () => {
+  categories.value = await portalCategoryTree()
+  tags.value = await portalTagList()
+})
 </script>
 
 <style scoped>
-.portal {
-  min-height: 100vh;
-  background: #f5f7fa;
+.home {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
 }
-.header {
-  height: 60px;
-  line-height: 60px;
-  text-align: center;
-  font-size: 22px;
-  font-weight: 700;
-  background: #fff;
+.sidebar {
+  width: 240px;
+  flex-shrink: 0;
+}
+.side-card {
+  margin-bottom: 16px;
 }
 .content {
-  max-width: 800px;
-  margin: 0 auto;
-  padding: 20px;
+  flex: 1;
+  min-width: 0;
 }
-.article-card {
-  margin-bottom: 16px;
+.tag-cloud {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.tag-item {
   cursor: pointer;
 }
-.article-title {
-  font-weight: 600;
+.clear-filter {
+  margin-top: 10px;
+  color: #409eff;
+  cursor: pointer;
+  font-size: 13px;
 }
-.summary {
-  color: #666;
-  margin-bottom: 8px;
-}
-.meta {
-  color: #999;
-  font-size: 12px;
+@media (max-width: 768px) {
+  .home {
+    flex-direction: column;
+  }
+  .sidebar {
+    width: 100%;
+  }
 }
 </style>
