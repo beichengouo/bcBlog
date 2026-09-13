@@ -18,6 +18,8 @@ public class SysUser {
     private String nickname;
     private String avatar;
     private Integer status;
+    private String role;
+    private String menus;
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     private LocalDateTime createTime;
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")

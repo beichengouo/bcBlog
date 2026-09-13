@@ -14,3 +14,8 @@ export function saveApiKey(apiKey) {
 export function getBalance() {
   return request.get('/admin/deepseek/balance')
 }
+
+// AI 一键写文章（生成耗时较长，单独放宽超时）
+export function generateArticle(requirement) {
+  return request.post('/admin/deepseek/article', { requirement }, { timeout: 120000 })
+}

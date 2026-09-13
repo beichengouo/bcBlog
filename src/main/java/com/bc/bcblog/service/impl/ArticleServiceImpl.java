@@ -1,5 +1,6 @@
 package com.bc.bcblog.service.impl;
 
+import cn.dev33.satoken.stp.StpUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
@@ -10,9 +11,11 @@ import com.bc.bcblog.dto.ArticleDTO;
 import com.bc.bcblog.entity.BlogArticle;
 import com.bc.bcblog.entity.BlogArticleTag;
 import com.bc.bcblog.entity.BlogCategory;
+import com.bc.bcblog.entity.SysUser;
 import com.bc.bcblog.mapper.BlogArticleMapper;
 import com.bc.bcblog.mapper.BlogArticleTagMapper;
 import com.bc.bcblog.mapper.BlogCategoryMapper;
+import com.bc.bcblog.mapper.SysUserMapper;
 import com.bc.bcblog.service.ArticleService;
 import com.bc.bcblog.vo.PortalArticleDetailVO;
 import lombok.RequiredArgsConstructor;
@@ -31,6 +34,7 @@ public class ArticleServiceImpl implements ArticleService {
     private final BlogArticleMapper articleMapper;
     private final BlogArticleTagMapper articleTagMapper;
     private final BlogCategoryMapper categoryMapper;
+    private final SysUserMapper sysUserMapper;
 
     @Override
     public PageResult<BlogArticle> pagePublished(long page, long size, Long categoryId, Long tagId, String keyword) {
@@ -132,6 +136,8 @@ public class ArticleServiceImpl implements ArticleService {
         BlogArticle article = new BlogArticle();
         applyDto(article, dto);
         article.setViewCount(0);
+        article.setAuthorId(currentUserId());
+        article.setAuthorName(currentAuthorName());
         article.setCreateTime(LocalDateTime.now());
         article.setUpdateTime(LocalDateTime.now());
         articleMapper.insert(article);
@@ -195,6 +201,29 @@ public class ArticleServiceImpl implements ArticleService {
         article.setCategoryId(dto.getCategoryId());
         article.setStatus(dto.getStatus() == null ? 0 : dto.getStatus());
         article.setIsTop(dto.getIsTop() == null ? 0 : dto.getIsTop());
+    }
+
+    /** 记录文章发布人，为后续论坛化预留 */
+    private Long currentUserId() {
+        try {
+            return StpUtil.getLoginIdAsLong();
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private String currentAuthorName() {
+        try {
+            Long uid = StpUtil.getLoginIdAsLong();
+            SysUser user = sysUserMapper.selectById(uid);
+            if (user == null) {
+                return "管理员";
+            }
+            return user.getNickname() != null && !user.getNickname().trim().isEmpty()
+                    ? user.getNickname() : user.getUsername();
+        } catch (Exception e) {
+            return "管理员";
+        }
     }
 
     /** 先删后插，维护文章与标签的关联 */

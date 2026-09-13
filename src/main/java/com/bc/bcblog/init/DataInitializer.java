@@ -31,6 +31,7 @@ public class DataInitializer implements CommandLineRunner {
         user.setPassword(BCrypt.hashpw("Admin@123456"));
         user.setNickname("管理员");
         user.setStatus(1);
+        user.setRole("SUPER");
         user.setCreateTime(LocalDateTime.now());
         user.setUpdateTime(LocalDateTime.now());
         sysUserMapper.insert(user);

@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useUserStore } from '@/store/user'
+import { applySiteMeta, getSiteName } from '@/utils/siteMeta'
 
 const routes = [
   { path: '/', redirect: '/portal' },
@@ -8,7 +9,8 @@ const routes = [
     component: () => import('@/layouts/PortalLayout.vue'),
     children: [
       { path: '', component: () => import('@/views/portal/Home.vue') },
-      { path: 'article/:id', component: () => import('@/views/portal/ArticleDetail.vue') }
+      { path: 'article/:id', component: () => import('@/views/portal/ArticleDetail.vue') },
+      { path: 'announcements', component: () => import('@/views/portal/Announcements.vue') }
     ]
   },
   { path: '/login', component: () => import('@/views/Login.vue') },
@@ -17,16 +19,23 @@ const routes = [
     component: () => import('@/layouts/AdminLayout.vue'),
     redirect: '/admin/dashboard',
     children: [
-      { path: 'dashboard', component: () => import('@/views/admin/Dashboard.vue'), meta: { title: '仪表盘' } },
-      { path: 'articles', component: () => import('@/views/admin/ArticleList.vue'), meta: { title: '文章管理' } },
-      { path: 'articles/edit', component: () => import('@/views/admin/ArticleEdit.vue'), meta: { title: '新增文章' } },
-      { path: 'articles/edit/:id', component: () => import('@/views/admin/ArticleEdit.vue'), meta: { title: '编辑文章' } },
-      { path: 'categories', component: () => import('@/views/admin/CategoryManage.vue'), meta: { title: '分类管理' } },
-      { path: 'tags', component: () => import('@/views/admin/TagManage.vue'), meta: { title: '标签管理' } },
-      { path: 'comments', component: () => import('@/views/admin/CommentManage.vue'), meta: { title: '评论管理' } },
-      { path: 'deepseek', component: () => import('@/views/admin/DeepseekBalance.vue'), meta: { title: 'DeepSeek 余额' } },
-      { path: 'settings', component: () => import('@/views/admin/Settings.vue'), meta: { title: '系统设置' } },
-      { path: 'logs', component: () => import('@/views/admin/LoginLog.vue'), meta: { title: '登录日志' } }
+      { path: 'dashboard', component: () => import('@/views/admin/Dashboard.vue'), meta: { title: '仪表盘', menu: 'dashboard' } },
+      { path: 'articles', component: () => import('@/views/admin/ArticleList.vue'), meta: { title: '文章管理', menu: 'articles' } },
+      { path: 'articles/edit', component: () => import('@/views/admin/ArticleEdit.vue'), meta: { title: '新增文章', menu: 'articles' } },
+      { path: 'articles/edit/:id', component: () => import('@/views/admin/ArticleEdit.vue'), meta: { title: '编辑文章', menu: 'articles' } },
+      { path: 'categories', component: () => import('@/views/admin/CategoryManage.vue'), meta: { title: '分类管理', menu: 'categories' } },
+      { path: 'tags', component: () => import('@/views/admin/TagManage.vue'), meta: { title: '标签管理', menu: 'tags' } },
+      { path: 'comments', component: () => import('@/views/admin/CommentManage.vue'), meta: { title: '评论管理', menu: 'comments' } },
+      { path: 'deepseek', component: () => import('@/views/admin/DeepseekBalance.vue'), meta: { title: 'DeepSeek 接口', menu: 'deepseek' } },
+      { path: 'music', component: () => import('@/views/admin/MusicPlaylist.vue'), meta: { title: '网易云音乐', menu: 'music' } },
+      { path: 'live2d', component: () => import('@/views/admin/Live2dModelManage.vue'), meta: { title: '看板娘管理', menu: 'live2d' } },
+      { path: 'background', component: () => import('@/views/admin/BackgroundManage.vue'), meta: { title: '背景管理', menu: 'background' } },
+      { path: 'ai', component: () => import('@/views/admin/AiProvider.vue'), meta: { title: 'AI 服务商', menu: 'ai' } },
+      { path: 'third', component: () => import('@/views/admin/ApiThird.vue'), meta: { title: '第三方接口', menu: 'third' } },
+      { path: 'announcement', component: () => import('@/views/admin/AnnouncementManage.vue'), meta: { title: '站点公告', menu: 'announcement' } },
+      { path: 'settings', component: () => import('@/views/admin/Settings.vue'), meta: { title: '系统设置', menu: 'settings' } },
+      { path: 'admins', component: () => import('@/views/admin/AdminUserManage.vue'), meta: { title: '管理员管理', menu: 'admins', superOnly: true } },
+      { path: 'logs', component: () => import('@/views/admin/LoginLog.vue'), meta: { title: '登录日志', menu: 'logs' } }
     ]
   }
 ]
@@ -36,11 +45,43 @@ const router = createRouter({
   routes
 })
 
-router.beforeEach((to) => {
+router.beforeEach(async (to) => {
   const userStore = useUserStore()
   if (to.path.startsWith('/admin') && !userStore.token) {
     return '/login'
   }
+  if (to.path.startsWith('/admin') && userStore.token) {
+    if (!userStore.userInfo) {
+      try {
+        await userStore.fetchInfo()
+      } catch (e) {
+        userStore.clear()
+        return '/login'
+      }
+    }
+    const info = userStore.userInfo
+    // 仅超级管理员可访问的管理员管理页
+    if (to.meta.superOnly && info.role !== 'SUPER') {
+      return '/admin/dashboard'
+    }
+    // 普通管理员只能访问被授权的菜单（仪表盘始终可用）
+    if (info.role !== 'SUPER' && to.meta.menu && to.meta.menu !== 'dashboard') {
+      const keys = info.menus || []
+      if (!keys.includes(to.meta.menu)) {
+        return '/admin/dashboard'
+      }
+    }
+  }
+})
+
+// 路由切换时同步站点标签页名称和 favicon
+router.afterEach((to) => {
+  // 保持 favicon 与最新站点 Logo 同步
+  applySiteMeta().then(() => {
+    if (to.meta && to.meta.title) {
+      document.title = `${to.meta.title} - ${getSiteName()}`
+    }
+  }).catch(() => {})
 })
 
 export default router

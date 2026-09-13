@@ -1,5 +1,9 @@
 package com.bc.bcblog.component;
 
+import cn.hutool.http.HttpRequest;
+import cn.hutool.http.HttpResponse;
+import cn.hutool.json.JSONObject;
+import cn.hutool.json.JSONUtil;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -15,6 +19,9 @@ import java.util.regex.Pattern;
  */
 @Component
 public class SensitiveWordFilter {
+
+    /** UAPIS 敏感词快速检测接口。 */
+    private static final String UAPIS_PROFANITY_URL = "https://uapis.cn/api/v1/text/profanitycheck";
 
     private static final List<String> DEFAULT_WORDS = Arrays.asList(
             "傻逼", "妈的", "操你", "操你妈", "fuck", "shit", "白痴", "去死", "垃圾"
@@ -37,11 +44,39 @@ public class SensitiveWordFilter {
         if (text == null || text.isEmpty()) {
             return text;
         }
+        // 优先使用 UAPIS 敏感词检测，命中时返回脱敏后的文本
+        String masked = filterByUapis(text);
+        if (masked != null) {
+            return masked;
+        }
+        // UAPIS 调用失败时，回退到本地敏感词过滤
         String result = text;
         for (String w : words) {
             result = Pattern.compile(Pattern.quote(w), Pattern.CASE_INSENSITIVE)
                     .matcher(result).replaceAll("***");
         }
         return result;
+    }
+
+    /** 调用 UAPIS 快速敏感词检测，失败时返回 null。 */
+    private String filterByUapis(String text) {
+        try {
+            HttpResponse resp = HttpRequest.post(UAPIS_PROFANITY_URL)
+                    .header("Content-Type", "application/json")
+                    .timeout(6000)
+                    .body(JSONUtil.createObj().set("text", text).toString())
+                    .execute();
+            if (resp.getStatus() != 200) {
+                return null;
+            }
+            JSONObject body = JSONUtil.parseObj(resp.body());
+            if ("forbidden".equals(body.getStr("status"))) {
+                String masked = body.getStr("masked_text");
+                return masked == null || masked.isEmpty() ? text : masked;
+            }
+            return text;
+        } catch (Exception e) {
+            return null;
+        }
     }
 }

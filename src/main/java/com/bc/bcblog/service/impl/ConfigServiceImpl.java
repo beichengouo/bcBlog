@@ -3,13 +3,20 @@ package com.bc.bcblog.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.bc.bcblog.entity.SysConfig;
 import com.bc.bcblog.mapper.SysConfigMapper;
+import com.bc.bcblog.common.BusinessException;
 import com.bc.bcblog.service.ConfigService;
 import com.bc.bcblog.vo.SiteConfigVO;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.File;
+import java.util.Arrays;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 /**
  * 站点设置服务，基于 sys_config 键值对存储。
@@ -18,13 +25,25 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class ConfigServiceImpl implements ConfigService {
 
+    /** 默认 Logo 文件，提前放在 uploads/logo 目录下。 */
+    private static final String DEFAULT_LOGO_URL = "/uploads/logo/avatar.png";
+    private static final List<String> ALLOWED_EXT = Arrays.asList("jpg", "jpeg", "png", "gif", "webp", "bmp");
+    private static final long MAX_LOGO_SIZE = 5 * 1024 * 1024L;
+
     private static final String KEY_SITE_NAME = "site_name";
     private static final String KEY_SITE_LOGO = "site_logo";
     private static final String KEY_SITE_ICP = "site_icp";
     private static final String KEY_SITE_DESCRIPTION = "site_description";
     private static final String KEY_SITE_KEYWORDS = "site_keywords";
+    private static final String KEY_SITE_SLOGAN = "site_slogan";
+    private static final String KEY_WEATHER_CITY = "weather_city";
+    private static final String KEY_HITOKOTO_CATEGORIES = "hitokoto_categories";
+    private static final String KEY_LIVE2D_ENABLED = "live2d_enabled";
 
     private final SysConfigMapper configMapper;
+
+    @Value("${bcblog.upload-dir:./uploads}")
+    private String uploadDir;
 
     @Override
     public SiteConfigVO get() {
@@ -35,6 +54,10 @@ public class ConfigServiceImpl implements ConfigService {
         vo.setSiteIcp(map.get(KEY_SITE_ICP));
         vo.setSiteDescription(map.get(KEY_SITE_DESCRIPTION));
         vo.setSiteKeywords(map.get(KEY_SITE_KEYWORDS));
+        vo.setSiteSlogan(map.get(KEY_SITE_SLOGAN));
+        vo.setWeatherCity(map.getOrDefault(KEY_WEATHER_CITY, "北京"));
+        vo.setHitokotoCategories(map.getOrDefault(KEY_HITOKOTO_CATEGORIES, "d,i,k"));
+        vo.setLive2dEnabled("0".equals(map.get(KEY_LIVE2D_ENABLED)) ? 0 : 1);
         return vo;
     }
 
@@ -45,6 +68,79 @@ public class ConfigServiceImpl implements ConfigService {
         upsert(KEY_SITE_ICP, vo.getSiteIcp());
         upsert(KEY_SITE_DESCRIPTION, vo.getSiteDescription());
         upsert(KEY_SITE_KEYWORDS, vo.getSiteKeywords());
+        upsert(KEY_SITE_SLOGAN, vo.getSiteSlogan());
+        // 天气城市和一言分类已经拆到“第三方接口”页维护，这里仅在传入非空时才更新，避免被“系统设置”保存时清空
+        if (vo.getWeatherCity() != null) {
+            upsert(KEY_WEATHER_CITY, vo.getWeatherCity());
+        }
+        if (vo.getHitokotoCategories() != null) {
+            upsert(KEY_HITOKOTO_CATEGORIES, vo.getHitokotoCategories());
+        }
+        if (vo.getLive2dEnabled() != null) {
+            upsert(KEY_LIVE2D_ENABLED, vo.getLive2dEnabled() == 1 ? "1" : "0");
+        }
+    }
+
+    @Override
+    public String uploadLogo(MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            throw new BusinessException("请选择要上传的 Logo 图片");
+        }
+        String original = file.getOriginalFilename();
+        String ext = original == null ? "" : original.substring(original.lastIndexOf('.') + 1).toLowerCase();
+        if (!ALLOWED_EXT.contains(ext)) {
+            throw new BusinessException("仅支持 jpg/jpeg/png/gif/webp/bmp 格式");
+        }
+        if (file.getSize() > MAX_LOGO_SIZE) {
+            throw new BusinessException("Logo 图片大小不能超过 5MB");
+        }
+
+        File dir = new File(uploadDir, "logo");
+        if (!dir.exists() && !dir.mkdirs()) {
+            throw new BusinessException("创建 Logo 目录失败");
+        }
+        // 上传新图前先删除旧的已上传 Logo，但保留默认头像
+        deleteUploadedLogoFile();
+
+        String filename = UUID.randomUUID().toString().replace("-", "") + "." + ext;
+        try {
+            file.transferTo(new File(dir, filename).getAbsoluteFile());
+        } catch (Exception e) {
+            throw new BusinessException("Logo 保存失败：" + e.getMessage());
+        }
+        String url = "/uploads/logo/" + filename;
+        upsert(KEY_SITE_LOGO, url);
+        return url;
+    }
+
+    @Override
+    public void deleteLogo() {
+        deleteUploadedLogoFile();
+        upsert(KEY_SITE_LOGO, DEFAULT_LOGO_URL);
+    }
+
+    @Override
+    public void setLive2dEnabled(boolean enabled) {
+        upsert(KEY_LIVE2D_ENABLED, enabled ? "1" : "0");
+    }
+
+    @Override
+    public boolean isLive2dEnabled() {
+        return !"0".equals(loadMap().get(KEY_LIVE2D_ENABLED));
+    }
+
+    /** 删除当前设置中已上传的 Logo 文件，默认头像不删除。 */
+    private void deleteUploadedLogoFile() {
+        SiteConfigVO vo = get();
+        String current = vo.getSiteLogo();
+        if (current == null || current.equals(DEFAULT_LOGO_URL) || !current.startsWith("/uploads/logo/")) {
+            return;
+        }
+        String name = current.substring("/uploads/logo/".length());
+        File f = new File(new File(uploadDir, "logo"), name).getAbsoluteFile();
+        if (f.exists()) {
+            f.delete();
+        }
     }
 
     private Map<String, String> loadMap() {

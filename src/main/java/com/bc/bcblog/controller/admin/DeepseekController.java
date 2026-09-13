@@ -1,8 +1,10 @@
 package com.bc.bcblog.controller.admin;
 
 import com.bc.bcblog.common.Result;
+import com.bc.bcblog.dto.AiArticleRequestDTO;
 import com.bc.bcblog.dto.DeepseekApiKeyDTO;
 import com.bc.bcblog.service.DeepseekService;
+import com.bc.bcblog.vo.AiArticleVO;
 import com.bc.bcblog.vo.DeepseekBalanceVO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -35,5 +37,11 @@ public class DeepseekController {
     @GetMapping("/balance")
     public Result<DeepseekBalanceVO> balance() {
         return Result.ok(deepseekService.queryBalance());
+    }
+
+    /** AI 一键写文章 */
+    @PostMapping("/article")
+    public Result<AiArticleVO> article(@RequestBody AiArticleRequestDTO dto) {
+        return Result.ok(deepseekService.generateArticle(dto.getRequirement()));
     }
 }

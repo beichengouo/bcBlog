@@ -20,6 +20,8 @@ import org.springframework.stereotype.Service;
 
 import javax.servlet.http.HttpServletRequest;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -168,6 +170,12 @@ public class AuthServiceImpl implements AuthService {
         vo.setUsername(user.getUsername());
         vo.setNickname(user.getNickname());
         vo.setAvatar(user.getAvatar());
+        vo.setRole(user.getRole());
+        if (user.getMenus() != null && !user.getMenus().trim().isEmpty()) {
+            vo.setMenus(Arrays.asList(user.getMenus().split(",")));
+        } else {
+            vo.setMenus(new ArrayList<>());
+        }
         return vo;
     }
 

@@ -3,11 +3,12 @@
     <template v-if="article">
       <h1 class="title">{{ article.title }}</h1>
       <div class="meta">
+        <span>{{ article.authorName || '管理员' }}</span>
         <span>{{ article.createTime }}</span>
         <span>浏览 {{ article.viewCount || 0 }}</span>
       </div>
       <!-- 正文为管理员使用富文本编辑器生成，属可信内容，因此直接渲染 HTML -->
-      <div class="content" v-html="article.content"></div>
+      <div ref="contentEl" class="content rich-text" v-html="article.content" @click="onContentClick"></div>
       <div class="nearby">
         <div v-if="prev" class="nearby-item" @click="go(prev.id)">
           <span class="label">上一篇</span>
@@ -63,15 +64,32 @@
       </div>
     </template>
     <el-empty v-if="!loading && !article" description="文章不存在" />
+
+    <!-- 图片灯箱 -->
+    <teleport to="body">
+      <transition name="lightbox">
+        <div v-if="lightbox.src" class="lightbox" @click="lightbox.src = ''">
+          <button class="lightbox-btn prev" @click.stop="lightboxStep(-1)" aria-label="上一张">
+            <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6" /></svg>
+          </button>
+          <img :src="lightbox.src" :alt="lightbox.alt || ''" />
+          <button class="lightbox-btn next" @click.stop="lightboxStep(1)" aria-label="下一张">
+            <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6" /></svg>
+          </button>
+          <button class="lightbox-btn close" @click.stop="lightbox.src = ''" aria-label="关闭">×</button>
+        </div>
+      </transition>
+    </teleport>
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, watch, onMounted } from 'vue'
+import { ref, reactive, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { getPortalArticle } from '@/api/article'
 import { listComments, saveComment } from '@/api/comment'
+import { decorateContent } from '@/utils/content'
 
 const route = useRoute()
 const router = useRouter()
@@ -88,6 +106,8 @@ const commentSize = ref(10)
 const commentLoading = ref(false)
 const commentSaving = ref(false)
 const commentForm = reactive({ nickname: '', email: '', content: '' })
+const contentEl = ref()
+const lightbox = ref({ src: '', alt: '', images: [] })
 
 async function load() {
   loading.value = true
@@ -97,6 +117,8 @@ async function load() {
     prev.value = data.prev
     next.value = data.next
     window.scrollTo(0, 0)
+    await nextTick()
+    decorateContent(contentEl.value)
   } finally {
     loading.value = false
   }
@@ -141,6 +163,40 @@ async function onSubmitComment() {
   }
 }
 
+/** 点击正文里的图片时打开灯箱。 */
+function onContentClick(e) {
+  const img = e.target.closest('img')
+  if (!img || !contentEl.value) return
+  const images = Array.from(contentEl.value.querySelectorAll('img'))
+  lightbox.value = {
+    src: img.src,
+    alt: img.alt || '',
+    images: images.map((i) => ({ src: i.src, alt: i.alt || '' }))
+  }
+}
+
+/** 上一张 / 下一张切换。 */
+function lightboxStep(delta) {
+  const { src, images } = lightbox.value
+  if (!images.length) return
+  const idx = images.findIndex((i) => i.src === src)
+  const next = (idx + delta + images.length) % images.length
+  lightbox.value.src = images[next].src
+  lightbox.value.alt = images[next].alt
+}
+
+/** 键盘方向键切换图片，Esc 关闭灯箱。 */
+function onKeydown(e) {
+  if (!lightbox.value.src) return
+  if (e.key === 'Escape') {
+    lightbox.value.src = ''
+  } else if (e.key === 'ArrowLeft') {
+    lightboxStep(-1)
+  } else if (e.key === 'ArrowRight') {
+    lightboxStep(1)
+  }
+}
+
 function go(id) {
   router.push(`/portal/article/${id}`)
 }
@@ -148,43 +204,46 @@ function go(id) {
 // 上一篇/下一篇切换时，同一组件复用，需要监听 id 变化重新加载
 watch(() => route.params.id, load)
 onMounted(load)
+onMounted(() => window.addEventListener('keydown', onKeydown))
+onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 </script>
 
 <style scoped>
 .detail {
   max-width: 820px;
   margin: 0 auto;
-  background: #fff;
-  border-radius: 8px;
-  padding: 28px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  backdrop-filter: blur(12px);
+  padding: calc(var(--header-height) + 20px) 28px 28px;
+  box-shadow: var(--shadow);
 }
 .title {
   font-size: 26px;
   margin: 0 0 12px;
   line-height: 1.4;
+  color: var(--text-strong);
 }
 .meta {
   display: flex;
   gap: 16px;
-  color: #999;
+  color: var(--text-muted);
   font-size: 13px;
   padding-bottom: 16px;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid var(--border);
   margin-bottom: 20px;
 }
 .content {
-  line-height: 1.8;
-  color: #333;
   word-break: break-word;
 }
 .content :deep(img) {
-  max-width: 100%;
-  height: auto;
+  cursor: zoom-in;
 }
 .nearby {
   margin-top: 30px;
   padding-top: 20px;
-  border-top: 1px solid #f0f0f0;
+  border-top: 1px solid var(--border);
   display: flex;
   justify-content: space-between;
   gap: 12px;
@@ -195,28 +254,29 @@ onMounted(load)
 }
 .nearby-item .label {
   display: block;
-  color: #999;
+  color: var(--text-muted);
   font-size: 12px;
   margin-bottom: 4px;
 }
 .nearby-item .link {
-  color: #409eff;
+  color: var(--accent);
 }
 .nearby-item.right {
   text-align: right;
 }
 .nearby-item.disabled {
-  color: #c0c4cc;
+  color: var(--text-muted);
   cursor: default;
 }
 .comments {
   margin-top: 30px;
   padding-top: 20px;
-  border-top: 1px solid #f0f0f0;
+  border-top: 1px solid var(--border);
 }
 .comments-title {
   font-size: 18px;
   margin: 0 0 16px;
+  color: var(--text-strong);
 }
 .comment-form {
   margin-bottom: 24px;
@@ -226,7 +286,7 @@ onMounted(load)
 }
 .comment-item {
   padding: 14px 0;
-  border-bottom: 1px solid #f5f5f5;
+  border-bottom: 1px solid var(--border);
 }
 .comment-head {
   display: flex;
@@ -235,14 +295,14 @@ onMounted(load)
 }
 .comment-nickname {
   font-weight: 600;
-  color: #333;
+  color: var(--text-strong);
 }
 .comment-time {
-  color: #999;
+  color: var(--text-muted);
   font-size: 12px;
 }
 .comment-content {
-  color: #555;
+  color: var(--text);
   line-height: 1.7;
   white-space: pre-wrap;
   word-break: break-word;
@@ -254,9 +314,70 @@ onMounted(load)
 @media (max-width: 768px) {
   .detail {
     padding: 16px;
+    padding-top: calc(var(--header-height) + 16px);
   }
   .title {
     font-size: 22px;
   }
+}
+
+/* 图片灯箱 */
+.lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.82);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+.lightbox img {
+  max-width: 92vw;
+  max-height: 88vh;
+  border-radius: 12px;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.5);
+}
+.lightbox-btn {
+  position: absolute;
+  border: none;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  cursor: pointer;
+  border-radius: 50%;
+  width: 46px;
+  height: 46px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s ease, transform 0.2s ease;
+}
+.lightbox-btn:hover {
+  background: rgba(255, 255, 255, 0.24);
+  transform: scale(1.05);
+}
+.lightbox-btn.prev {
+  left: 20px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+.lightbox-btn.next {
+  right: 20px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+.lightbox-btn.close {
+  top: 20px;
+  right: 20px;
+  font-size: 26px;
+}
+.lightbox-enter-active,
+.lightbox-leave-active {
+  transition: opacity 0.22s ease;
+}
+.lightbox-enter-from,
+.lightbox-leave-to {
+  opacity: 0;
 }
 </style>
