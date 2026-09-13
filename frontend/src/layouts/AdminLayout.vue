@@ -147,7 +147,7 @@ const visibleMenus = computed(() => {
   return adminMenus
     .map((m) => {
       if (m.children) {
-        const children = m.children.filter((c) => keys.includes(c.key))
+        const children = m.children.filter((c) => !c.superOnly && keys.includes(c.key))
         return children.length ? { ...m, children } : null
       }
       if (m.superOnly) return null

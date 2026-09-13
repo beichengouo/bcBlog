@@ -4,6 +4,7 @@
       <span class="weather-city">{{ city }}</span>
       <button class="weather-refresh" @click="load" title="刷新天气">↻</button>
     </div>
+    <div class="weather-time">{{ now }}</div>
     <div class="weather-main">
       <span class="weather-temp">{{ weather.temp }}°</span>
       <span class="weather-desc">{{ weather.desc }}</span>
@@ -16,11 +17,30 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { getPortalConfig } from '@/api/config'
 
 const city = ref('北京')
 const weather = ref(null)
+const now = ref('')
+let timer = null
+
+/** 每秒刷新北京时间显示。 */
+function updateTime() {
+  const d = new Date()
+  const parts = new Intl.DateTimeFormat('zh-CN', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  }).formatToParts(d)
+  const get = (type) => parts.find((p) => p.type === type)?.value || ''
+  now.value = `${get('year')}-${get('month')}-${get('day')} ${get('hour')}:${get('minute')}:${get('second')}`
+}
 
 /** UAPIS：查询当前登录 IP 的位置信息，失败时返回空。 */
 async function locateByIp() {
@@ -68,7 +88,16 @@ onMounted(async () => {
   } catch (e) {
     // 使用默认城市
   }
+  updateTime()
+  timer = setInterval(updateTime, 1000)
   load()
+})
+
+onUnmounted(() => {
+  if (timer) {
+    clearInterval(timer)
+    timer = null
+  }
 })
 </script>
 
@@ -102,6 +131,14 @@ onMounted(async () => {
   color: var(--text-muted);
   cursor: pointer;
   font-size: 16px;
+}
+.weather-time {
+  margin-bottom: 4px;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.4;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 .weather-main {
   display: flex;

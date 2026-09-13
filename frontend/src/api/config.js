@@ -31,3 +31,33 @@ export function getPortalConfig() {
 export function setLive2dEnabled(enabled) {
   return request.put('/admin/config/live2d-enabled', null, { params: { enabled } })
 }
+
+// 后台：查询百度 IP 定位 AK
+export function getIpLocationAk() {
+  return request.get('/admin/config/ip-location-ak')
+}
+
+// 后台：保存百度 IP 定位 AK
+export function saveIpLocationAk(apiKey) {
+  return request.post('/admin/config/ip-location-ak', { apiKey })
+}
+
+// 后台：查询后台背景透明度
+export function getAdminBgOpacity() {
+  return request.get('/admin/config/admin-bg-opacity')
+}
+
+// 后台：保存后台背景透明度
+export function saveAdminBgOpacity(opacity) {
+  return request.put('/admin/config/admin-bg-opacity', null, { params: { opacity } })
+}
+
+// 后台：查询 ACG 随机封面 Token
+export function getAcgCoverToken() {
+  return request.get('/admin/config/acg-cover-token')
+}
+
+// 后台：保存 ACG 随机封面 Token
+export function saveAcgCoverToken(apiKey) {
+  return request.post('/admin/config/acg-cover-token', { apiKey })
+}

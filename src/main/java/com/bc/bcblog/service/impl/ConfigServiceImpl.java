@@ -39,6 +39,9 @@ public class ConfigServiceImpl implements ConfigService {
     private static final String KEY_WEATHER_CITY = "weather_city";
     private static final String KEY_HITOKOTO_CATEGORIES = "hitokoto_categories";
     private static final String KEY_LIVE2D_ENABLED = "live2d_enabled";
+    private static final String KEY_IP_LOCATION_AK = "ip_location_ak";
+    private static final String KEY_ADMIN_BG_OPACITY = "admin_bg_opacity";
+    private static final String KEY_ACG_COVER_TOKEN = "acg_cover_token";
 
     private final SysConfigMapper configMapper;
 
@@ -127,6 +130,48 @@ public class ConfigServiceImpl implements ConfigService {
     @Override
     public boolean isLive2dEnabled() {
         return !"0".equals(loadMap().get(KEY_LIVE2D_ENABLED));
+    }
+
+    @Override
+    public String getIpLocationAk() {
+        return loadMap().get(KEY_IP_LOCATION_AK);
+    }
+
+    @Override
+    public void setIpLocationAk(String ak) {
+        String value = ak == null ? "" : ak.trim();
+        upsert(KEY_IP_LOCATION_AK, value);
+    }
+
+    @Override
+    public double getAdminBgOpacity() {
+        String value = loadMap().get(KEY_ADMIN_BG_OPACITY);
+        if (value == null || value.trim().isEmpty()) {
+            return 1.0;
+        }
+        try {
+            return Double.parseDouble(value.trim());
+        } catch (NumberFormatException e) {
+            return 1.0;
+        }
+    }
+
+    @Override
+    public void setAdminBgOpacity(double opacity) {
+        if (opacity < 0.1 || opacity > 1.0) {
+            throw new BusinessException("背景透明度必须在 0.1 到 1.0 之间");
+        }
+        upsert(KEY_ADMIN_BG_OPACITY, String.valueOf(opacity));
+    }
+
+    @Override
+    public String getAcgCoverToken() {
+        return loadMap().get(KEY_ACG_COVER_TOKEN);
+    }
+
+    @Override
+    public void setAcgCoverToken(String token) {
+        upsert(KEY_ACG_COVER_TOKEN, token == null ? "" : token.trim());
     }
 
     /** 删除当前设置中已上传的 Logo 文件，默认头像不删除。 */

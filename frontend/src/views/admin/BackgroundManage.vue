@@ -21,6 +21,12 @@
 
     <p class="tip">壁纸库前台和后台共用；可分别点“设为前台 / 设为后台”独立启用，也可恢复默认（主题渐变）。</p>
 
+    <div class="opacity-row">
+      <span class="opacity-label">后台背景透明度</span>
+      <el-slider v-model="opacity" :min="0.1" :max="1" :step="0.05" class="opacity-slider" />
+      <el-button type="primary" plain :loading="opacitySaving" @click="onSaveOpacity">保存</el-button>
+    </div>
+
     <div class="bg-grid">
       <div v-for="b in list" :key="b.id" class="bg-card">
         <div class="preview">
@@ -49,8 +55,11 @@
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { backgroundList, deleteBackground, setActiveBackground, clearActiveBackground } from '@/api/background'
+import { getAdminBgOpacity, saveAdminBgOpacity } from '@/api/config'
 
 const list = ref([])
+const opacity = ref(1)
+const opacitySaving = ref(false)
 const uploadHeaders = { Authorization: localStorage.getItem('token') || '' }
 
 async function load() {
@@ -93,7 +102,28 @@ async function onDelete(row) {
   load()
 }
 
-onMounted(load)
+async function onSaveOpacity() {
+  opacitySaving.value = true
+  try {
+    await saveAdminBgOpacity(opacity.value)
+    ElMessage.success('后台背景透明度已保存')
+  } finally {
+    opacitySaving.value = false
+  }
+}
+
+async function loadOpacity() {
+  try {
+    opacity.value = await getAdminBgOpacity()
+  } catch (e) {
+    // 读取失败时保持默认不透明
+  }
+}
+
+onMounted(() => {
+  load()
+  loadOpacity()
+})
 </script>
 
 <style scoped>
@@ -114,6 +144,22 @@ onMounted(load)
   margin: 0 0 14px;
   color: #909399;
   font-size: 13px;
+}
+.opacity-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+.opacity-label {
+  flex-shrink: 0;
+  color: #606266;
+  font-size: 14px;
+}
+.opacity-slider {
+  flex: 1;
+  min-width: 180px;
 }
 .bg-grid {
   display: grid;

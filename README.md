@@ -1,40 +1,85 @@
 # bcBlog
 
-前后端分离的个人博客项目基础骨架。
+一个前后端分离的个人博客项目，前台面向游客开放阅读，后台供管理员发布内容、管理站点。支持二次元风格主题、多种氛围组件，并逐步向论坛方向扩展。
 
 ## 技术栈
 
-- 后端：Spring Boot 2.6.13 / Java 8 / MyBatis-Plus 3.5.7 / Sa-Token / MySQL 8
-- 前端：Vue 3 / Vite / Element Plus / Pinia / Axios
+- 后端：Spring Boot 2.6.13 / Java 8 / MyBatis-Plus / Sa-Token / MySQL 8
+- 前端：Vue 3 / Vite / Element Plus / Pinia / Axios / wangEditor
+
+## 现有功能
+
+### 前台
+
+- 首页文章卡片瀑布流 + 时间线布局
+- 文章详情、归档、搜索、游客评论
+- 评论敏感词过滤（UAPIS，失败时本地词库兜底）
+- 白天樱粉 / 夜晚星空主题，可自由切换
+- 樱花、星空粒子、点击涟漪等氛围组件
+- 网易云音乐播放器、一言、Live2D 看板娘
+- 实时天气卡片（自动定位 + 北京时间）
+- 站点公告栏、阅读进度、图片灯箱、代码高亮与复制、回到顶部
+
+### 后台
+
+- 管理员登录（图形验证码、失败锁定、IP 频率限制）
+- 仪表盘统计、文章 / 分类 / 标签 / 评论管理
+- 富文本文章发布与编辑，本地图片上传
+- AI 一键写文章，支持多个 AI 服务商切换
+- 分类 + 标签管理，支持多级分类
+- 站点设置（名称、Logo、备案、SEO、首页标语）
+- 背景壁纸管理（图片 / 视频，前后台可独立设置，后台背景透明度可调）
+- 看板娘模型管理、网易云歌单管理、站点公告管理
+- 管理员分级（超级管理员 / 一级 / 二级）与一二级菜单授权
+- 登录日志查看、清空与 IP 位置查询
+- 第三方接口配置（天气、一言、敏感词、IP 定位、ACG 随机封面）
 
 ## 目录结构
 
-```
+```text
 bcBlog/
-├── pom.xml                     # 后端 Maven 工程（仓库根目录即后端）
-├── src/main/java/com/bc/bcblog/
-│   ├── common/                 # 统一返回、分页、异常处理
-│   ├── config/                 # Sa-Token、MyBatis-Plus、CORS 配置
-│   ├── controller/             # 接口（admin 后台 / portal 前台）
-│   ├── entity/                 # 实体
-│   ├── mapper/                 # MyBatis-Plus Mapper
-│   ├── service/                # 业务逻辑
-│   └── init/                   # 启动初始化（默认管理员）
-├── frontend/                   # Vue3 前端
-└── docs/sql/bc_blog.sql        # 建库脚本
+├── src/main/java/com/bc/bcblog/   # 后端代码
+├── src/main/resources/            # 配置文件
+├── frontend/                      # Vue3 前端
+└── docs/sql/                      # 数据库脚本
 ```
 
 ## 快速开始
 
-1. 用 Navicat 执行 `docs/sql/bc_blog.sql` 创建数据库和表
-2. 修改 `src/main/resources/application.yml` 里的数据库账号密码
-3. 后端：IDEA 打开本项目，运行 `BcBlogApplication`
-4. 前端：进入 `frontend/`，执行 `npm install` 后 `npm run dev`，访问 http://localhost:5173
-5. 首次启动后端会自动创建管理员：`admin` / `Admin@123456`，登录后请尽快修改密码
+1. 使用 Navicat 执行 `docs/sql/bc_blog.sql` 及 `docs/sql/upgrade_*.sql` 创建数据库和表。
+2. 修改 `src/main/resources/application.yml` 中的数据库账号密码。
+3. 启动后端：运行 `BcBlogApplication`。
+4. 启动前端：
 
-## 接口约定
+```bash
+cd frontend
+npm install
+npm run dev
+```
 
-- 统一返回：`{ code, msg, data }`，`code=200` 表示成功
-- 后台接口：`/api/admin/**`，需登录（Sa-Token，请求头 `Authorization` 携带令牌）
-- 前台接口：`/api/portal/**`，游客可访问
-- 登录加强：图形验证码、连续 5 次失败锁定 10 分钟、IP 频率限制、登录日志
+5. 访问前台 http://localhost:5173，后台 http://localhost:5173/login。
+
+首次启动后端会自动创建默认管理员：
+
+- 用户名：`admin`
+- 密码：`Admin@123456`
+
+登录后请尽快在后台右上角修改密码。
+
+## 更新日志
+
+### 2026-09-14
+
+- 后台菜单重构为一级菜单 + 二级菜单，超级管理员可分级授权
+- 新增登录日志 IP 位置手动查询
+- 新增后台背景壁纸透明度调整
+- 接入硅基流动 DeepSeek，AI 写文章默认使用并支持切换其他接口
+- 新增 ACG 随机封面接口，新增文章时可一键获取随机封面
+- 前台天气卡片增加实时北京时间显示
+
+### 2026-09-13
+
+- 完成前台氛围组件、管理端权限与 API 统一管理
+- 完成管理端收尾：仪表盘统计、系统设置、登录日志、DeepSeek 余额查询
+- 完善前台展示与游客评论、敏感词过滤
+- 完成博客前后端基础框架：登录、分类、标签、文章、图片上传、密码重置工具

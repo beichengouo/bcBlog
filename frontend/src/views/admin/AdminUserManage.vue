@@ -57,9 +57,27 @@
           </el-radio-group>
         </el-form-item>
         <el-form-item label="菜单权限">
-          <el-checkbox-group v-model="form.menus" class="menu-check">
-            <el-checkbox v-for="m in grantableMenus" :key="m.key" :value="m.key">{{ m.title }}</el-checkbox>
-          </el-checkbox-group>
+          <div class="menu-perm">
+            <div v-for="group in menuGroups" :key="group.key" class="menu-group">
+              <el-checkbox
+                :model-value="isGroupChecked(group)"
+                :indeterminate="isGroupIndeterminate(group)"
+                @change="toggleGroup(group, $event)"
+              >
+                {{ group.title }}
+              </el-checkbox>
+              <div class="menu-children">
+                <el-checkbox
+                  v-for="c in group.children"
+                  :key="c.key"
+                  :model-value="form.menus.includes(c.key)"
+                  @change="toggleMenu(c.key, $event)"
+                >
+                  {{ c.title }}
+                </el-checkbox>
+              </div>
+            </div>
+          </div>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -82,10 +100,11 @@ const saving = ref(false)
 const dialogVisible = ref(false)
 const form = reactive({ id: null, username: '', password: '', nickname: '', role: 'ADMIN1', menus: [] })
 
-// 授权时只展示叶子菜单，父菜单（如 API 管理）只作为侧边栏分组，不单独授权
-const grantableMenus = adminMenus
-  .flatMap((m) => (m.children ? m.children : [m]))
-  .filter((m) => !m.superOnly)
+// 授权时展示一级菜单 + 二级菜单；二级菜单才是实际存储到后台的权限 key
+const menuGroups = adminMenus
+  .filter((m) => m.children)
+  .map((m) => ({ ...m, children: m.children.filter((c) => !c.superOnly) }))
+  .filter((m) => m.children.length)
 
 function roleLabel(role) {
   if (role === 'SUPER') return '超级管理员'
@@ -102,6 +121,38 @@ function menuTitle(key) {
     }
   }
   return key
+}
+
+/** 判断某个一级菜单下的二级菜单是否全选 */
+function isGroupChecked(group) {
+  return group.children.length > 0 && group.children.every((c) => form.menus.includes(c.key))
+}
+
+/** 判断某个一级菜单是否半选 */
+function isGroupIndeterminate(group) {
+  const selected = group.children.filter((c) => form.menus.includes(c.key)).length
+  return selected > 0 && selected < group.children.length
+}
+
+/** 勾选/取消一级菜单时，同步勾选/取消它下面所有二级菜单 */
+function toggleGroup(group, checked) {
+  const keys = group.children.map((c) => c.key)
+  if (checked) {
+    form.menus = Array.from(new Set([...form.menus, ...keys]))
+  } else {
+    form.menus = form.menus.filter((k) => !keys.includes(k))
+  }
+}
+
+/** 勾选/取消单个二级菜单 */
+function toggleMenu(key, checked) {
+  if (checked) {
+    if (!form.menus.includes(key)) {
+      form.menus.push(key)
+    }
+  } else {
+    form.menus = form.menus.filter((k) => k !== key)
+  }
 }
 
 async function load() {
@@ -200,9 +251,28 @@ onMounted(load)
 .menu-tag {
   margin: 2px 6px 2px 0;
 }
-.menu-check {
+.menu-perm {
+  width: 100%;
+  max-height: 320px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.menu-group {
+  border: 1px solid var(--border, #e4e7ed);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+.menu-group > :deep(.el-checkbox) {
+  margin-right: 0;
+  font-weight: 600;
+}
+.menu-children {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 0;
+  gap: 4px 18px;
+  margin-top: 8px;
+  padding-left: 8px;
 }
 </style>

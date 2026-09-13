@@ -40,17 +40,21 @@
       </el-row>
 
       <el-form-item label="封面">
-        <el-upload
-          :action="'/api/admin/upload/image'"
-          :headers="uploadHeaders"
-          :show-file-list="false"
-          accept="image/*"
-          :on-success="onCoverSuccess"
-          :on-error="onCoverError"
-        >
-          <img v-if="form.cover" :src="form.cover" class="cover-preview" alt="封面" />
-          <el-button v-else>上传封面</el-button>
-        </el-upload>
+        <div class="cover-box">
+          <el-upload
+            :action="'/api/admin/upload/image'"
+            :headers="uploadHeaders"
+            :show-file-list="false"
+            accept="image/*"
+            :on-success="onCoverSuccess"
+            :on-error="onCoverError"
+          >
+            <img v-if="form.cover" :src="form.cover" class="cover-preview" alt="封面" />
+            <el-button v-else>上传封面</el-button>
+          </el-upload>
+          <el-button :loading="coverLoading" @click="onRandomCover">随机封面</el-button>
+          <el-button v-if="form.cover" @click="form.cover = ''">移除</el-button>
+        </div>
       </el-form-item>
 
       <el-form-item label="摘要">
@@ -117,6 +121,7 @@ import { categoryTree } from '@/api/category'
 import { tagList, saveTag } from '@/api/tag'
 import { getArticleForEdit, saveArticle, updateArticle } from '@/api/article'
 import { aiProviderList, aiProviderModels, aiGenerateArticle } from '@/api/ai'
+import { randomAcgCover } from '@/api/acg'
 
 const route = useRoute()
 const router = useRouter()
@@ -135,6 +140,7 @@ const aiProviderId = ref(null)
 const aiModels = ref([])
 const aiModel = ref('')
 const aiModelLoading = ref(false)
+const coverLoading = ref(false)
 
 const form = reactive({
   id: null,
@@ -188,6 +194,17 @@ function onCoverSuccess(res) {
 
 function onCoverError() {
   ElMessage.error('封面上传失败')
+}
+
+/** 随机获取一张 ACG 图片作为文章封面。 */
+async function onRandomCover() {
+  coverLoading.value = true
+  try {
+    form.cover = await randomAcgCover()
+    ElMessage.success('已随机选择封面，保存文章后生效')
+  } finally {
+    coverLoading.value = false
+  }
 }
 
 async function loadOptions() {
@@ -372,6 +389,12 @@ onBeforeUnmount(() => {
 .cover-preview {
   height: 80px;
   border-radius: 4px;
+}
+.cover-box {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 .status-group {
   margin-left: 20px;

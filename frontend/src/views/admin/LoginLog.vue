@@ -29,6 +29,13 @@
       <el-table-column prop="id" label="ID" width="80" />
       <el-table-column prop="username" label="用户名" width="140" />
       <el-table-column prop="ip" label="IP" width="150" />
+      <el-table-column label="位置" width="110">
+        <template #default="{ row }">
+          <el-button size="small" text type="primary" :loading="ipLoading && currentIp === row.ip" @click="onQueryIp(row.ip)">
+            查询位置
+          </el-button>
+        </template>
+      </el-table-column>
       <el-table-column prop="userAgent" label="User-Agent" min-width="200" show-overflow-tooltip />
       <el-table-column label="结果" width="90">
         <template #default="{ row }">
@@ -47,13 +54,30 @@
       class="pager"
       @current-change="load"
     />
+
+    <el-dialog v-model="ipDialogVisible" title="IP 位置查询" width="min(92vw, 420px)">
+      <div class="ip-dialog">
+        <div class="ip-dialog-row">
+          <span class="label">IP 地址</span>
+          <span>{{ currentIp }}</span>
+        </div>
+        <div class="ip-dialog-row">
+          <span class="label">位置结果</span>
+          <span v-if="ipResult">{{ ipResult }}</span>
+          <span v-else class="muted">暂无结果</span>
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="ipDialogVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
   </el-card>
 </template>
 
 <script setup>
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { loginLogPage, clearLoginLogs } from '@/api/log'
+import { loginLogPage, clearLoginLogs, queryIpLocation } from '@/api/log'
 
 const list = ref([])
 const total = ref(0)
@@ -64,6 +88,10 @@ const startTime = ref('')
 const endTime = ref('')
 const loading = ref(false)
 const clearing = ref(false)
+const ipDialogVisible = ref(false)
+const ipLoading = ref(false)
+const ipResult = ref('')
+const currentIp = ref('')
 
 async function load() {
   loading.value = true
@@ -123,6 +151,20 @@ async function onClearLogs() {
   }
 }
 
+async function onQueryIp(ip) {
+  currentIp.value = ip
+  ipResult.value = ''
+  ipDialogVisible.value = true
+  ipLoading.value = true
+  try {
+    ipResult.value = await queryIpLocation(ip)
+  } catch (e) {
+    ipResult.value = '查询失败'
+  } finally {
+    ipLoading.value = false
+  }
+}
+
 onMounted(load)
 </script>
 
@@ -149,5 +191,23 @@ onMounted(load)
 .pager {
   margin-top: 16px;
   justify-content: flex-end;
+}
+.ip-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.ip-dialog-row {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+.ip-dialog-row .label {
+  flex-shrink: 0;
+  width: 70px;
+  color: #909399;
+}
+.muted {
+  color: #909399;
 }
 </style>

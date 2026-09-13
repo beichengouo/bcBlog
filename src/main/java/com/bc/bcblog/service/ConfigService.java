@@ -18,4 +18,22 @@ public interface ConfigService {
 
     /** 查询看板娘是否在前台显示。 */
     boolean isLive2dEnabled();
+
+    /** 查询百度 IP 定位 AK（仅后台使用，不对外暴露）。 */
+    String getIpLocationAk();
+
+    /** 保存百度 IP 定位 AK。 */
+    void setIpLocationAk(String ak);
+
+    /** 查询后台背景透明度（0.1 ~ 1.0）。 */
+    double getAdminBgOpacity();
+
+    /** 保存后台背景透明度。 */
+    void setAdminBgOpacity(double opacity);
+
+    /** 查询 ACG 随机封面接口 Token。 */
+    String getAcgCoverToken();
+
+    /** 保存 ACG 随机封面接口 Token。 */
+    void setAcgCoverToken(String token);
 }
