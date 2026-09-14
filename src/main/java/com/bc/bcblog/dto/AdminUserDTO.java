@@ -14,4 +14,6 @@ public class AdminUserDTO {
     private String role;
     private List<String> menus;
     private Integer status;
+    /** 是否有邀请码权限 */
+    private Integer canInvite;
 }

@@ -71,6 +71,27 @@
             <path d="M15 11h1a3 3 0 0 1 0 6h-1" />
           </svg>
         </router-link>
+
+        <!-- 用户入口 -->
+        <div class="user-entry">
+          <el-dropdown v-if="memberStore.isLogin" trigger="click" @command="onMemberCommand">
+            <span class="member-info">
+              <img v-if="memberStore.userInfo?.avatar" class="member-avatar" :src="memberStore.userInfo.avatar" alt="" />
+              <span v-else class="member-avatar placeholder">{{ (memberStore.userInfo?.nickname || memberStore.userInfo?.username || 'U').slice(0, 1) }}</span>
+              <span class="member-name">{{ memberStore.userInfo?.nickname || memberStore.userInfo?.username }}</span>
+            </span>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="center">用户中心</el-dropdown-item>
+                <el-dropdown-item command="logout" divided>退出登录</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
+          <template v-else>
+            <router-link class="user-link" to="/portal/login">登录</router-link>
+            <router-link class="user-link primary" to="/portal/login?tab=register">注册</router-link>
+          </template>
+        </div>
       </div>
     </header>
 
@@ -109,11 +130,13 @@
 <script setup>
 import { ref, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import { useThemeStore } from '@/store/theme'
 import { useSiteStore } from '@/store/site'
 import { applySiteMeta } from '@/utils/siteMeta'
 import { getSystemInfo } from '@/api/system'
 import { reportVisit } from '@/api/visit'
+import { useMemberStore } from '@/store/member'
 import BackgroundLayer from '@/components/portal/BackgroundLayer.vue'
 import ParticleCanvas from '@/components/portal/ParticleCanvas.vue'
 import ClickRipple from '@/components/portal/ClickRipple.vue'
@@ -128,6 +151,7 @@ const route = useRoute()
 const router = useRouter()
 const themeStore = useThemeStore()
 const siteStore = useSiteStore()
+const memberStore = useMemberStore()
 
 const keyword = ref(route.query.keyword || '')
 const scrolled = ref(false)
@@ -181,6 +205,16 @@ function toggleParticles() {
   showParticles.value = !showParticles.value
 }
 
+async function onMemberCommand(cmd) {
+  if (cmd === 'center') {
+    router.push('/portal/user')
+  } else if (cmd === 'logout') {
+    await memberStore.logout()
+    ElMessage.success('已退出登录')
+    router.push('/portal')
+  }
+}
+
 /** 把秒数格式化为“X天X小时X分X秒” */
 function formatUptime(seconds) {
   const s = Math.max(0, Math.floor(seconds || 0))
@@ -216,6 +250,7 @@ function updateFooterStatus() {
 onMounted(async () => {
   themeStore.apply()
   reportVisit().catch(() => {})
+  memberStore.fetchInfo().catch(() => {})
   const config = await siteStore.load()
   siteName.value = config.siteName || 'bcBlog'
   siteIcp.value = config.siteIcp || ''
@@ -423,6 +458,57 @@ onUnmounted(() => {
 .announcement-link {
   text-decoration: none;
 }
+.user-entry {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+.member-info {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  outline: none;
+}
+.member-avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid var(--border);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.member-avatar.placeholder {
+  color: #fff;
+  font-weight: 700;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+}
+.member-name {
+  color: var(--text);
+  font-size: 13px;
+  max-width: 90px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.user-link {
+  color: var(--text-muted);
+  text-decoration: none;
+  font-size: 13px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  transition: all 0.25s ease;
+}
+.user-link:hover {
+  color: var(--accent);
+}
+.user-link.primary {
+  color: #fff;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  box-shadow: var(--shadow);
+}
 .portal-footer {
   position: relative;
   z-index: 1;
@@ -497,6 +583,9 @@ onUnmounted(() => {
     width: 150px;
   }
   .portal-nav {
+    display: none;
+  }
+  .member-name {
     display: none;
   }
 }

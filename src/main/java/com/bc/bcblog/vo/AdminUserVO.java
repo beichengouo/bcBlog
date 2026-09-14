@@ -15,6 +15,12 @@ public class AdminUserVO {
     private String role;
     private List<String> menus;
     private Integer status;
+    private String email;
+    private Integer exp;
+    private Integer points;
+    private Integer level;
+    private Integer canInvite;
+    private Integer signDays;
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     private LocalDateTime createTime;
 }

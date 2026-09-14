@@ -7,6 +7,7 @@ import com.fasterxml.jackson.annotation.JsonFormat;
 import lombok.Data;
 
 import java.time.LocalDateTime;
+import java.time.LocalDate;
 
 @Data
 @TableName("sys_user")
@@ -20,6 +21,13 @@ public class SysUser {
     private Integer status;
     private String role;
     private String menus;
+    private String email;
+    private Integer exp;
+    private Integer points;
+    private Integer level;
+    private Integer canInvite;
+    private Integer signDays;
+    private LocalDate lastSignDate;
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     private LocalDateTime createTime;
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")

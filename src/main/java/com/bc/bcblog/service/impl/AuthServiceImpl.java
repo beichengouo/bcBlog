@@ -87,6 +87,10 @@ public class AuthServiceImpl implements AuthService {
             saveLoginLog(dto.getUsername(), ip, request.getHeader("User-Agent"), 0, "账号已禁用");
             throw new BusinessException("账号已禁用");
         }
+        if ("USER".equals(user.getRole())) {
+            saveLoginLog(dto.getUsername(), ip, request.getHeader("User-Agent"), 0, "普通用户禁止后台登录");
+            throw new BusinessException("普通用户请从前台登录");
+        }
 
         failCountMap.remove(dto.getUsername());
         lockMap.remove(dto.getUsername());

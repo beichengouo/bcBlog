@@ -47,6 +47,27 @@ export async function copyText(text) {
   textarea.remove()
 }
 
+/** 表情 token，评论里用 [[emoji:图片地址]] 存储，渲染时替换为图片。 */
+export function emojiToken(url) {
+  return `[[emoji:${url}]]`
+}
+
+/** 安全渲染带表情的纯文本内容。 */
+export function renderEmojiContent(text) {
+  if (!text) return ''
+  const escaped = String(text)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+  return escaped
+    .replace(/\[\[emoji:([^\]]+)\]\]/g, (match, url) => {
+      const safe = url.replace(/"/g, '&quot;')
+      return `<img src="${safe}" class="comment-emoji" alt="emoji" />`
+    })
+    .replace(/\n/g, '<br/>')
+}
+
 /**
  * 给富文本正文做增强处理：
  * 1. 给图片增加缩放光标，配合灯箱使用

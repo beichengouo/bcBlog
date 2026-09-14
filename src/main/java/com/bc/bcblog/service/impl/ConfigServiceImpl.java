@@ -46,6 +46,18 @@ public class ConfigServiceImpl implements ConfigService {
     private static final String KEY_ACG_COVER_TOKEN = "acg_cover_token";
     private static final String KEY_HOME_CAROUSEL_ENABLED = "home_carousel_enabled";
     private static final String KEY_HOME_CAROUSEL_COUNT = "home_carousel_count";
+    private static final String KEY_COMMENT_SYSTEM = "comment_system";
+    private static final String KEY_REGISTER_INVITE_REQUIRED = "register_invite_required";
+    private static final String KEY_REGISTER_EMAIL_VERIFY = "register_email_verify";
+    private static final String KEY_SIGN_EXP = "sign_exp";
+    private static final String KEY_COMMENT_EXP = "comment_exp";
+    private static final String KEY_COMMENT_EXP_LIMIT = "comment_exp_limit";
+    private static final String KEY_CLEANUP_ENABLED = "cleanup_enabled";
+    private static final String KEY_CLEANUP_TIME = "cleanup_time";
+    private static final String KEY_CLEANUP_LOGIN_DAYS = "cleanup_login_log_days";
+    private static final String KEY_CLEANUP_VISIT_DAYS = "cleanup_visit_stat_days";
+    private static final String KEY_CLEANUP_SIGN_DAYS = "cleanup_sign_log_days";
+    private static final String KEY_CLEANUP_POINT_DAYS = "cleanup_point_log_days";
 
     private final SysConfigMapper configMapper;
 
@@ -67,6 +79,18 @@ public class ConfigServiceImpl implements ConfigService {
         vo.setLive2dEnabled("0".equals(map.get(KEY_LIVE2D_ENABLED)) ? 0 : 1);
         vo.setHomeCarouselEnabled("0".equals(map.get(KEY_HOME_CAROUSEL_ENABLED)) ? 0 : 1);
         vo.setHomeCarouselCount(parseCarouselCount(map.get(KEY_HOME_CAROUSEL_COUNT)));
+        vo.setCommentSystem(map.getOrDefault(KEY_COMMENT_SYSTEM, "gitalk"));
+        vo.setRegisterInviteRequired("1".equals(map.get(KEY_REGISTER_INVITE_REQUIRED)) ? 1 : 0);
+        vo.setRegisterEmailVerify("0".equals(map.get(KEY_REGISTER_EMAIL_VERIFY)) ? 0 : 1);
+        vo.setSignExp(parseInt(map.get(KEY_SIGN_EXP), 5));
+        vo.setCommentExp(parseInt(map.get(KEY_COMMENT_EXP), 3));
+        vo.setCommentExpLimit(parseInt(map.get(KEY_COMMENT_EXP_LIMIT), 3));
+        vo.setCleanupEnabled("0".equals(map.get(KEY_CLEANUP_ENABLED)) ? 0 : 1);
+        vo.setCleanupTime(map.getOrDefault(KEY_CLEANUP_TIME, "03:30"));
+        vo.setCleanupLoginLogDays(parseInt(map.get(KEY_CLEANUP_LOGIN_DAYS), 7));
+        vo.setCleanupVisitStatDays(parseInt(map.get(KEY_CLEANUP_VISIT_DAYS), 30));
+        vo.setCleanupSignLogDays(parseInt(map.get(KEY_CLEANUP_SIGN_DAYS), 30));
+        vo.setCleanupPointLogDays(parseInt(map.get(KEY_CLEANUP_POINT_DAYS), 30));
         return vo;
     }
 
@@ -93,6 +117,53 @@ public class ConfigServiceImpl implements ConfigService {
         }
         if (vo.getHomeCarouselCount() != null) {
             upsert(KEY_HOME_CAROUSEL_COUNT, String.valueOf(parseCarouselCount(String.valueOf(vo.getHomeCarouselCount()))));
+        }
+        if (vo.getCommentSystem() != null) {
+            upsert(KEY_COMMENT_SYSTEM, "native".equals(vo.getCommentSystem()) ? "native" : "gitalk");
+        }
+        if (vo.getRegisterInviteRequired() != null) {
+            upsert(KEY_REGISTER_INVITE_REQUIRED, vo.getRegisterInviteRequired() == 1 ? "1" : "0");
+        }
+        if (vo.getRegisterEmailVerify() != null) {
+            upsert(KEY_REGISTER_EMAIL_VERIFY, vo.getRegisterEmailVerify() == 1 ? "1" : "0");
+        }
+        if (vo.getSignExp() != null) {
+            upsert(KEY_SIGN_EXP, String.valueOf(vo.getSignExp()));
+        }
+        if (vo.getCommentExp() != null) {
+            upsert(KEY_COMMENT_EXP, String.valueOf(vo.getCommentExp()));
+        }
+        if (vo.getCommentExpLimit() != null) {
+            upsert(KEY_COMMENT_EXP_LIMIT, String.valueOf(vo.getCommentExpLimit()));
+        }
+        if (vo.getCleanupEnabled() != null) {
+            upsert(KEY_CLEANUP_ENABLED, vo.getCleanupEnabled() == 1 ? "1" : "0");
+        }
+        if (vo.getCleanupTime() != null) {
+            upsert(KEY_CLEANUP_TIME, vo.getCleanupTime().trim());
+        }
+        if (vo.getCleanupLoginLogDays() != null) {
+            upsert(KEY_CLEANUP_LOGIN_DAYS, String.valueOf(vo.getCleanupLoginLogDays()));
+        }
+        if (vo.getCleanupVisitStatDays() != null) {
+            upsert(KEY_CLEANUP_VISIT_DAYS, String.valueOf(vo.getCleanupVisitStatDays()));
+        }
+        if (vo.getCleanupSignLogDays() != null) {
+            upsert(KEY_CLEANUP_SIGN_DAYS, String.valueOf(vo.getCleanupSignLogDays()));
+        }
+        if (vo.getCleanupPointLogDays() != null) {
+            upsert(KEY_CLEANUP_POINT_DAYS, String.valueOf(vo.getCleanupPointLogDays()));
+        }
+    }
+
+    private int parseInt(String value, int defaultValue) {
+        if (value == null || value.trim().isEmpty()) {
+            return defaultValue;
+        }
+        try {
+            return Integer.parseInt(value.trim());
+        } catch (NumberFormatException e) {
+            return defaultValue;
         }
     }
 
@@ -219,6 +290,17 @@ public class ConfigServiceImpl implements ConfigService {
     @Override
     public void setAcgCoverToken(String token) {
         upsert(KEY_ACG_COVER_TOKEN, token == null ? "" : token.trim());
+    }
+
+    @Override
+    public String getConfigValue(String key, String defaultValue) {
+        String value = loadMap().get(key);
+        return value == null || value.trim().isEmpty() ? defaultValue : value;
+    }
+
+    @Override
+    public void setConfigValue(String key, String value) {
+        upsert(key, value);
     }
 
     /** 删除当前设置中已上传的 Logo 文件，默认头像不删除。 */

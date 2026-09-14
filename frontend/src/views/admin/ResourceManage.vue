@@ -11,6 +11,13 @@
       <el-table-column prop="id" label="ID" width="70" />
       <el-table-column prop="title" label="资源名称" min-width="160" />
       <el-table-column prop="description" label="说明" min-width="200" show-overflow-tooltip />
+      <el-table-column label="封面" width="90">
+        <template #default="{ row }">
+          <img v-if="row.cover" class="cover-thumb" :src="row.cover" alt="" />
+          <span v-else class="muted">—</span>
+        </template>
+      </el-table-column>
+      <el-table-column prop="points" label="所需积分" width="100" />
       <el-table-column prop="url" label="链接" min-width="220" show-overflow-tooltip />
       <el-table-column prop="password" label="密码" width="120" />
       <el-table-column prop="createTime" label="创建时间" width="170" />
@@ -29,6 +36,26 @@
         </el-form-item>
         <el-form-item label="说明">
           <el-input v-model="form.description" type="textarea" :rows="3" placeholder="资源简单说明" maxlength="500" />
+        </el-form-item>
+        <el-form-item label="封面">
+          <el-upload
+            :action="'/api/admin/upload/image'"
+            :headers="uploadHeaders"
+            :show-file-list="false"
+            accept="image/*"
+            :on-success="onCoverSuccess"
+            :on-error="onCoverError"
+          >
+            <img v-if="form.cover" class="cover-preview" :src="form.cover" alt="" />
+            <el-button v-else>上传封面</el-button>
+          </el-upload>
+        </el-form-item>
+        <el-form-item label="所需积分">
+          <el-input-number v-model="form.points" :min="0" :max="100000" />
+          <span class="tip">前往资源时扣除的积分，0 表示免费</span>
+        </el-form-item>
+        <el-form-item label="资源详情">
+          <el-input v-model="form.content" type="textarea" :rows="8" placeholder="资源详情内容，支持 HTML，前台按文章样式展示" />
         </el-form-item>
         <el-form-item label="链接">
           <el-input v-model="form.url" placeholder="如：https://pan.baidu.com/s/xxxx" maxlength="500" />
@@ -54,7 +81,8 @@ const list = ref([])
 const loading = ref(false)
 const saving = ref(false)
 const dialogVisible = ref(false)
-const form = reactive({ id: null, title: '', description: '', url: '', password: '' })
+const uploadHeaders = { Authorization: localStorage.getItem('token') || '' }
+const form = reactive({ id: null, title: '', description: '', cover: '', points: 1, content: '', url: '', password: '' })
 
 async function load() {
   loading.value = true
@@ -69,9 +97,25 @@ function openEdit(row) {
   form.id = row ? row.id : null
   form.title = row ? row.title : ''
   form.description = row ? row.description || '' : ''
+  form.cover = row ? row.cover || '' : ''
+  form.points = row && row.points != null ? row.points : 1
+  form.content = row ? row.content || '' : ''
   form.url = row ? row.url : ''
   form.password = row ? row.password || '' : ''
   dialogVisible.value = true
+}
+
+function onCoverSuccess(res) {
+  if (res && res.code === 200 && res.data) {
+    form.cover = res.data
+    ElMessage.success('封面上传成功')
+  } else {
+    ElMessage.error((res && res.msg) || '封面上传失败')
+  }
+}
+
+function onCoverError() {
+  ElMessage.error('封面上传失败')
 }
 
 async function onSave() {
@@ -115,5 +159,25 @@ onMounted(load)
   justify-content: space-between;
   gap: 8px;
   flex-wrap: wrap;
+}
+.cover-thumb {
+  width: 56px;
+  height: 36px;
+  object-fit: cover;
+  border-radius: 6px;
+  display: block;
+}
+.cover-preview {
+  max-height: 100px;
+  border-radius: 8px;
+  display: block;
+}
+.tip {
+  margin-left: 10px;
+  color: #909399;
+  font-size: 12px;
+}
+.muted {
+  color: #909399;
 }
 </style>

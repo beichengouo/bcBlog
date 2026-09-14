@@ -47,6 +47,10 @@ public class DataInitializer implements CommandLineRunner {
         user.setNickname("管理员");
         user.setStatus(1);
         user.setRole("SUPER");
+        user.setExp(0);
+        user.setLevel(1);
+        user.setCanInvite(1);
+        user.setSignDays(0);
         user.setCreateTime(LocalDateTime.now());
         user.setUpdateTime(LocalDateTime.now());
         sysUserMapper.insert(user);

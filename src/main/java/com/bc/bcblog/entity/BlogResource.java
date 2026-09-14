@@ -16,6 +16,11 @@ public class BlogResource {
     private Long id;
     private String title;
     private String description;
+    private String cover;
+    /** 前往资源所需积分 */
+    private Integer points;
+    /** 资源详情内容（HTML） */
+    private String content;
     private String url;
     /** 网盘提取密码，可为空 */
     private String password;

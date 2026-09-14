@@ -48,4 +48,10 @@ public interface ConfigService {
 
     /** 保存高德 IP 定位 Key。 */
     void setGaodeIpKey(String key);
+
+    /** 通用配置读取，不存在时返回默认值。 */
+    String getConfigValue(String key, String defaultValue);
+
+    /** 通用配置写入。 */
+    void setConfigValue(String key, String value);
 }

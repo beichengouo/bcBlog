@@ -19,9 +19,13 @@ public class BlogComment {
     private Long id;
     private Long articleId;
     private Long parentId;
+    private Long userId;
     private String nickname;
     private String email;
     private String content;
+    private String avatar;
+    private Integer level;
+    private String levelName;
     private Integer status;
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     private LocalDateTime createTime;

@@ -9,3 +9,8 @@ export function getSystemInfo() {
 export function getSystemMonitor() {
   return request.get('/admin/system/monitor')
 }
+
+// 后台：立即执行一次数据清理
+export function runCleanup() {
+  return request.post('/admin/system/cleanup')
+}

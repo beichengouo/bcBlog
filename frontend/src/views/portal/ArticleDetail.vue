@@ -26,7 +26,8 @@
         <div v-else class="nearby-item right disabled">下一篇：无</div>
       </div>
 
-      <GitalkComments :title="article.title" />
+      <GitalkComments v-if="commentSystem === 'gitalk'" :title="article.title" />
+      <NativeComments v-else :article-id="route.params.id" />
     </template>
     <el-empty v-if="!loading && !article" description="文章不存在" />
 
@@ -54,8 +55,10 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { getPortalArticle } from '@/api/article'
 import { listComments, saveComment } from '@/api/comment'
+import { getPortalConfig } from '@/api/config'
 import { decorateContent } from '@/utils/content'
 import GitalkComments from '@/components/portal/GitalkComments.vue'
+import NativeComments from '@/components/portal/NativeComments.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -64,6 +67,7 @@ const article = ref(null)
 const prev = ref(null)
 const next = ref(null)
 const loading = ref(false)
+const commentSystem = ref('gitalk')
 
 const comments = ref([])
 const commentTotal = ref(0)
@@ -178,6 +182,14 @@ function go(id) {
 // 上一篇/下一篇切换时，同一组件复用，需要监听 id 变化重新加载
 watch(() => route.params.id, load)
 onMounted(load)
+onMounted(async () => {
+  try {
+    const config = await getPortalConfig()
+    commentSystem.value = config.commentSystem || 'gitalk'
+  } catch (e) {
+    commentSystem.value = 'gitalk'
+  }
+})
 onMounted(() => window.addEventListener('keydown', onKeydown))
 onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 </script>

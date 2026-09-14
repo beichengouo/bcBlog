@@ -86,6 +86,10 @@ CREATE TABLE `blog_comment` (
   `content` varchar(1000) NOT NULL COMMENT '内容',
   `status` tinyint NOT NULL DEFAULT '0' COMMENT '0待审核 1通过 2拒绝',
   `create_time` datetime DEFAULT CURRENT_TIMESTAMP,
+  `user_id` bigint DEFAULT NULL COMMENT '登录用户ID',
+  `avatar` varchar(500) DEFAULT NULL COMMENT '头像快照',
+  `level` int DEFAULT NULL COMMENT '等级快照',
+  `level_name` varchar(50) DEFAULT NULL COMMENT '等级名称快照',
   PRIMARY KEY (`id`),
   KEY `idx_article` (`article_id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='评论表';
@@ -107,11 +111,14 @@ CREATE TABLE `blog_resource` (
   `id` bigint NOT NULL AUTO_INCREMENT,
   `title` varchar(200) NOT NULL COMMENT '璧勬簮鍚嶇О',
   `description` varchar(500) DEFAULT NULL COMMENT '璧勬簮璇存槑',
+  `cover` varchar(500) DEFAULT NULL COMMENT '封面图',
+  `points` int NOT NULL DEFAULT '1' COMMENT '前往资源所需积分',
+  `content` text COMMENT '资源详情内容（HTML）',
   `url` varchar(500) NOT NULL COMMENT '璧勬簮閾炬帴',
   `password` varchar(100) DEFAULT NULL COMMENT '鎻愬彇瀵嗙爜',
   `create_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '鍒涘缓鏃堕棿',
   PRIMARY KEY (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='鏅哄簱璧勬簮';
+) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='鏅哄簱璧勬簮';
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
@@ -184,7 +191,68 @@ CREATE TABLE `sys_config` (
   `remark` varchar(200) DEFAULT NULL COMMENT '备注',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_key` (`config_key`)
-) ENGINE=InnoDB AUTO_INCREMENT=20 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='系统配置表';
+) ENGINE=InnoDB AUTO_INCREMENT=35 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='系统配置表';
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `sys_email_template` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `scenario` varchar(50) NOT NULL COMMENT '场景编码，如 register_code',
+  `name` varchar(100) NOT NULL COMMENT '模板名称',
+  `subject` varchar(200) NOT NULL COMMENT '邮件主题',
+  `background_image` varchar(500) DEFAULT NULL COMMENT '背景图片地址',
+  `overlay_opacity` decimal(3,2) NOT NULL DEFAULT '0.85' COMMENT '内容卡片背景透明度 0.1~1',
+  `content_html` text COMMENT '正文 HTML，支持 {{变量}}',
+  `variables` varchar(500) DEFAULT NULL COMMENT '可用变量说明',
+  `enabled` tinyint NOT NULL DEFAULT '1' COMMENT '是否启用',
+  `active` tinyint NOT NULL DEFAULT '0' COMMENT '是否为该场景当前启用模板',
+  `create_time` datetime DEFAULT CURRENT_TIMESTAMP,
+  `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='邮件模板';
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `sys_emoji` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `pack` varchar(100) DEFAULT NULL COMMENT '表情包名称',
+  `name` varchar(100) DEFAULT NULL COMMENT '表情名称',
+  `url` varchar(500) NOT NULL COMMENT '表情图片地址',
+  `sort_order` int NOT NULL DEFAULT '0' COMMENT '排序',
+  `enabled` tinyint NOT NULL DEFAULT '1' COMMENT '是否启用',
+  `create_time` datetime DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_pack` (`pack`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='表情包';
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `sys_invite_code` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `code` varchar(50) NOT NULL COMMENT '邀请码',
+  `creator_id` bigint NOT NULL COMMENT '创建人ID',
+  `creator_name` varchar(100) DEFAULT NULL COMMENT '创建人昵称',
+  `use_count` int NOT NULL DEFAULT '0' COMMENT '使用次数',
+  `last_used_at` datetime DEFAULT NULL COMMENT '最后使用时间',
+  `create_time` datetime DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_code` (`code`),
+  UNIQUE KEY `uk_creator` (`creator_id`)
+) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='邀请码';
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `sys_level` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `level` int NOT NULL COMMENT '等级',
+  `name` varchar(50) NOT NULL COMMENT '等级名称',
+  `exp_required` int NOT NULL COMMENT '达到该等级所需经验',
+  `icon` varchar(100) DEFAULT NULL COMMENT '图标',
+  `color` varchar(20) DEFAULT NULL COMMENT '颜色',
+  `create_time` datetime DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_level` (`level`)
+) ENGINE=InnoDB AUTO_INCREMENT=11 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='等级配置';
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
@@ -198,7 +266,45 @@ CREATE TABLE `sys_login_log` (
   `create_time` datetime DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   KEY `idx_username` (`username`)
-) ENGINE=InnoDB AUTO_INCREMENT=29 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='登录日志表';
+) ENGINE=InnoDB AUTO_INCREMENT=38 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='登录日志表';
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `sys_point_log` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `user_id` bigint NOT NULL COMMENT '用户ID',
+  `type` varchar(50) NOT NULL COMMENT '类型，如 sign、comment、admin',
+  `points` int NOT NULL COMMENT '本次积分变化，可为负',
+  `balance` int NOT NULL COMMENT '变化后余额',
+  `reason` varchar(200) DEFAULT NULL COMMENT '说明',
+  `create_time` datetime DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_user_id` (`user_id`),
+  KEY `idx_create_time` (`create_time`)
+) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='积分流水';
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `sys_resource_unlock` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `user_id` bigint NOT NULL COMMENT '用户ID',
+  `resource_id` bigint NOT NULL COMMENT '资源ID',
+  `create_time` datetime DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_user_resource` (`user_id`,`resource_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='资源解锁记录';
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `sys_sign_log` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `user_id` bigint NOT NULL COMMENT '用户ID',
+  `sign_date` date NOT NULL COMMENT '签到日期',
+  `exp` int NOT NULL DEFAULT '0' COMMENT '获得经验',
+  `create_time` datetime DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_user_date` (`user_id`,`sign_date`)
+) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='签到记录';
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
@@ -213,9 +319,17 @@ CREATE TABLE `sys_user` (
   `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   `role` varchar(20) NOT NULL DEFAULT 'ADMIN1',
   `menus` varchar(500) DEFAULT NULL,
+  `email` varchar(100) DEFAULT NULL COMMENT '邮箱',
+  `exp` int NOT NULL DEFAULT '0' COMMENT '经验值',
+  `points` int NOT NULL DEFAULT '0' COMMENT '积分',
+  `level` int NOT NULL DEFAULT '1' COMMENT '等级',
+  `can_invite` tinyint NOT NULL DEFAULT '0' COMMENT '是否有邀请码权限',
+  `sign_days` int NOT NULL DEFAULT '0' COMMENT '累计签到天数',
+  `last_sign_date` date DEFAULT NULL COMMENT '最后签到日期',
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_username` (`username`)
-) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='管理员表';
+  UNIQUE KEY `uk_username` (`username`),
+  UNIQUE KEY `uk_email` (`email`)
+) ENGINE=InnoDB AUTO_INCREMENT=7 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='管理员表';
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
@@ -225,7 +339,7 @@ CREATE TABLE `sys_visit_stat` (
   `pv` bigint NOT NULL DEFAULT '0' COMMENT '褰撴棩璁块棶閲',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_stat_date` (`stat_date`)
-) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='姣忔棩璁块棶閲忕粺璁';
+) ENGINE=InnoDB AUTO_INCREMENT=75 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='姣忔棩璁块棶閲忕粺璁';
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
 

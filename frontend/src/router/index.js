@@ -12,6 +12,9 @@ const routes = [
       { path: 'article/:id', component: () => import('@/views/portal/ArticleDetail.vue') },
       { path: 'photos', component: () => import('@/views/portal/Photos.vue') },
       { path: 'resources', component: () => import('@/views/portal/Resources.vue') },
+      { path: 'resources/:id', component: () => import('@/views/portal/ResourceDetail.vue') },
+      { path: 'login', component: () => import('@/views/portal/UserAuth.vue') },
+      { path: 'user', component: () => import('@/views/portal/UserCenter.vue') },
       { path: 'announcements', component: () => import('@/views/portal/Announcements.vue') }
     ]
   },
@@ -35,12 +38,18 @@ const routes = [
       { path: 'background', component: () => import('@/views/admin/BackgroundManage.vue'), meta: { title: '背景管理', menu: 'background' } },
       { path: 'ai', component: () => import('@/views/admin/AiProvider.vue'), meta: { title: 'AI 服务商', menu: 'ai' } },
       { path: 'third', component: () => import('@/views/admin/ApiThird.vue'), meta: { title: '第三方接口', menu: 'third' } },
+      { path: 'email', component: () => import('@/views/admin/EmailManage.vue'), meta: { title: '邮件管理', menu: 'email' } },
       { path: 'announcement', component: () => import('@/views/admin/AnnouncementManage.vue'), meta: { title: '站点公告', menu: 'announcement' } },
+      { path: 'emoji', component: () => import('@/views/admin/EmojiManage.vue'), meta: { title: '表情包管理', menu: 'emoji' } },
       { path: 'photos', component: () => import('@/views/admin/PhotoManage.vue'), meta: { title: '流光忆庭', menu: 'photos' } },
       { path: 'resources', component: () => import('@/views/admin/ResourceManage.vue'), meta: { title: '智库', menu: 'resources' } },
       { path: 'settings', component: () => import('@/views/admin/Settings.vue'), meta: { title: '系统设置', menu: 'settings' } },
       { path: 'admins', component: () => import('@/views/admin/AdminUserManage.vue'), meta: { title: '管理员管理', menu: 'admins', superOnly: true } },
-      { path: 'logs', component: () => import('@/views/admin/LoginLog.vue'), meta: { title: '登录日志', menu: 'logs' } }
+      { path: 'members', component: () => import('@/views/admin/MemberManage.vue'), meta: { title: '用户管理', menu: 'members', superOnly: true } },
+      { path: 'levels', component: () => import('@/views/admin/LevelManage.vue'), meta: { title: '等级配置', menu: 'levels' } },
+      { path: 'invites', component: () => import('@/views/admin/InviteManage.vue'), meta: { title: '邀请码管理', menu: 'invites', superOnly: true } },
+      { path: 'logs', component: () => import('@/views/admin/LoginLog.vue'), meta: { title: '登录日志', menu: 'logs' } },
+      { path: 'points', component: () => import('@/views/admin/PointManage.vue'), meta: { title: '积分管理', menu: 'points' } }
     ]
   }
 ]
@@ -65,6 +74,10 @@ router.beforeEach(async (to) => {
       }
     }
     const info = userStore.userInfo
+    // 普通用户不能进入后台
+    if (info.role === 'USER') {
+      return '/portal'
+    }
     // 仅超级管理员可访问的管理员管理页
     if (to.meta.superOnly && info.role !== 'SUPER') {
       return '/admin/dashboard'

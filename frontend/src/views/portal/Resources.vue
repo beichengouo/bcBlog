@@ -7,27 +7,20 @@
 
     <div v-if="loading" class="loading">加载中...</div>
     <el-empty v-else-if="!list.length" description="智库暂时还是空的" />
-    <div v-else class="resource-list">
-      <article v-for="r in list" :key="r.id" class="resource-card glass">
-        <div class="resource-main">
+    <div v-else class="resource-grid">
+      <article v-for="r in list" :key="r.id" class="resource-card glass" @click="goDetail(r)">
+        <div class="cover">
+          <img v-if="r.cover" :src="r.cover" alt="" />
+          <div v-else class="cover-fallback">资源</div>
+          <span v-if="r.unlocked" class="unlocked-tag">已解锁</span>
+        </div>
+        <div class="body">
           <h3 class="resource-title">{{ r.title }}</h3>
           <p v-if="r.description" class="resource-desc">{{ r.description }}</p>
-          <div class="resource-meta">
-            <span class="link-text" :title="r.url">{{ r.url }}</span>
+          <div class="meta">
+            <span class="points">{{ r.points > 0 ? r.points + ' 积分' : '免费' }}</span>
+            <span class="detail-link">查看详情 →</span>
           </div>
-        </div>
-        <div class="resource-actions">
-          <div v-if="r.password" class="password-box">
-            <span class="password-label">提取码</span>
-            <code class="password-value">{{ r.password }}</code>
-            <button class="copy-btn" @click="copy(r.password)">复制</button>
-          </div>
-          <a class="go-btn" :href="normalizeUrl(r.url)" target="_blank" rel="noopener noreferrer">
-            前往资源
-            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M7 17 17 7M8 7h9v9" />
-            </svg>
-          </a>
         </div>
       </article>
     </div>
@@ -36,10 +29,10 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
+import { useRouter } from 'vue-router'
 import { portalResourceList } from '@/api/resource'
-import { copyText } from '@/utils/content'
 
+const router = useRouter()
 const list = ref([])
 const loading = ref(false)
 
@@ -52,18 +45,8 @@ async function load() {
   }
 }
 
-function normalizeUrl(url) {
-  if (!url) return '#'
-  return /^https?:\/\//i.test(url) ? url : `https://${url}`
-}
-
-async function copy(text) {
-  try {
-    await copyText(text)
-    ElMessage.success('已复制提取码')
-  } catch (e) {
-    ElMessage.warning('复制失败，请手动复制')
-  }
+function goDetail(resource) {
+  router.push(`/portal/resources/${resource.id}`)
 }
 
 onMounted(load)
@@ -71,7 +54,7 @@ onMounted(load)
 
 <style scoped>
 .resources-page {
-  max-width: 980px;
+  max-width: 1180px;
   margin: 0 auto;
   padding: calc(var(--header-height) + 28px) 20px 40px;
 }
@@ -97,105 +80,85 @@ onMounted(load)
   color: var(--text-muted);
   padding: 60px 0;
 }
-.resource-list {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
+.resource-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 18px;
 }
 .resource-card {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 20px;
-  padding: 18px 22px;
   border-radius: var(--radius);
-  box-shadow: var(--shadow);
   border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  cursor: pointer;
   transition: transform 0.3s ease, box-shadow 0.3s ease;
 }
 .resource-card:hover {
-  transform: translateY(-3px);
+  transform: translateY(-4px);
   box-shadow: var(--shadow-hover);
 }
-.resource-main {
-  min-width: 0;
+.cover {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  background: var(--accent-soft);
+}
+.cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.cover-fallback {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent);
+  font-weight: 700;
+  background:
+    radial-gradient(circle at 20% 20%, var(--accent-soft), transparent 60%),
+    radial-gradient(circle at 80% 80%, var(--accent-soft), transparent 60%);
+}
+.unlocked-tag {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  color: #fff;
+  background: #67c23a;
+}
+.body {
+  padding: 14px 16px;
 }
 .resource-title {
-  margin: 0 0 6px;
-  font-size: 18px;
+  margin: 0 0 8px;
+  font-size: 17px;
   color: var(--text-strong);
 }
 .resource-desc {
-  margin: 0 0 8px;
+  margin: 0 0 12px;
   color: var(--text-muted);
   font-size: 14px;
   line-height: 1.7;
-}
-.resource-meta {
-  font-size: 12px;
-  color: var(--text-muted);
-}
-.link-text {
-  display: inline-block;
-  max-width: 520px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  vertical-align: bottom;
 }
-.resource-actions {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 10px;
-  flex-shrink: 0;
-}
-.password-box {
+.meta {
   display: flex;
   align-items: center;
-  gap: 6px;
+  justify-content: space-between;
   font-size: 13px;
+}
+.points {
+  color: var(--accent);
+  font-weight: 600;
+}
+.detail-link {
   color: var(--text-muted);
-}
-.password-value {
-  padding: 2px 8px;
-  border-radius: 6px;
-  background: var(--accent-soft);
-  color: var(--accent);
-}
-.copy-btn {
-  border: none;
-  background: transparent;
-  color: var(--accent);
-  cursor: pointer;
-  font-size: 12px;
-}
-.go-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 8px 16px;
-  border-radius: 999px;
-  color: #fff;
-  background: linear-gradient(135deg, var(--accent), var(--accent-2));
-  text-decoration: none;
-  font-size: 13px;
-  box-shadow: var(--shadow);
-  transition: transform 0.2s ease;
-}
-.go-btn:hover {
-  transform: translateY(-2px);
-}
-@media (max-width: 640px) {
-  .resource-card {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-  .resource-actions {
-    align-items: flex-start;
-  }
-  .link-text {
-    max-width: 70vw;
-  }
 }
 </style>

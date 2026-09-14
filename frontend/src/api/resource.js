@@ -19,3 +19,13 @@ export function deleteResource(id) {
 export function portalResourceList() {
   return request.get('/portal/resource/list')
 }
+
+// 前台：资源详情
+export function portalResourceDetail(id) {
+  return request.get(`/portal/resource/${id}`)
+}
+
+// 前台：消耗积分解锁资源
+export function unlockResource(id) {
+  return request.post(`/portal/resource/${id}/unlock`)
+}

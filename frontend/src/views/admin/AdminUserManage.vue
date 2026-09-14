@@ -56,6 +56,9 @@
             <el-radio value="ADMIN2">二级管理员</el-radio>
           </el-radio-group>
         </el-form-item>
+        <el-form-item label="邀请码权限">
+          <el-switch v-model="form.canInvite" :active-value="1" :inactive-value="0" />
+        </el-form-item>
         <el-form-item label="菜单权限">
           <div class="menu-perm">
             <div v-for="group in menuGroups" :key="group.key" class="menu-group">
@@ -98,7 +101,7 @@ const list = ref([])
 const loading = ref(false)
 const saving = ref(false)
 const dialogVisible = ref(false)
-const form = reactive({ id: null, username: '', password: '', nickname: '', role: 'ADMIN1', menus: [] })
+const form = reactive({ id: null, username: '', password: '', nickname: '', role: 'ADMIN1', menus: [], canInvite: 0 })
 
 // 授权时展示一级菜单 + 二级菜单；二级菜单才是实际存储到后台的权限 key
 const menuGroups = adminMenus
@@ -171,6 +174,7 @@ function openRegister() {
   form.nickname = ''
   form.role = 'ADMIN1'
   form.menus = []
+  form.canInvite = 0
   dialogVisible.value = true
 }
 
@@ -181,6 +185,7 @@ function openEdit(row) {
   form.nickname = row.nickname
   form.role = row.role
   form.menus = [...(row.menus || [])]
+  form.canInvite = row.canInvite === 1 ? 1 : 0
   dialogVisible.value = true
 }
 
@@ -203,7 +208,8 @@ async function onSave() {
       password: form.password,
       nickname: form.nickname.trim(),
       role: form.role,
-      menus: form.menus
+      menus: form.menus,
+      canInvite: form.canInvite
     }
     if (form.id) {
       await updateAdmin(payload)

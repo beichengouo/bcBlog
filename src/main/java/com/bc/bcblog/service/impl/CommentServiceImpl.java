@@ -1,5 +1,6 @@
 package com.bc.bcblog.service.impl;
 
+import cn.dev33.satoken.stp.StpUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -10,9 +11,14 @@ import com.bc.bcblog.dto.CommentDTO;
 import com.bc.bcblog.dto.CommentStatusDTO;
 import com.bc.bcblog.entity.BlogArticle;
 import com.bc.bcblog.entity.BlogComment;
+import com.bc.bcblog.entity.SysLevel;
+import com.bc.bcblog.entity.SysUser;
 import com.bc.bcblog.mapper.BlogArticleMapper;
 import com.bc.bcblog.mapper.BlogCommentMapper;
+import com.bc.bcblog.mapper.SysUserMapper;
 import com.bc.bcblog.service.CommentService;
+import com.bc.bcblog.service.LevelService;
+import com.bc.bcblog.service.UserService;
 import com.bc.bcblog.vo.AdminCommentVO;
 import com.bc.bcblog.vo.CommentVO;
 import lombok.RequiredArgsConstructor;
@@ -26,7 +32,8 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
- * 评论管理实现：游客发表时自动过滤敏感词，前台只返回已通过评论，后台返回全量。
+ * 原生评论实现：未登录可以查看，发表评论必须登录；
+ * 发表成功后按规则给用户增加经验。
  */
 @Service
 @RequiredArgsConstructor
@@ -34,7 +41,10 @@ public class CommentServiceImpl implements CommentService {
 
     private final BlogCommentMapper commentMapper;
     private final BlogArticleMapper articleMapper;
+    private final SysUserMapper sysUserMapper;
     private final SensitiveWordFilter sensitiveWordFilter;
+    private final LevelService levelService;
+    private final UserService userService;
 
     @Override
     public PageResult<CommentVO> pageByArticle(Long articleId, long page, long size) {
@@ -49,6 +59,16 @@ public class CommentServiceImpl implements CommentService {
 
     @Override
     public void save(CommentDTO dto) {
+        Long userId;
+        try {
+            userId = StpUtil.getLoginIdAsLong();
+        } catch (Exception e) {
+            throw new BusinessException(401, "请先登录后再发表评论");
+        }
+        SysUser user = sysUserMapper.selectById(userId);
+        if (user == null) {
+            throw new BusinessException(401, "请先登录后再发表评论");
+        }
         if (dto.getArticleId() == null) {
             throw new BusinessException("缺少文章ID");
         }
@@ -56,36 +76,34 @@ public class CommentServiceImpl implements CommentService {
         if (article == null || article.getStatus() == null || article.getStatus() != 1) {
             throw new BusinessException("文章不存在");
         }
-
-        String nickname = dto.getNickname() == null ? "" : dto.getNickname().trim();
         String content = dto.getContent() == null ? "" : dto.getContent().trim();
-        if (nickname.isEmpty()) {
-            throw new BusinessException("昵称不能为空");
-        }
         if (content.isEmpty()) {
             throw new BusinessException("评论内容不能为空");
-        }
-        if (nickname.length() > 50) {
-            throw new BusinessException("昵称过长");
         }
         if (content.length() > 1000) {
             throw new BusinessException("评论内容过长");
         }
 
-        String email = dto.getEmail() == null ? null : dto.getEmail().trim();
-        if (email != null && !email.isEmpty() && !email.contains("@")) {
-            throw new BusinessException("邮箱格式不正确");
-        }
+        String nickname = user.getNickname() == null || user.getNickname().trim().isEmpty()
+                ? user.getUsername() : user.getNickname();
+        SysLevel level = levelService.levelOf(user.getExp() == null ? 0 : user.getExp());
 
         BlogComment c = new BlogComment();
         c.setArticleId(dto.getArticleId());
         c.setParentId(0L);
+        c.setUserId(userId);
         c.setNickname(sensitiveWordFilter.filter(nickname));
-        c.setEmail(email);
+        c.setEmail(user.getEmail());
+        c.setAvatar(user.getAvatar());
+        c.setLevel(level.getLevel());
+        c.setLevelName(level.getName());
         c.setContent(sensitiveWordFilter.filter(content));
         c.setStatus(1);
         c.setCreateTime(LocalDateTime.now());
         commentMapper.insert(c);
+
+        // 当日前三次评论获得经验
+        userService.addCommentExp(user);
     }
 
     @Override
@@ -132,7 +150,11 @@ public class CommentServiceImpl implements CommentService {
         CommentVO vo = new CommentVO();
         vo.setId(c.getId());
         vo.setArticleId(c.getArticleId());
+        vo.setUserId(c.getUserId());
         vo.setNickname(c.getNickname());
+        vo.setAvatar(c.getAvatar());
+        vo.setLevel(c.getLevel());
+        vo.setLevelName(c.getLevelName());
         vo.setContent(c.getContent());
         vo.setCreateTime(c.getCreateTime());
         return vo;

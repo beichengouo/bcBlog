@@ -70,6 +70,9 @@
       </el-form-item>
 
       <el-form-item label="正文">
+        <div class="editor-actions">
+          <EmojiPicker label="插入表情" @select="onEmojiSelect" />
+        </div>
         <div class="editor-wrap">
           <Toolbar class="editor-toolbar" :editor="editorRef" :default-config="toolbarConfig" mode="default" />
           <Editor
@@ -122,6 +125,7 @@ import { tagList, saveTag } from '@/api/tag'
 import { getArticleForEdit, saveArticle, updateArticle } from '@/api/article'
 import { aiProviderList, aiProviderModels, aiGenerateArticle } from '@/api/ai'
 import { randomAcgCover } from '@/api/acg'
+import EmojiPicker from '@/components/portal/EmojiPicker.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -181,6 +185,13 @@ const editorConfig = {
 
 function onEditorCreated(editor) {
   editorRef.value = editor
+}
+
+/** 插入表情图片到富文本 */
+function onEmojiSelect(emoji) {
+  if (editorRef.value) {
+    editorRef.value.dangerouslyInsertHtml(`<img src="${emoji.url}" style="width:24px;height:24px;vertical-align:middle" />`)
+  }
 }
 
 function onCoverSuccess(res) {
@@ -404,6 +415,11 @@ onBeforeUnmount(() => {
   border: 1px solid #dcdfe6;
   border-radius: 4px;
   overflow: hidden;
+}
+.editor-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 8px;
 }
 .editor-toolbar {
   border-bottom: 1px solid #dcdfe6;

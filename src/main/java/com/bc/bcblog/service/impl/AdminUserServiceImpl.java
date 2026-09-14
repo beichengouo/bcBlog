@@ -8,6 +8,7 @@ import com.bc.bcblog.dto.AdminUserDTO;
 import com.bc.bcblog.entity.SysUser;
 import com.bc.bcblog.mapper.SysUserMapper;
 import com.bc.bcblog.service.AdminUserService;
+import com.bc.bcblog.service.InviteCodeService;
 import com.bc.bcblog.vo.AdminUserVO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -25,11 +26,14 @@ import java.util.stream.Collectors;
 public class AdminUserServiceImpl implements AdminUserService {
 
     private final SysUserMapper sysUserMapper;
+    private final InviteCodeService inviteCodeService;
 
     @Override
     public List<AdminUserVO> list() {
         requireSuper();
-        return sysUserMapper.selectList(new LambdaQueryWrapper<SysUser>().orderByAsc(SysUser::getId))
+        return sysUserMapper.selectList(new LambdaQueryWrapper<SysUser>()
+                        .ne(SysUser::getRole, "USER")
+                        .orderByAsc(SysUser::getId))
                 .stream().map(this::toVO).collect(Collectors.toList());
     }
 
@@ -54,9 +58,16 @@ public class AdminUserServiceImpl implements AdminUserService {
         u.setRole(normalizeRole(dto.getRole()));
         u.setMenus(joinMenus(dto.getMenus()));
         u.setStatus(dto.getStatus() == null ? 1 : dto.getStatus());
+        u.setExp(0);
+        u.setLevel(1);
+        u.setSignDays(0);
+        u.setCanInvite(dto.getCanInvite() != null && dto.getCanInvite() == 1 ? 1 : 0);
         u.setCreateTime(LocalDateTime.now());
         u.setUpdateTime(LocalDateTime.now());
         sysUserMapper.insert(u);
+        if (u.getCanInvite() == 1) {
+            inviteCodeService.updatePermission(u.getId(), true);
+        }
     }
 
     @Override
@@ -86,6 +97,9 @@ public class AdminUserServiceImpl implements AdminUserService {
         if (dto.getStatus() != null) {
             u.setStatus(dto.getStatus());
         }
+        if (dto.getCanInvite() != null) {
+            u.setCanInvite(dto.getCanInvite() == 1 ? 1 : 0);
+        }
         if (dto.getPassword() != null && !dto.getPassword().trim().isEmpty()) {
             if (dto.getPassword().length() < 8) {
                 throw new BusinessException("密码长度至少 8 位");
@@ -94,6 +108,65 @@ public class AdminUserServiceImpl implements AdminUserService {
         }
         u.setUpdateTime(LocalDateTime.now());
         sysUserMapper.updateById(u);
+        if (dto.getCanInvite() != null) {
+            inviteCodeService.updatePermission(dto.getId(), dto.getCanInvite() == 1);
+        }
+    }
+
+    @Override
+    public List<AdminUserVO> memberList() {
+        requireSuper();
+        return sysUserMapper.selectList(new LambdaQueryWrapper<SysUser>()
+                        .eq(SysUser::getRole, "USER")
+                        .orderByDesc(SysUser::getCreateTime))
+                .stream().map(this::toVO).collect(Collectors.toList());
+    }
+
+    @Override
+    public void updateMember(AdminUserDTO dto) {
+        requireSuper();
+        if (dto.getId() == null) {
+            throw new BusinessException("缺少用户 ID");
+        }
+        SysUser target = sysUserMapper.selectById(dto.getId());
+        if (target == null || !"USER".equals(target.getRole())) {
+            throw new BusinessException("用户不存在");
+        }
+        SysUser u = new SysUser();
+        u.setId(dto.getId());
+        if (dto.getNickname() != null) {
+            u.setNickname(dto.getNickname().trim());
+        }
+        if (dto.getStatus() != null) {
+            u.setStatus(dto.getStatus());
+        }
+        if (dto.getCanInvite() != null) {
+            u.setCanInvite(dto.getCanInvite() == 1 ? 1 : 0);
+        }
+        if (dto.getPassword() != null && !dto.getPassword().trim().isEmpty()) {
+            if (dto.getPassword().length() < 8) {
+                throw new BusinessException("密码长度至少 8 位");
+            }
+            u.setPassword(BCrypt.hashpw(dto.getPassword()));
+        }
+        u.setUpdateTime(LocalDateTime.now());
+        sysUserMapper.updateById(u);
+        if (dto.getCanInvite() != null) {
+            inviteCodeService.updatePermission(dto.getId(), dto.getCanInvite() == 1);
+        }
+    }
+
+    @Override
+    public void deleteMember(Long id) {
+        requireSuper();
+        SysUser target = sysUserMapper.selectById(id);
+        if (target == null) {
+            return;
+        }
+        if (!"USER".equals(target.getRole())) {
+            throw new BusinessException("只能删除普通用户");
+        }
+        sysUserMapper.deleteById(id);
     }
 
     @Override
@@ -145,6 +218,12 @@ public class AdminUserServiceImpl implements AdminUserService {
         vo.setNickname(u.getNickname());
         vo.setRole(u.getRole());
         vo.setStatus(u.getStatus());
+        vo.setEmail(u.getEmail());
+        vo.setExp(u.getExp());
+        vo.setPoints(u.getPoints());
+        vo.setLevel(u.getLevel());
+        vo.setCanInvite(u.getCanInvite());
+        vo.setSignDays(u.getSignDays());
         if (u.getMenus() != null && !u.getMenus().trim().isEmpty()) {
             vo.setMenus(Arrays.asList(u.getMenus().split(",")));
         } else {

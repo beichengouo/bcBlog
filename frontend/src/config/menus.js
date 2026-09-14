@@ -21,6 +21,7 @@ export const adminMenus = [
     children: [
       { key: 'settings', path: '/admin/settings', title: '系统设置', icon: 'Setting' },
       { key: 'announcement', path: '/admin/announcement', title: '站点公告', icon: 'Bell' },
+      { key: 'emoji', path: '/admin/emoji', title: '表情包管理', icon: 'Star' },
       { key: 'photos', path: '/admin/photos', title: '流光忆庭', icon: 'PictureFilled' },
       { key: 'resources', path: '/admin/resources', title: '智库', icon: 'Collection' },
       { key: 'background', path: '/admin/background', title: '背景管理', icon: 'Picture' },
@@ -35,7 +36,8 @@ export const adminMenus = [
       { key: 'deepseek', path: '/admin/deepseek', title: 'DeepSeek 接口', icon: 'Wallet' },
       { key: 'ai', path: '/admin/ai', title: 'AI 服务商', icon: 'MagicStick' },
       { key: 'music', path: '/admin/music', title: '网易云音乐', icon: 'Headset' },
-      { key: 'third', path: '/admin/third', title: '第三方接口', icon: 'Link' }
+      { key: 'third', path: '/admin/third', title: '第三方接口', icon: 'Link' },
+      { key: 'email', path: '/admin/email', title: '邮件管理', icon: 'Message' }
     ]
   },
   {
@@ -44,7 +46,11 @@ export const adminMenus = [
     icon: 'Lock',
     children: [
       { key: 'logs', path: '/admin/logs', title: '登录日志', icon: 'List' },
-      { key: 'admins', path: '/admin/admins', title: '管理员管理', icon: 'UserFilled', superOnly: true }
+      { key: 'points', path: '/admin/points', title: '积分管理', icon: 'Coin' },
+      { key: 'admins', path: '/admin/admins', title: '管理员管理', icon: 'UserFilled', superOnly: true },
+      { key: 'members', path: '/admin/members', title: '用户管理', icon: 'User', superOnly: true },
+      { key: 'invites', path: '/admin/invites', title: '邀请码管理', icon: 'Ticket', superOnly: true },
+      { key: 'levels', path: '/admin/levels', title: '等级配置', icon: 'Medal' }
     ]
   }
 ]
