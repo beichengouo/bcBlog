@@ -18,6 +18,49 @@
       </div>
     </section>
 
+    <!-- 首页中段：最新文章轮播 + 音乐播放器 & 歌词 -->
+    <section v-if="showShowcase" id="showcase" class="showcase">
+      <div class="showcase-inner">
+        <div class="showcase-carousel">
+          <LatestPostsCarousel :count="carouselCount" />
+        </div>
+        <div class="showcase-player">
+          <HomeMusicPlayer />
+        </div>
+      </div>
+    </section>
+
+    <!-- 最近评论：来自 Gitalk（GitHub Issues） -->
+    <section v-if="recentComments.length" class="recent-comments">
+      <div class="rc-container glass">
+        <button class="rc-header" :class="{ open: commentsOpen }" @click="commentsOpen = !commentsOpen" :aria-expanded="commentsOpen">
+          <span class="rc-head-left">
+            <span class="rc-title">最近评论</span>
+            <span class="rc-badge">{{ recentComments.length }}</span>
+          </span>
+          <span class="rc-head-right">
+            <span class="rc-sub">Gitalk · GitHub</span>
+            <svg class="rc-arrow" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="m6 9 6 6 6-6" />
+            </svg>
+          </span>
+        </button>
+        <div class="rc-drop" :class="{ open: commentsOpen }">
+          <div v-for="c in recentComments" :key="c.id" class="rc-item" @click="goComment(c)">
+            <img class="rc-avatar" :src="c.avatar" alt="" loading="lazy" />
+            <div class="rc-item-content">
+              <div class="rc-meta">
+                <span class="rc-author">{{ c.author }}</span>
+                <span class="rc-time">{{ formatCommentTime(c.createdAt) }}</span>
+              </div>
+              <p class="rc-text">{{ c.body }}</p>
+              <div v-if="c.pageTitle" class="rc-page">评论于《{{ c.pageTitle }}》</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <div id="articles" class="container">
       <aside class="sidebar">
         <AnnouncementBoard />
@@ -86,9 +129,12 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { portalCategoryTree } from '@/api/category'
 import { portalTagList } from '@/api/tag'
+import { getRecentGitalkComments } from '@/api/gitalk'
 import { useSiteStore } from '@/store/site'
 import ArticleList from '@/components/portal/ArticleList.vue'
 import AnnouncementBoard from '@/components/portal/AnnouncementBoard.vue'
+import LatestPostsCarousel from '@/components/portal/LatestPostsCarousel.vue'
+import HomeMusicPlayer from '@/components/portal/HomeMusicPlayer.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -99,6 +145,10 @@ const tags = ref([])
 const catProps = { label: 'name', children: 'children' }
 const mode = ref('masonry')
 const siteName = ref('bcBlog')
+const showShowcase = ref(true)
+const carouselCount = ref(5)
+const recentComments = ref([])
+const commentsOpen = ref(false)
 
 const typedText = ref('')
 const phrases = ref([])
@@ -132,9 +182,26 @@ function clearFilter() {
   router.push({ path: '/portal' })
 }
 
+function formatCommentTime(iso) {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (isNaN(d.getTime())) return iso
+  const p = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
+}
+
+function goComment(c) {
+  if (c.pagePath && c.pagePath.startsWith('/')) {
+    router.push(c.pagePath)
+  } else if (c.htmlUrl) {
+    window.open(c.htmlUrl, '_blank')
+  }
+}
+
 // 点击向下箭头，直接平滑滚动到文章展示区
 function scrollToArticles() {
-  const el = document.getElementById('articles')
+  // 有首页中段时先滚到中段，没有时直接滚到文章列表
+  const el = document.getElementById('showcase') || document.getElementById('articles')
   if (!el) return
   const headerH = document.querySelector('.portal-header')?.offsetHeight || 64
   const targetY = el.getBoundingClientRect().top + window.scrollY - headerH - 20
@@ -201,6 +268,8 @@ onMounted(async () => {
   window.addEventListener('wheel', onWheel, { passive: false })
   const config = await siteStore.load()
   siteName.value = config.siteName || 'bcBlog'
+  showShowcase.value = config.homeCarouselEnabled !== 0
+  carouselCount.value = config.homeCarouselCount || 5
 
   const arr = []
   if (config.siteSlogan) arr.push(config.siteSlogan)
@@ -214,6 +283,11 @@ onMounted(async () => {
 
   categories.value = await portalCategoryTree()
   tags.value = await portalTagList()
+  try {
+    recentComments.value = await getRecentGitalkComments(10)
+  } catch (e) {
+    recentComments.value = []
+  }
 })
 
 onUnmounted(() => {
@@ -291,6 +365,159 @@ onUnmounted(() => {
 }
 
 /* 主内容 */
+.showcase {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 0 20px 24px;
+  scroll-margin-top: calc(var(--header-height) + 20px);
+}
+.showcase-inner {
+  display: grid;
+  grid-template-columns: 5fr 7fr;
+  gap: 20px;
+  align-items: stretch;
+}
+.showcase-carousel,
+.showcase-player {
+  min-width: 0;
+}
+/* 最近评论：单容器下拉展开 */
+.recent-comments {
+  max-width: 1180px;
+  margin: 0 auto 28px;
+  padding: 0 20px;
+}
+.rc-container {
+  border-radius: 18px;
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+.rc-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 16px 20px;
+  border: none;
+  background: transparent;
+  color: var(--text-strong);
+  cursor: pointer;
+  text-align: left;
+}
+.rc-head-left {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+.rc-title {
+  position: relative;
+  padding-left: 12px;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-strong);
+}
+.rc-title::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 4px;
+  height: 16px;
+  border-radius: 2px;
+  background: linear-gradient(var(--accent), var(--accent-2));
+}
+.rc-badge {
+  min-width: 22px;
+  height: 22px;
+  padding: 0 7px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  color: #fff;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+}
+.rc-head-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.rc-arrow {
+  transition: transform 0.35s ease;
+}
+.rc-header.open .rc-arrow {
+  transform: rotate(180deg);
+}
+.rc-drop {
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  transition: max-height 0.45s ease, opacity 0.35s ease;
+  border-top: 1px solid transparent;
+}
+.rc-drop.open {
+  max-height: 1200px;
+  opacity: 1;
+  border-top-color: var(--border);
+}
+.rc-item {
+  display: flex;
+  gap: 12px;
+  padding: 14px 20px;
+  cursor: pointer;
+  border-bottom: 1px dashed var(--border);
+  transition: background 0.25s ease;
+}
+.rc-item:last-child {
+  border-bottom: none;
+}
+.rc-item:hover {
+  background: var(--accent-soft);
+}
+.rc-avatar {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.rc-item-content {
+  min-width: 0;
+  flex: 1;
+}
+.rc-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+.rc-author {
+  font-weight: 600;
+  color: var(--text-strong);
+  font-size: 13px;
+}
+.rc-time {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.rc-text {
+  margin: 0;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.7;
+  word-break: break-word;
+}
+.rc-page {
+  margin-top: 4px;
+  color: var(--accent);
+  font-size: 12px;
+}
 .container {
   max-width: 1180px;
   margin: 0 auto;
@@ -397,6 +624,9 @@ onUnmounted(() => {
 }
 
 @media (max-width: 860px) {
+  .showcase-inner {
+    grid-template-columns: 1fr;
+  }
   .container {
     flex-direction: column;
   }

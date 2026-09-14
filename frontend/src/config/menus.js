@@ -20,6 +20,8 @@ export const adminMenus = [
     children: [
       { key: 'settings', path: '/admin/settings', title: '系统设置', icon: 'Setting' },
       { key: 'announcement', path: '/admin/announcement', title: '站点公告', icon: 'Bell' },
+      { key: 'photos', path: '/admin/photos', title: '流光忆庭', icon: 'PictureFilled' },
+      { key: 'resources', path: '/admin/resources', title: '智库', icon: 'Collection' },
       { key: 'background', path: '/admin/background', title: '背景管理', icon: 'Picture' },
       { key: 'live2d', path: '/admin/live2d', title: '看板娘管理', icon: 'User' }
     ]

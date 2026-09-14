@@ -32,6 +32,13 @@
       <el-form-item label="首页标语">
         <el-input v-model="form.siteSlogan" placeholder="首页标题下方轮播语，如：愿每一次点击都有温度" maxlength="100" />
       </el-form-item>
+      <el-form-item label="首页文章轮播">
+        <el-switch v-model="form.homeCarouselEnabled" :active-value="1" :inactive-value="0" active-text="显示" />
+      </el-form-item>
+      <el-form-item label="轮播文章数量">
+        <el-input-number v-model="form.homeCarouselCount" :min="1" :max="10" />
+        <span class="field-tip">范围 1 ~ 10，展示最新文章</span>
+      </el-form-item>
       <el-form-item>
         <el-button type="primary" :loading="saving" @click="onSave">保存</el-button>
       </el-form-item>
@@ -53,7 +60,9 @@ const form = reactive({
   siteIcp: '',
   siteDescription: '',
   siteKeywords: '',
-  siteSlogan: ''
+  siteSlogan: '',
+  homeCarouselEnabled: 1,
+  homeCarouselCount: 5
 })
 
 async function load() {
@@ -64,6 +73,8 @@ async function load() {
   form.siteDescription = data.siteDescription || ''
   form.siteKeywords = data.siteKeywords || ''
   form.siteSlogan = data.siteSlogan || ''
+  form.homeCarouselEnabled = data.homeCarouselEnabled === 0 ? 0 : 1
+  form.homeCarouselCount = data.homeCarouselCount || 5
 }
 
 async function onSave() {
@@ -131,6 +142,11 @@ onMounted(load)
   gap: 8px;
 }
 .logo-tip {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.field-tip {
+  margin-left: 10px;
   font-size: 12px;
   color: var(--text-muted);
 }

@@ -14,6 +14,25 @@
           <span class="brand-text">{{ siteName }}</span>
         </router-link>
 
+        <nav class="portal-nav">
+          <router-link to="/portal/photos" class="nav-pill">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="4" width="18" height="16" rx="3" />
+              <circle cx="9" cy="10" r="2" />
+              <path d="m21 16-4.5-4.5L9 19" />
+            </svg>
+            <span>流光忆庭</span>
+          </router-link>
+          <router-link to="/portal/resources" class="nav-pill">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5z" />
+              <path d="M4 5.5v15" />
+              <path d="M9 7h7M9 11h5" />
+            </svg>
+            <span>智库</span>
+          </router-link>
+        </nav>
+
         <form class="search" @submit.prevent="onSearch">
           <input v-model="keyword" placeholder="搜索文章..." aria-label="搜索" />
           <button type="submit">
@@ -62,8 +81,17 @@
     <footer class="portal-footer">
       <div class="footer-inner">
         <div class="footer-brand">{{ siteName }}</div>
+        <div class="footer-status">
+          <span class="status-item">
+            <span class="status-dot"></span>
+            系统已稳定运行 {{ uptimeText }}
+          </span>
+          <span class="status-item status-time">{{ nowText }}</span>
+        </div>
         <div class="footer-links">
           <span v-if="siteIcp" class="icp">{{ siteIcp }}</span>
+          <router-link class="footer-link" to="/portal/photos">流光忆庭</router-link>
+          <router-link class="footer-link" to="/portal/resources">智库</router-link>
           <span>Powered by bcBlog</span>
         </div>
       </div>
@@ -84,6 +112,8 @@ import { useRoute, useRouter } from 'vue-router'
 import { useThemeStore } from '@/store/theme'
 import { useSiteStore } from '@/store/site'
 import { applySiteMeta } from '@/utils/siteMeta'
+import { getSystemInfo } from '@/api/system'
+import { reportVisit } from '@/api/visit'
 import BackgroundLayer from '@/components/portal/BackgroundLayer.vue'
 import ParticleCanvas from '@/components/portal/ParticleCanvas.vue'
 import ClickRipple from '@/components/portal/ClickRipple.vue'
@@ -105,12 +135,25 @@ const siteName = ref('bcBlog')
 const siteIcp = ref('')
 const siteLogo = ref('')
 const showParticles = ref(true)
+const uptimeText = ref('--')
+const nowText = ref('')
+let footerTimer = 0
+let baseUptime = 0
+let uptimeFetchedAt = 0
 let particleTimer = 0
 
 watch(
   () => route.query.keyword,
   (val) => {
     keyword.value = val || ''
+  }
+)
+
+// 统计前台页面访问量（SPA 路由切换也会计数）
+watch(
+  () => route.path,
+  () => {
+    reportVisit().catch(() => {})
   }
 )
 
@@ -138,9 +181,41 @@ function toggleParticles() {
   showParticles.value = !showParticles.value
 }
 
+/** 把秒数格式化为“X天X小时X分X秒” */
+function formatUptime(seconds) {
+  const s = Math.max(0, Math.floor(seconds || 0))
+  const day = Math.floor(s / 86400)
+  const hour = Math.floor((s % 86400) / 3600)
+  const minute = Math.floor((s % 3600) / 60)
+  const second = s % 60
+  if (day > 0) return `${day} 天 ${hour} 小时 ${minute} 分`
+  if (hour > 0) return `${hour} 小时 ${minute} 分 ${second} 秒`
+  return `${minute} 分 ${second} 秒`
+}
+
+/** 每秒刷新底部运行时长和北京时间 */
+function updateFooterStatus() {
+  const now = new Date()
+  const parts = new Intl.DateTimeFormat('zh-CN', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  }).formatToParts(now)
+  const get = (type) => parts.find((p) => p.type === type)?.value || ''
+  nowText.value = `${get('year')}-${get('month')}-${get('day')} ${get('hour')}:${get('minute')}:${get('second')}`
+  const elapsed = (Date.now() - uptimeFetchedAt) / 1000
+  uptimeText.value = formatUptime(baseUptime + elapsed)
+}
+
 /** 公告显示/关闭时同步顶部偏移，避免遮挡正文。 */
 onMounted(async () => {
   themeStore.apply()
+  reportVisit().catch(() => {})
   const config = await siteStore.load()
   siteName.value = config.siteName || 'bcBlog'
   siteIcp.value = config.siteIcp || ''
@@ -148,6 +223,16 @@ onMounted(async () => {
   applySiteMeta(config)
   onScroll()
   window.addEventListener('scroll', onScroll, { passive: true })
+  try {
+    const info = await getSystemInfo()
+    baseUptime = info.uptimeSeconds || 0
+    uptimeFetchedAt = Date.now()
+  } catch (e) {
+    baseUptime = 0
+    uptimeFetchedAt = Date.now()
+  }
+  updateFooterStatus()
+  footerTimer = window.setInterval(updateFooterStatus, 1000)
   // 默认页面加载 5 秒后樱花特效慢慢淡出
   particleTimer = window.setTimeout(() => {
     showParticles.value = false
@@ -157,6 +242,7 @@ onMounted(async () => {
 onUnmounted(() => {
   window.removeEventListener('scroll', onScroll)
   clearTimeout(particleTimer)
+  clearInterval(footerTimer)
   document.documentElement.classList.remove('dark')
   document.documentElement.removeAttribute('data-theme')
 })
@@ -216,6 +302,66 @@ onUnmounted(() => {
   object-fit: cover;
   flex-shrink: 0;
   box-shadow: var(--shadow);
+}
+.portal-nav {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 999px;
+  background: var(--glass-bg);
+  border: 1px solid var(--border);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow: var(--shadow);
+  white-space: nowrap;
+}
+.portal-nav .nav-pill {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border-radius: 999px;
+  overflow: hidden;
+  color: var(--text-muted);
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  transition: color 0.3s ease, background 0.3s ease, box-shadow 0.3s ease, transform 0.3s ease;
+}
+.portal-nav .nav-pill svg {
+  flex-shrink: 0;
+  transition: transform 0.3s ease;
+}
+.portal-nav .nav-pill::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(120deg, transparent 0%, rgba(255, 255, 255, 0.38) 50%, transparent 100%);
+  transform: translateX(-130%);
+  transition: transform 0.6s ease;
+  pointer-events: none;
+}
+.portal-nav .nav-pill:hover {
+  color: var(--text-strong);
+  background: var(--accent-soft);
+  transform: translateY(-1px);
+}
+.portal-nav .nav-pill:hover::before {
+  transform: translateX(130%);
+}
+.portal-nav .nav-pill:hover svg {
+  transform: scale(1.12) rotate(-4deg);
+}
+.portal-nav .nav-pill.router-link-active {
+  color: #fff;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  box-shadow: 0 6px 18px var(--accent-soft), inset 0 0 0 1px rgba(255, 255, 255, 0.18);
+}
+.portal-nav .nav-pill.router-link-active svg {
+  transform: scale(1.08);
 }
 .search {
   margin-left: auto;
@@ -299,6 +445,29 @@ onUnmounted(() => {
   font-weight: 700;
   color: var(--text-strong);
 }
+.footer-status {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  color: var(--text-muted);
+  font-size: 13px;
+  flex-wrap: wrap;
+}
+.status-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #67c23a;
+  box-shadow: 0 0 0 4px rgba(103, 194, 58, 0.15);
+}
+.status-time {
+  font-variant-numeric: tabular-nums;
+}
 .footer-links {
   display: flex;
   align-items: center;
@@ -308,6 +477,13 @@ onUnmounted(() => {
 }
 .icp {
   color: var(--text-muted);
+}
+.footer-link {
+  color: var(--text-muted);
+  text-decoration: none;
+}
+.footer-link:hover {
+  color: var(--accent);
 }
 @media (max-width: 640px) {
   .header-inner {
@@ -319,6 +495,9 @@ onUnmounted(() => {
   }
   .search {
     width: 150px;
+  }
+  .portal-nav {
+    display: none;
   }
 }
 </style>

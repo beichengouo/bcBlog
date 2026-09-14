@@ -7,6 +7,10 @@
         <span>{{ article.createTime }}</span>
         <span>浏览 {{ article.viewCount || 0 }}</span>
       </div>
+      <!-- 文章封面 -->
+      <div v-if="article.cover" class="article-cover" @click="onCoverClick">
+        <img :src="article.cover" alt="文章封面" />
+      </div>
       <!-- 正文为管理员使用富文本编辑器生成，属可信内容，因此直接渲染 HTML -->
       <div ref="contentEl" class="content rich-text" v-html="article.content" @click="onContentClick"></div>
       <div class="nearby">
@@ -22,46 +26,7 @@
         <div v-else class="nearby-item right disabled">下一篇：无</div>
       </div>
 
-      <div class="comments">
-        <h2 class="comments-title">评论（{{ commentTotal }}）</h2>
-        <el-form :model="commentForm" class="comment-form">
-          <el-row :gutter="12">
-            <el-col :xs="24" :sm="12">
-              <el-input v-model="commentForm.nickname" placeholder="昵称（必填）" maxlength="50" />
-            </el-col>
-            <el-col :xs="24" :sm="12">
-              <el-input v-model="commentForm.email" placeholder="邮箱（选填）" maxlength="100" />
-            </el-col>
-          </el-row>
-          <el-input
-            v-model="commentForm.content"
-            type="textarea"
-            :rows="3"
-            maxlength="1000"
-            placeholder="写下你的评论..."
-            class="comment-textarea"
-          />
-          <el-button type="primary" :loading="commentSaving" @click="onSubmitComment">发表评论</el-button>
-        </el-form>
-
-        <div v-for="c in comments" :key="c.id" class="comment-item">
-          <div class="comment-head">
-            <span class="comment-nickname">{{ c.nickname }}</span>
-            <span class="comment-time">{{ c.createTime }}</span>
-          </div>
-          <div class="comment-content">{{ c.content }}</div>
-        </div>
-        <el-empty v-if="!commentLoading && !comments.length" description="还没有评论" :image-size="80" />
-        <el-pagination
-          v-if="commentTotal > commentSize"
-          v-model:current-page="commentPage"
-          :page-size="commentSize"
-          :total="commentTotal"
-          layout="prev, pager, next"
-          class="comment-pager"
-          @current-change="loadComments"
-        />
-      </div>
+      <GitalkComments :title="article.title" />
     </template>
     <el-empty v-if="!loading && !article" description="文章不存在" />
 
@@ -90,6 +55,7 @@ import { ElMessage } from 'element-plus'
 import { getPortalArticle } from '@/api/article'
 import { listComments, saveComment } from '@/api/comment'
 import { decorateContent } from '@/utils/content'
+import GitalkComments from '@/components/portal/GitalkComments.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -122,8 +88,6 @@ async function load() {
   } finally {
     loading.value = false
   }
-  commentPage.value = 1
-  loadComments()
 }
 
 async function loadComments() {
@@ -160,6 +124,16 @@ async function onSubmitComment() {
     loadComments()
   } finally {
     commentSaving.value = false
+  }
+}
+
+/** 点击文章封面时打开灯箱。 */
+function onCoverClick() {
+  if (!article.value || !article.value.cover) return
+  lightbox.value = {
+    src: article.value.cover,
+    alt: article.value.title || '文章封面',
+    images: [{ src: article.value.cover, alt: article.value.title || '文章封面' }]
   }
 }
 
@@ -233,6 +207,23 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   padding-bottom: 16px;
   border-bottom: 1px solid var(--border);
   margin-bottom: 20px;
+}
+.article-cover {
+  margin: 0 0 22px;
+  border-radius: 14px;
+  overflow: hidden;
+  cursor: zoom-in;
+  box-shadow: var(--shadow);
+}
+.article-cover img {
+  display: block;
+  width: 100%;
+  max-height: 420px;
+  object-fit: cover;
+  transition: transform 0.5s ease;
+}
+.article-cover:hover img {
+  transform: scale(1.03);
 }
 .content {
   word-break: break-word;

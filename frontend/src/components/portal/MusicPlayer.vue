@@ -28,6 +28,8 @@
           </div>
         </div>
 
+        <div v-if="currentLyric" class="lyric-line">{{ currentLyric }}</div>
+
         <div class="progress" @click="seek">
           <div class="bar"><div class="fill" :style="{ width: progress + '%' }"></div></div>
           <div class="times">
@@ -47,7 +49,7 @@
 
         <div class="volume">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5 6 9H2v6h4l5 4zM15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13" /></svg>
-          <input v-model="volume" type="range" min="0" max="1" step="0.01" @input="setVolume" />
+          <input v-model="volume" type="range" min="0" max="1" step="0.01" @input="setVolume(volume)" />
         </div>
 
         <div v-if="loading" class="loading">歌单加载中...</div>
@@ -69,34 +71,14 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { getActivePlaylist } from '@/api/music'
+import { ref, onMounted } from 'vue'
+import { storeToRefs } from 'pinia'
+import { useMusicStore } from '@/store/music'
 
 const open = ref(false)
-const playing = ref(false)
-const index = ref(0)
-const currentTime = ref(0)
-const duration = ref(0)
-const volume = ref(0.6)
-const loading = ref(false)
-const songs = ref([])
-let audio = null
-let errorStreak = 0
-
-// 网易云歌单 ID：参考 E:\blog 项目使用 APlayer + Meting 的方式接入。
-// 换歌单时，替换下面这个 ID 即可（网易云歌单地址里的 id）。
-const PLAYLIST_ID = '18381082288'
-
-// Meting 接口失败时的兜底歌单（免密钥外链，仅可播放非版权受限歌曲）
-const fallback = [
-  { title: '起风了', artist: '买辣椒也用券', src: 'https://music.163.com/song/media/outer/url?id=1330348068.mp3', pic: '' },
-  { title: '少年', artist: 'Dave', src: 'https://music.163.com/song/media/outer/url?id=2614935159.mp3', pic: '' },
-  { title: '卡农（经典钢琴版）', artist: 'dylanf', src: 'https://music.163.com/song/media/outer/url?id=478507889.mp3', pic: '' },
-  { title: '七点钟', artist: '齐豫', src: 'https://music.163.com/song/media/outer/url?id=108787.mp3', pic: '' }
-]
-
-const current = computed(() => songs.value[index.value] || songs.value[0] || {})
-const progress = computed(() => (duration.value ? (currentTime.value / duration.value) * 100 : 0))
+const music = useMusicStore()
+const { songs, index, playing, currentTime, duration, volume, loading, current, progress, currentLyric } = storeToRefs(music)
+const { play, toggle, next, prev, setVolume } = music
 
 function fmt(s) {
   if (!s || !isFinite(s)) return '00:00'
@@ -105,140 +87,13 @@ function fmt(s) {
   return `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`
 }
 
-async function loadPlaylist() {
-  loading.value = true
-  try {
-    const pid = await resolvePlaylistId()
-    const res = await fetch(`https://api.i-meto.com/meting/api?server=netease&type=playlist&id=${pid}`)
-    const data = await res.json()
-    const arr = Array.isArray(data) ? data : []
-    songs.value = arr
-      .map((s) => ({
-        title: s.title || s.name || '未知歌曲',
-        artist: s.author || s.artist || '未知歌手',
-        src: s.url || '',
-        pic: s.pic || ''
-      }))
-      .filter((s) => s.src)
-  } catch (e) {
-    songs.value = fallback
-  } finally {
-    loading.value = false
-  }
-}
-
-// 读取后台当前启用的歌单 ID，读不到时用默认歌单
-async function resolvePlaylistId() {
-  try {
-    const id = await getActivePlaylist()
-    return id || PLAYLIST_ID
-  } catch (e) {
-    return PLAYLIST_ID
-  }
-}
-
-// 打开页面自动播放；若被浏览器拦截，则在首次交互时补播
-async function tryAutoplay() {
-  if (!audio || !songs.value.length) return
-  audio.src = songs.value[0].src
-  try {
-    await audio.play()
-  } catch (e) {
-    const cleanup = () => {
-      window.removeEventListener('pointerdown', retry)
-      window.removeEventListener('wheel', retry)
-      window.removeEventListener('keydown', retry)
-      window.removeEventListener('touchstart', retry)
-    }
-    const retry = () => {
-      if (audio) audio.play().catch(() => {})
-      cleanup()
-    }
-    window.addEventListener('pointerdown', retry)
-    window.addEventListener('wheel', retry)
-    window.addEventListener('keydown', retry)
-    window.addEventListener('touchstart', retry)
-  }
-}
-
-function bindAudio() {
-  if (!audio) return
-  audio.volume = volume.value
-  audio.addEventListener('timeupdate', () => {
-    currentTime.value = audio.currentTime
-    duration.value = audio.duration || 0
-  })
-  audio.addEventListener('ended', next)
-  audio.addEventListener('play', () => {
-    errorStreak = 0
-    playing.value = true
-  })
-  audio.addEventListener('pause', () => (playing.value = false))
-  audio.addEventListener('error', () => {
-    playing.value = false
-    errorStreak++
-    // 连续失败次数超过歌单长度时停止，避免版权受限歌曲过多导致无限跳过
-    if (errorStreak >= songs.value.length) {
-      errorStreak = 0
-      return
-    }
-    next()
-  })
-}
-
-function play(i) {
-  if (!audio || !songs.value.length) return
-  if (i === index.value && audio.src) {
-    toggle()
-    return
-  }
-  index.value = i
-  audio.src = songs.value[i].src
-  audio.play().catch(() => {})
-}
-
-function toggle() {
-  if (!audio) return
-  if (!audio.src) {
-    play(0)
-    return
-  }
-  if (audio.paused) audio.play().catch(() => {})
-  else audio.pause()
-}
-
-function next() {
-  if (!songs.value.length) return
-  play((index.value + 1) % songs.value.length)
-}
-
-function prev() {
-  if (!songs.value.length) return
-  play((index.value - 1 + songs.value.length) % songs.value.length)
-}
-
 function seek(e) {
-  if (!audio || !duration.value) return
   const rect = e.currentTarget.getBoundingClientRect()
-  const ratio = (e.clientX - rect.left) / rect.width
-  audio.currentTime = ratio * duration.value
-}
-
-function setVolume() {
-  if (audio) audio.volume = volume.value
+  music.seekRatio((e.clientX - rect.left) / rect.width)
 }
 
 onMounted(() => {
-  audio = new Audio()
-  bindAudio()
-  loadPlaylist().then(tryAutoplay)
-})
-
-onUnmounted(() => {
-  if (audio) {
-    audio.pause()
-    audio = null
-  }
+  music.init()
 })
 </script>
 
@@ -340,6 +195,17 @@ onUnmounted(() => {
   font-size: 12px;
   color: var(--text-muted);
   margin-top: 4px;
+}
+.lyric-line {
+  margin-top: 10px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .progress {
   margin: 14px 0 10px;

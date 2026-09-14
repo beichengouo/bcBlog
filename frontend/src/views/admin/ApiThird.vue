@@ -96,16 +96,23 @@
       <p class="muted">自定义敏感词列表目前仍从后端 application.yml 的 bcblog.sensitive-words 读取，默认词库已内置。</p>
     </el-card>
 
-    <!-- IP 定位接口：百度地图 -->
+    <!-- IP 定位接口：百度 / 高德可切换 -->
     <el-card class="block">
       <template #header>
         <div class="head">
-          <span>IP 定位接口（百度地图）</span>
-          <el-tag type="warning">需 AK</el-tag>
+          <span>IP 定位接口</span>
+          <el-tag type="warning">需 Key</el-tag>
         </div>
       </template>
       <el-form label-width="90px" @submit.prevent>
-        <el-form-item label="API Key">
+        <el-form-item label="定位服务商">
+          <el-radio-group v-model="ipProvider" @change="onProviderChange">
+            <el-radio value="baidu">百度地图</el-radio>
+            <el-radio value="gaode">高德地图</el-radio>
+          </el-radio-group>
+        </el-form-item>
+
+        <el-form-item v-if="ipProvider === 'baidu'" label="百度 AK">
           <div class="inline">
             <el-input
               v-model="ipAk"
@@ -118,6 +125,21 @@
             <el-button type="primary" :loading="ipAkSaving" @click="onSaveIpAk">保存 AK</el-button>
           </div>
         </el-form-item>
+
+        <el-form-item v-else label="高德 Key">
+          <div class="inline">
+            <el-input
+              v-model="gaodeKey"
+              type="password"
+              show-password
+              placeholder="填写高德 IP 定位 Key"
+              maxlength="200"
+              class="grow"
+            />
+            <el-button type="primary" :loading="gaodeKeySaving" @click="onSaveGaodeKey">保存 Key</el-button>
+          </div>
+        </el-form-item>
+
         <el-form-item label="测试 IP">
           <div class="inline">
             <el-input v-model="ipTestIp" placeholder="留空则查询本机出口 IP" maxlength="50" class="grow" />
@@ -129,7 +151,7 @@
         <span class="result-label">接口返回：</span>
         <span>{{ ipTestResult }}</span>
       </div>
-      <p class="muted">登录日志页面中的 IP 位置查询会读取这里保存的 AK，并且需要手动点击，避免调用量过大。</p>
+      <p class="muted">登录日志页面中的 IP 位置查询会读取这里选择的服务商及对应 Key，并且需要手动点击，避免调用量过大。</p>
     </el-card>
 
     <!-- ACG 随机封面接口：ALAPI -->
@@ -157,31 +179,79 @@
       </el-form>
       <p class="muted">文章新增页面的“随机封面”按钮会读取这里保存的 Token，用于快速获取一张 ACG 图片作为封面。</p>
     </el-card>
+
+    <!-- Gitalk 评论配置 -->
+    <el-card class="block">
+      <template #header>
+        <div class="head">
+          <span>Gitalk 评论（GitHub Issues）</span>
+          <el-tag type="warning">需 GitHub OAuth</el-tag>
+        </div>
+      </template>
+      <el-form label-width="110px" @submit.prevent>
+        <el-form-item label="Client ID">
+          <el-input v-model="gitalk.clientId" placeholder="GitHub OAuth App 的 Client ID" maxlength="200" />
+        </el-form-item>
+        <el-form-item label="Client Secret">
+          <el-input v-model="gitalk.clientSecret" type="password" show-password placeholder="GitHub OAuth App 的 Client Secret" maxlength="200" />
+        </el-form-item>
+        <el-form-item label="仓库名">
+          <el-input v-model="gitalk.repo" placeholder="如：gitalk-comments" maxlength="200" />
+        </el-form-item>
+        <el-form-item label="仓库所有者">
+          <el-input v-model="gitalk.owner" placeholder="GitHub 用户名，如：beichengouo" maxlength="100" />
+        </el-form-item>
+        <el-form-item label="管理员">
+          <el-input v-model="gitalk.adminText" placeholder="多个用户名用英文逗号分隔" maxlength="200" />
+        </el-form-item>
+        <el-form-item>
+          <el-button type="primary" :loading="gitalkSaving" @click="onSaveGitalk">保存 Gitalk 配置</el-button>
+        </el-form-item>
+      </el-form>
+      <p class="muted">Gitalk 的评论保存在 GitHub 仓库 Issues 中；Client Secret 仅存本地数据库，不会提交到代码仓库。</p>
+    </el-card>
   </div>
 </template>
 
 <script setup>
 import { reactive, ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { getConfig, saveConfig, getIpLocationAk, saveIpLocationAk, getAcgCoverToken, saveAcgCoverToken } from '@/api/config'
+import {
+  getConfig,
+  saveConfig,
+  getIpLocationAk,
+  saveIpLocationAk,
+  getIpLocationProvider,
+  saveIpLocationProvider,
+  getGaodeIpKey,
+  saveGaodeIpKey,
+  getAcgCoverToken,
+  saveAcgCoverToken
+} from '@/api/config'
 import { queryIpLocation } from '@/api/log'
+import { getAdminGitalkConfig, saveGitalkConfig } from '@/api/gitalk'
 
 const saving = ref(false)
 const weatherLoading = ref(false)
 const hitokotoLoading = ref(false)
 const sensitiveLoading = ref(false)
 const ipAkSaving = ref(false)
+const gaodeKeySaving = ref(false)
 const ipTestLoading = ref(false)
 const acgTokenSaving = ref(false)
+const gitalkSaving = ref(false)
 
 const weatherResult = ref('')
 const hitokotoResult = ref('')
 const sensitiveResult = ref('')
 const sensitiveText = ref('')
 const ipAk = ref('')
+const gaodeKey = ref('')
+const ipProvider = ref('baidu')
 const ipTestIp = ref('')
 const ipTestResult = ref('')
 const acgToken = ref('')
+const gitalk = reactive({ clientId: '', clientSecret: '', repo: '', owner: '', adminText: '' })
 
 const form = reactive({
   weatherCity: '北京',
@@ -201,9 +271,29 @@ async function load() {
     // 读取 AK 失败时保持为空，不影响天气/一言配置加载
   }
   try {
+    ipProvider.value = (await getIpLocationProvider()) || 'baidu'
+  } catch (e) {
+    ipProvider.value = 'baidu'
+  }
+  try {
+    gaodeKey.value = (await getGaodeIpKey()) || ''
+  } catch (e) {
+    // 读取高德 Key 失败时保持为空
+  }
+  try {
     acgToken.value = (await getAcgCoverToken()) || ''
   } catch (e) {
     // 读取 Token 失败时保持为空
+  }
+  try {
+    const g = await getAdminGitalkConfig()
+    gitalk.clientId = g.clientId || ''
+    gitalk.clientSecret = g.clientSecret || ''
+    gitalk.repo = g.repo || ''
+    gitalk.owner = g.owner || ''
+    gitalk.adminText = (g.admin || []).join(',')
+  } catch (e) {
+    // 读取 Gitalk 配置失败时保持为空
   }
 }
 
@@ -310,6 +400,30 @@ async function onSaveIpAk() {
   }
 }
 
+async function onSaveGaodeKey() {
+  if (!gaodeKey.value.trim()) {
+    ElMessage.warning('请先填写高德 Key')
+    return
+  }
+  gaodeKeySaving.value = true
+  try {
+    await saveGaodeIpKey(gaodeKey.value.trim())
+    ElMessage.success('高德 Key 已保存')
+  } finally {
+    gaodeKeySaving.value = false
+  }
+}
+
+/** 切换定位服务商时立即保存，登录日志的查询会跟随这里的选择。 */
+async function onProviderChange(provider) {
+  try {
+    await saveIpLocationProvider(provider)
+    ElMessage.success(`已切换到${provider === 'gaode' ? '高德地图' : '百度地图'}`)
+  } catch (e) {
+    // 切换失败时由请求层统一提示
+  }
+}
+
 async function onTestIp() {
   ipTestLoading.value = true
   ipTestResult.value = ''
@@ -333,6 +447,26 @@ async function onSaveAcgToken() {
     ElMessage.success('ACG 封面 Token 已保存')
   } finally {
     acgTokenSaving.value = false
+  }
+}
+
+async function onSaveGitalk() {
+  if (!gitalk.clientId.trim() || !gitalk.clientSecret.trim() || !gitalk.repo.trim() || !gitalk.owner.trim()) {
+    ElMessage.warning('请填写 Client ID、Client Secret、仓库名和仓库所有者')
+    return
+  }
+  gitalkSaving.value = true
+  try {
+    await saveGitalkConfig({
+      clientId: gitalk.clientId.trim(),
+      clientSecret: gitalk.clientSecret.trim(),
+      repo: gitalk.repo.trim(),
+      owner: gitalk.owner.trim(),
+      admin: gitalk.adminText.split(',').map((s) => s.trim()).filter(Boolean)
+    })
+    ElMessage.success('Gitalk 配置已保存')
+  } finally {
+    gitalkSaving.value = false
   }
 }
 

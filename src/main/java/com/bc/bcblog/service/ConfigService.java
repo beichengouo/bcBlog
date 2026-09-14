@@ -36,4 +36,16 @@ public interface ConfigService {
 
     /** 保存 ACG 随机封面接口 Token。 */
     void setAcgCoverToken(String token);
+
+    /** 查询 IP 定位服务商：baidu / gaode，默认 baidu。 */
+    String getIpLocationProvider();
+
+    /** 保存 IP 定位服务商。 */
+    void setIpLocationProvider(String provider);
+
+    /** 查询高德 IP 定位 Key。 */
+    String getGaodeIpKey();
+
+    /** 保存高德 IP 定位 Key。 */
+    void setGaodeIpKey(String key);
 }

@@ -42,6 +42,26 @@ export function saveIpLocationAk(apiKey) {
   return request.post('/admin/config/ip-location-ak', { apiKey })
 }
 
+// 后台：查询 IP 定位服务商（baidu / gaode）
+export function getIpLocationProvider() {
+  return request.get('/admin/config/ip-location-provider')
+}
+
+// 后台：切换 IP 定位服务商
+export function saveIpLocationProvider(provider) {
+  return request.put('/admin/config/ip-location-provider', null, { params: { provider } })
+}
+
+// 后台：查询高德 IP 定位 Key
+export function getGaodeIpKey() {
+  return request.get('/admin/config/gaode-ip-key')
+}
+
+// 后台：保存高德 IP 定位 Key
+export function saveGaodeIpKey(apiKey) {
+  return request.post('/admin/config/gaode-ip-key', { apiKey })
+}
+
 // 后台：查询后台背景透明度
 export function getAdminBgOpacity() {
   return request.get('/admin/config/admin-bg-opacity')

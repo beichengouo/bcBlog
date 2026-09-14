@@ -69,6 +69,32 @@ public class AdminConfigController {
         return Result.ok();
     }
 
+    /** 查询 IP 定位服务商。 */
+    @GetMapping("/ip-location-provider")
+    public Result<String> getIpLocationProvider() {
+        return Result.ok(configService.getIpLocationProvider());
+    }
+
+    /** 切换 IP 定位服务商：baidu / gaode。 */
+    @PutMapping("/ip-location-provider")
+    public Result<Void> setIpLocationProvider(@RequestParam String provider) {
+        configService.setIpLocationProvider(provider);
+        return Result.ok();
+    }
+
+    /** 查询高德 IP 定位 Key。 */
+    @GetMapping("/gaode-ip-key")
+    public Result<String> getGaodeIpKey() {
+        return Result.ok(configService.getGaodeIpKey());
+    }
+
+    /** 保存高德 IP 定位 Key。 */
+    @PostMapping("/gaode-ip-key")
+    public Result<Void> saveGaodeIpKey(@RequestBody DeepseekApiKeyDTO dto) {
+        configService.setGaodeIpKey(dto.getApiKey());
+        return Result.ok();
+    }
+
     /** 查询后台背景透明度。 */
     @GetMapping("/admin-bg-opacity")
     public Result<Double> getAdminBgOpacity() {

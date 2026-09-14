@@ -40,8 +40,12 @@ public class ConfigServiceImpl implements ConfigService {
     private static final String KEY_HITOKOTO_CATEGORIES = "hitokoto_categories";
     private static final String KEY_LIVE2D_ENABLED = "live2d_enabled";
     private static final String KEY_IP_LOCATION_AK = "ip_location_ak";
+    private static final String KEY_IP_LOCATION_PROVIDER = "ip_location_provider";
+    private static final String KEY_GAODE_IP_KEY = "gaode_ip_location_key";
     private static final String KEY_ADMIN_BG_OPACITY = "admin_bg_opacity";
     private static final String KEY_ACG_COVER_TOKEN = "acg_cover_token";
+    private static final String KEY_HOME_CAROUSEL_ENABLED = "home_carousel_enabled";
+    private static final String KEY_HOME_CAROUSEL_COUNT = "home_carousel_count";
 
     private final SysConfigMapper configMapper;
 
@@ -61,6 +65,8 @@ public class ConfigServiceImpl implements ConfigService {
         vo.setWeatherCity(map.getOrDefault(KEY_WEATHER_CITY, "北京"));
         vo.setHitokotoCategories(map.getOrDefault(KEY_HITOKOTO_CATEGORIES, "d,i,k"));
         vo.setLive2dEnabled("0".equals(map.get(KEY_LIVE2D_ENABLED)) ? 0 : 1);
+        vo.setHomeCarouselEnabled("0".equals(map.get(KEY_HOME_CAROUSEL_ENABLED)) ? 0 : 1);
+        vo.setHomeCarouselCount(parseCarouselCount(map.get(KEY_HOME_CAROUSEL_COUNT)));
         return vo;
     }
 
@@ -81,6 +87,25 @@ public class ConfigServiceImpl implements ConfigService {
         }
         if (vo.getLive2dEnabled() != null) {
             upsert(KEY_LIVE2D_ENABLED, vo.getLive2dEnabled() == 1 ? "1" : "0");
+        }
+        if (vo.getHomeCarouselEnabled() != null) {
+            upsert(KEY_HOME_CAROUSEL_ENABLED, vo.getHomeCarouselEnabled() == 1 ? "1" : "0");
+        }
+        if (vo.getHomeCarouselCount() != null) {
+            upsert(KEY_HOME_CAROUSEL_COUNT, String.valueOf(parseCarouselCount(String.valueOf(vo.getHomeCarouselCount()))));
+        }
+    }
+
+    /** 首页轮播数量限制在 1 ~ 10，未配置时默认 5。 */
+    private int parseCarouselCount(String value) {
+        if (value == null || value.trim().isEmpty()) {
+            return 5;
+        }
+        try {
+            int count = Integer.parseInt(value.trim());
+            return Math.max(1, Math.min(10, count));
+        } catch (NumberFormatException e) {
+            return 5;
         }
     }
 
@@ -141,6 +166,28 @@ public class ConfigServiceImpl implements ConfigService {
     public void setIpLocationAk(String ak) {
         String value = ak == null ? "" : ak.trim();
         upsert(KEY_IP_LOCATION_AK, value);
+    }
+
+    @Override
+    public String getIpLocationProvider() {
+        String provider = loadMap().get(KEY_IP_LOCATION_PROVIDER);
+        return "gaode".equals(provider) ? "gaode" : "baidu";
+    }
+
+    @Override
+    public void setIpLocationProvider(String provider) {
+        String normalized = "gaode".equals(provider) ? "gaode" : "baidu";
+        upsert(KEY_IP_LOCATION_PROVIDER, normalized);
+    }
+
+    @Override
+    public String getGaodeIpKey() {
+        return loadMap().get(KEY_GAODE_IP_KEY);
+    }
+
+    @Override
+    public void setGaodeIpKey(String key) {
+        upsert(KEY_GAODE_IP_KEY, key == null ? "" : key.trim());
     }
 
     @Override

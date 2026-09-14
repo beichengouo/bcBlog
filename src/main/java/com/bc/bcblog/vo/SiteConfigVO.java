@@ -16,4 +16,8 @@ public class SiteConfigVO {
     private String weatherCity;
     private String hitokotoCategories;
     private Integer live2dEnabled;
+    /** 首页中段文章轮播是否显示 */
+    private Integer homeCarouselEnabled;
+    /** 首页中段文章轮播显示数量 */
+    private Integer homeCarouselCount;
 }

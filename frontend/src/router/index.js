@@ -10,6 +10,8 @@ const routes = [
     children: [
       { path: '', component: () => import('@/views/portal/Home.vue') },
       { path: 'article/:id', component: () => import('@/views/portal/ArticleDetail.vue') },
+      { path: 'photos', component: () => import('@/views/portal/Photos.vue') },
+      { path: 'resources', component: () => import('@/views/portal/Resources.vue') },
       { path: 'announcements', component: () => import('@/views/portal/Announcements.vue') }
     ]
   },
@@ -33,6 +35,8 @@ const routes = [
       { path: 'ai', component: () => import('@/views/admin/AiProvider.vue'), meta: { title: 'AI 服务商', menu: 'ai' } },
       { path: 'third', component: () => import('@/views/admin/ApiThird.vue'), meta: { title: '第三方接口', menu: 'third' } },
       { path: 'announcement', component: () => import('@/views/admin/AnnouncementManage.vue'), meta: { title: '站点公告', menu: 'announcement' } },
+      { path: 'photos', component: () => import('@/views/admin/PhotoManage.vue'), meta: { title: '流光忆庭', menu: 'photos' } },
+      { path: 'resources', component: () => import('@/views/admin/ResourceManage.vue'), meta: { title: '智库', menu: 'resources' } },
       { path: 'settings', component: () => import('@/views/admin/Settings.vue'), meta: { title: '系统设置', menu: 'settings' } },
       { path: 'admins', component: () => import('@/views/admin/AdminUserManage.vue'), meta: { title: '管理员管理', menu: 'admins', superOnly: true } },
       { path: 'logs', component: () => import('@/views/admin/LoginLog.vue'), meta: { title: '登录日志', menu: 'logs' } }
