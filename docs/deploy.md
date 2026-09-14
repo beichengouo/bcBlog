@@ -1,5 +1,7 @@
 # bcBlog 服务器部署指南
 
+> 如果你使用宝塔 Linux 面板（腾讯云专享版 / OpenCloudOS 9），请看更具体的 [宝塔面板部署指南](deploy-bt-panel.md)。
+
 本文档以「一台 Linux 服务器 + Nginx + Spring Boot jar + MySQL + 本地文件上传」为例，适合个人博客和低并发场景。
 
 ## 一、部署文件说明
