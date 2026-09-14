@@ -7,6 +7,7 @@ import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.bc.bcblog.common.BusinessException;
+import com.bc.bcblog.common.PageResult;
 import com.bc.bcblog.entity.SysConfig;
 import com.bc.bcblog.mapper.SysConfigMapper;
 import com.bc.bcblog.service.GitalkService;
@@ -35,6 +36,7 @@ public class GitalkServiceImpl implements GitalkService {
     private static final String KEY_REPO = "gitalk_repo";
     private static final String KEY_OWNER = "gitalk_owner";
     private static final String KEY_ADMIN = "gitalk_admin";
+    private static final String KEY_TOKEN = "gitalk_token";
 
     /** 最近评论缓存 5 分钟，避免频繁调用 GitHub API 触发限流 */
     private static final long COMMENT_CACHE_MILLIS = 5 * 60 * 1000L;
@@ -51,6 +53,7 @@ public class GitalkServiceImpl implements GitalkService {
         vo.setClientSecret(map.get(KEY_CLIENT_SECRET));
         vo.setRepo(map.get(KEY_REPO));
         vo.setOwner(map.get(KEY_OWNER));
+        vo.setToken(map.get(KEY_TOKEN));
         String admin = map.get(KEY_ADMIN);
         if (admin == null || admin.trim().isEmpty()) {
             vo.setAdmin(new ArrayList<>());
@@ -69,6 +72,9 @@ public class GitalkServiceImpl implements GitalkService {
         upsert(KEY_OWNER, vo.getOwner());
         if (vo.getAdmin() != null) {
             upsert(KEY_ADMIN, String.join(",", vo.getAdmin()));
+        }
+        if (vo.getToken() != null) {
+            upsert(KEY_TOKEN, vo.getToken().trim());
         }
     }
 
@@ -179,13 +185,151 @@ public class GitalkServiceImpl implements GitalkService {
                     .header("Accept", "application/vnd.github+json")
                     .header("User-Agent", "bcBlog")
                     .timeout(15000);
-            if (!isBlank(config.getClientId()) && !isBlank(config.getClientSecret())) {
+            if (!isBlank(config.getToken())) {
+                request.header("Authorization", "Bearer " + config.getToken().trim());
+            } else if (!isBlank(config.getClientId()) && !isBlank(config.getClientSecret())) {
                 request.basicAuth(config.getClientId().trim(), config.getClientSecret().trim());
             }
             return request.execute();
         } catch (Exception e) {
             return null;
         }
+    }
+
+    /** 带 Token 的 GitHub 写操作（POST / DELETE）。 */
+    private HttpResponse githubSend(String method, String url, GitalkConfigVO config, JSONObject body) {
+        if (isBlank(config.getToken())) {
+            throw new BusinessException("请先在“第三方接口 → Gitalk”中配置 GitHub Token");
+        }
+        try {
+            HttpRequest request = "DELETE".equalsIgnoreCase(method)
+                    ? HttpRequest.delete(url)
+                    : HttpRequest.post(url);
+            request.header("Accept", "application/vnd.github+json")
+                    .header("User-Agent", "bcBlog")
+                    .header("Authorization", "Bearer " + config.getToken().trim())
+                    .timeout(15000);
+            if (body != null) {
+                request.header("Content-Type", "application/json").body(body.toString());
+            }
+            HttpResponse resp = request.execute();
+            if (resp.getStatus() == 401 || resp.getStatus() == 403) {
+                throw new BusinessException("GitHub Token 无权限或已过期");
+            }
+            if (resp.getStatus() < 200 || resp.getStatus() >= 300) {
+                throw new BusinessException("GitHub 操作失败（HTTP " + resp.getStatus() + "）");
+            }
+            return resp;
+        } catch (BusinessException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new BusinessException("GitHub 请求失败：" + e.getMessage());
+        }
+    }
+
+    @Override
+    public PageResult<GitalkCommentVO> page(int page, int size, String keyword, Long issueNumber) {
+        int p = Math.max(1, page);
+        int s = Math.max(1, Math.min(50, size));
+        GitalkConfigVO config = getConfig();
+        if (isBlank(config.getOwner()) || isBlank(config.getRepo())) {
+            return PageResult.of(0, new ArrayList<>());
+        }
+        try {
+            String base = "https://api.github.com/repos/" + config.getOwner().trim() + "/" + config.getRepo().trim();
+            Map<Long, JSONObject> issueMap = new HashMap<>();
+            HttpResponse issuesResp = githubGet(base + "/issues?labels=Gitalk&state=all&per_page=100&sort=created&direction=desc", config);
+            if (issuesResp != null && issuesResp.getStatus() == 200) {
+                JSONArray issues = JSONUtil.parseArray(issuesResp.body());
+                for (int i = 0; i < issues.size(); i++) {
+                    JSONObject issue = issues.getJSONObject(i);
+                    issueMap.put(issue.getLong("number"), issue);
+                }
+            }
+            // GitHub 单页最多 100 条，个人博客通常够用；数据量变大后再加分页拉取
+            HttpResponse resp = githubGet(base + "/issues/comments?per_page=100&sort=created&direction=desc", config);
+            if (resp == null || resp.getStatus() != 200) {
+                return PageResult.of(0, new ArrayList<>());
+            }
+            JSONArray comments = JSONUtil.parseArray(resp.body());
+            List<GitalkCommentVO> all = new ArrayList<>();
+            for (int i = 0; i < comments.size(); i++) {
+                GitalkCommentVO vo = toCommentVO(comments.getJSONObject(i), issueMap);
+                if (issueNumber != null && !issueNumber.equals(vo.getIssueNumber())) {
+                    continue;
+                }
+                if (!isBlank(keyword)) {
+                    String kw = keyword.trim().toLowerCase();
+                    boolean hit = (vo.getBody() != null && vo.getBody().toLowerCase().contains(kw))
+                            || (vo.getAuthor() != null && vo.getAuthor().toLowerCase().contains(kw))
+                            || (vo.getPageTitle() != null && vo.getPageTitle().toLowerCase().contains(kw));
+                    if (!hit) {
+                        continue;
+                    }
+                }
+                all.add(vo);
+            }
+            long total = all.size();
+            int from = Math.min((p - 1) * s, all.size());
+            int to = Math.min(from + s, all.size());
+            return PageResult.of(total, new ArrayList<>(all.subList(from, to)));
+        } catch (Exception e) {
+            return PageResult.of(0, new ArrayList<>());
+        }
+    }
+
+    @Override
+    public void deleteComment(Long commentId) {
+        if (commentId == null) {
+            throw new BusinessException("缺少评论 ID");
+        }
+        GitalkConfigVO config = requireConfig();
+        String base = "https://api.github.com/repos/" + config.getOwner().trim() + "/" + config.getRepo().trim();
+        githubSend("DELETE", base + "/issues/comments/" + commentId, config, null);
+    }
+
+    @Override
+    public void replyComment(Long issueNumber, String body) {
+        if (issueNumber == null) {
+            throw new BusinessException("缺少文章 Issue 编号");
+        }
+        if (isBlank(body)) {
+            throw new BusinessException("回复内容不能为空");
+        }
+        GitalkConfigVO config = requireConfig();
+        String base = "https://api.github.com/repos/" + config.getOwner().trim() + "/" + config.getRepo().trim();
+        JSONObject json = new JSONObject();
+        json.set("body", body.trim());
+        githubSend("POST", base + "/issues/" + issueNumber + "/comments", config, json);
+    }
+
+    private GitalkConfigVO requireConfig() {
+        GitalkConfigVO config = getConfig();
+        if (isBlank(config.getOwner()) || isBlank(config.getRepo())) {
+            throw new BusinessException("请先配置 Gitalk 仓库信息");
+        }
+        return config;
+    }
+
+    private GitalkCommentVO toCommentVO(JSONObject c, Map<Long, JSONObject> issueMap) {
+        GitalkCommentVO vo = new GitalkCommentVO();
+        vo.setId(c.getLong("id"));
+        JSONObject user = c.getJSONObject("user");
+        if (user != null) {
+            vo.setAuthor(user.getStr("login"));
+            vo.setAvatar(user.getStr("avatar_url"));
+        }
+        vo.setBody(c.getStr("body"));
+        vo.setCreatedAt(c.getStr("created_at"));
+        vo.setHtmlUrl(c.getStr("html_url"));
+        Long issueNumber = parseIssueNumber(c.getStr("issue_url"));
+        vo.setIssueNumber(issueNumber);
+        JSONObject issue = issueMap.get(issueNumber);
+        if (issue != null) {
+            vo.setPageTitle(issue.getStr("title"));
+            vo.setPagePath(extractPagePath(issue.getStr("body")));
+        }
+        return vo;
     }
 
     private Long parseIssueNumber(String issueUrl) {

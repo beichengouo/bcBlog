@@ -10,7 +10,8 @@ export const adminMenus = [
       { key: 'articles', path: '/admin/articles', title: '文章管理', icon: 'Document' },
       { key: 'categories', path: '/admin/categories', title: '分类管理', icon: 'Menu' },
       { key: 'tags', path: '/admin/tags', title: '标签管理', icon: 'CollectionTag' },
-      { key: 'comments', path: '/admin/comments', title: '评论管理', icon: 'ChatDotRound' }
+      { key: 'comments', path: '/admin/comments', title: '评论管理', icon: 'ChatDotRound' },
+      { key: 'gitalk', path: '/admin/gitalk', title: 'Gitalk 评论', icon: 'ChatLineSquare' }
     ]
   },
   {

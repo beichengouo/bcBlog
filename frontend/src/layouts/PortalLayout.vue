@@ -272,7 +272,7 @@ onUnmounted(() => {
   -webkit-backdrop-filter: blur(18px) saturate(1.4);
 }
 .header-inner {
-  max-width: 1180px;
+  max-width: 1320px;
   margin: 0 auto;
   padding: 0 20px;
   height: 100%;
@@ -433,7 +433,7 @@ onUnmounted(() => {
   backdrop-filter: blur(14px);
 }
 .footer-inner {
-  max-width: 1180px;
+  max-width: 1320px;
   margin: 0 auto;
   display: flex;
   align-items: center;

@@ -28,6 +28,7 @@ const routes = [
       { path: 'categories', component: () => import('@/views/admin/CategoryManage.vue'), meta: { title: '分类管理', menu: 'categories' } },
       { path: 'tags', component: () => import('@/views/admin/TagManage.vue'), meta: { title: '标签管理', menu: 'tags' } },
       { path: 'comments', component: () => import('@/views/admin/CommentManage.vue'), meta: { title: '评论管理', menu: 'comments' } },
+      { path: 'gitalk', component: () => import('@/views/admin/GitalkManage.vue'), meta: { title: 'Gitalk 评论', menu: 'gitalk' } },
       { path: 'deepseek', component: () => import('@/views/admin/DeepseekBalance.vue'), meta: { title: 'DeepSeek 接口', menu: 'deepseek' } },
       { path: 'music', component: () => import('@/views/admin/MusicPlaylist.vue'), meta: { title: '网易云音乐', menu: 'music' } },
       { path: 'live2d', component: () => import('@/views/admin/Live2dModelManage.vue'), meta: { title: '看板娘管理', menu: 'live2d' } },

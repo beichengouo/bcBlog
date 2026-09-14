@@ -15,6 +15,21 @@ export function saveGitalkConfig(data) {
   return request.post('/admin/gitalk/config', data)
 }
 
+// 后台：分页查询 Gitalk 评论
+export function adminGitalkComments(params) {
+  return request.get('/admin/gitalk/comments', { params })
+}
+
+// 后台：删除 Gitalk 评论
+export function deleteGitalkComment(id) {
+  return request.delete(`/admin/gitalk/comments/${id}`)
+}
+
+// 后台：回复某篇文章的 Gitalk 评论
+export function replyGitalkComment(data) {
+  return request.post('/admin/gitalk/comments/reply', data)
+}
+
 // 前台：获取最近评论（默认 10 条）
 export function getRecentGitalkComments(limit = 10) {
   return request.get('/portal/gitalk/recent-comments', { params: { limit } })

@@ -330,7 +330,7 @@ onUnmounted(() => observer && observer.disconnect())
   justify-content: center;
 }
 
-@media (max-width: 1024px) {
+@media (max-width: 1200px) {
   .masonry {
     column-count: 2;
   }

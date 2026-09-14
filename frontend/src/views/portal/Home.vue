@@ -366,7 +366,7 @@ onUnmounted(() => {
 
 /* 主内容 */
 .showcase {
-  max-width: 1180px;
+  max-width: 1320px;
   margin: 0 auto;
   padding: 0 20px 24px;
   scroll-margin-top: calc(var(--header-height) + 20px);
@@ -383,7 +383,7 @@ onUnmounted(() => {
 }
 /* 最近评论：单容器下拉展开 */
 .recent-comments {
-  max-width: 1180px;
+  max-width: 1320px;
   margin: 0 auto 28px;
   padding: 0 20px;
 }
@@ -519,7 +519,7 @@ onUnmounted(() => {
   font-size: 12px;
 }
 .container {
-  max-width: 1180px;
+  max-width: 1320px;
   margin: 0 auto;
   padding: 20px 20px 40px;
   display: flex;
@@ -528,7 +528,7 @@ onUnmounted(() => {
   scroll-margin-top: calc(var(--header-height) + 20px);
 }
 .sidebar {
-  width: 240px;
+  width: 220px;
   flex-shrink: 0;
 }
 .side-card {

@@ -1,11 +1,11 @@
 import { defineStore } from 'pinia'
-import { getActivePlaylist } from '@/api/music'
+import { getActivePlaylist, getFallbackSongs } from '@/api/music'
 
 // 网易云歌单 ID（后台未配置启用歌单时使用）
 const DEFAULT_PLAYLIST_ID = '18381082288'
 
-// Meting 接口失败时的兜底歌单
-const FALLBACK_SONGS = [
+// 后端默认歌曲也获取失败时的最后兜底
+const BUILTIN_FALLBACK = [
   { title: '起风了', artist: '买辣椒也用券', src: 'https://music.163.com/song/media/outer/url?id=1330348068.mp3', pic: '', lrc: '' },
   { title: '少年', artist: 'Dave', src: 'https://music.163.com/song/media/outer/url?id=2614935159.mp3', pic: '', lrc: '' },
   { title: '卡农（经典钢琴版）', artist: 'dylanf', src: 'https://music.163.com/song/media/outer/url?id=478507889.mp3', pic: '', lrc: '' },
@@ -111,10 +111,36 @@ export const useMusicStore = defineStore('music', {
           }))
           .filter((s) => s.src)
       } catch (e) {
-        this.songs = FALLBACK_SONGS
+        this.songs = await this.loadFallbackSongs()
       } finally {
         this.loading = false
       }
+      // 歌单为空时也使用默认歌曲
+      if (!this.songs.length) {
+        this.songs = await this.loadFallbackSongs()
+      }
+    },
+
+    /** 读取后台维护的默认歌曲，接口失败时使用内置兜底 */
+    async loadFallbackSongs() {
+      try {
+        const list = await getFallbackSongs()
+        const songs = (list || [])
+          .map((s) => ({
+            title: s.title || '未知歌曲',
+            artist: s.artist || '',
+            src: s.url || '',
+            pic: s.pic || '',
+            lrc: ''
+          }))
+          .filter((s) => s.src)
+        if (songs.length) {
+          return songs
+        }
+      } catch (e) {
+        // 接口失败时继续使用内置兜底
+      }
+      return BUILTIN_FALLBACK
     },
 
     async resolvePlaylistId() {

@@ -204,6 +204,15 @@
         <el-form-item label="管理员">
           <el-input v-model="gitalk.adminText" placeholder="多个用户名用英文逗号分隔" maxlength="200" />
         </el-form-item>
+        <el-form-item label="管理 Token">
+          <el-input
+            v-model="gitalk.token"
+            type="password"
+            show-password
+            placeholder="Fine-grained Token，仅 gitalk-comments 仓库 Issues 读写权限"
+            maxlength="300"
+          />
+        </el-form-item>
         <el-form-item>
           <el-button type="primary" :loading="gitalkSaving" @click="onSaveGitalk">保存 Gitalk 配置</el-button>
         </el-form-item>
@@ -251,7 +260,7 @@ const ipProvider = ref('baidu')
 const ipTestIp = ref('')
 const ipTestResult = ref('')
 const acgToken = ref('')
-const gitalk = reactive({ clientId: '', clientSecret: '', repo: '', owner: '', adminText: '' })
+const gitalk = reactive({ clientId: '', clientSecret: '', repo: '', owner: '', adminText: '', token: '' })
 
 const form = reactive({
   weatherCity: '北京',
@@ -292,6 +301,7 @@ async function load() {
     gitalk.repo = g.repo || ''
     gitalk.owner = g.owner || ''
     gitalk.adminText = (g.admin || []).join(',')
+    gitalk.token = g.token || ''
   } catch (e) {
     // 读取 Gitalk 配置失败时保持为空
   }
@@ -462,7 +472,8 @@ async function onSaveGitalk() {
       clientSecret: gitalk.clientSecret.trim(),
       repo: gitalk.repo.trim(),
       owner: gitalk.owner.trim(),
-      admin: gitalk.adminText.split(',').map((s) => s.trim()).filter(Boolean)
+      admin: gitalk.adminText.split(',').map((s) => s.trim()).filter(Boolean),
+      token: gitalk.token.trim()
     })
     ElMessage.success('Gitalk 配置已保存')
   } finally {

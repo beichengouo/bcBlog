@@ -27,7 +27,10 @@ public class PortalGitalkController {
     /** 前端渲染 Gitalk 需要的配置（Gitalk 本身需要 clientSecret，无法只放后端）。 */
     @GetMapping("/config")
     public Result<GitalkConfigVO> config() {
-        return Result.ok(gitalkService.getConfig());
+        GitalkConfigVO vo = gitalkService.getConfig();
+        // Token 仅用于后台管理，不能暴露给前台
+        vo.setToken(null);
+        return Result.ok(vo);
     }
 
     /** GitHub OAuth 代理，Gitalk 用它把 code 换成 access_token。 */
