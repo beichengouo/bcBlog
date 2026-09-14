@@ -1,0 +1,44 @@
+# 生产环境配置：敏感信息全部通过环境变量注入，不写进仓库。
+# 启动方式：java -jar bcBlog.jar --spring.profiles.active=prod
+
+server:
+  port: ${SERVER_PORT:8080}
+
+spring:
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: ${DB_URL:jdbc:mysql://127.0.0.1:3306/bc_blog?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true}
+    username: ${DB_USERNAME:bcblog}
+    password: ${DB_PASSWORD:}
+  jackson:
+    time-zone: GMT+8
+  servlet:
+    multipart:
+      max-file-size: 200MB
+      max-request-size: 200MB
+
+# 上传目录建议使用独立数据盘或固定目录，方便备份
+bcblog:
+  upload-dir: ${BCBLOG_UPLOAD_DIR:/data/bcblog/uploads}
+  sensitive-words: ${BCBLOG_SENSITIVE_WORDS:}
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+    # 生产环境关闭 SQL 控制台日志
+    log-impl: org.apache.ibatis.logging.nologging.NoLoggingImpl
+
+sa-token:
+  token-name: Authorization
+  timeout: 86400
+  active-timeout: -1
+  is-concurrent: true
+  is-share: false
+  token-style: uuid
+  is-log: false
+
+logging:
+  file:
+    name: ${BCBLOG_LOG_FILE:/data/bcblog/logs/bcblog.log}
+  level:
+    root: info

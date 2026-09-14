@@ -1,0 +1,30 @@
+# bcBlog systemd 服务示例
+# 放置位置：/etc/systemd/system/bcblog.service
+# 使用前确认用户、路径、jar 名称与实际一致
+
+[Unit]
+Description=bcBlog Spring Boot Application
+After=network.target mysqld.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=bcblog
+Group=bcblog
+WorkingDirectory=/data/bcblog
+
+# 数据库账号密码等敏感信息放在这里，权限设置为 600
+EnvironmentFile=/etc/bcblog/bcblog.env
+
+# 内存可按服务器配置调整；-Duser.timezone 保证时间是北京时间
+ExecStart=/usr/bin/java -Xms256m -Xmx512m -Duser.timezone=Asia/Shanghai -jar /data/bcblog/bcBlog.jar --spring.profiles.active=prod
+
+Restart=always
+RestartSec=5
+SuccessExitStatus=143
+
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
