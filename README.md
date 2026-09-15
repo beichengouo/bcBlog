@@ -62,7 +62,8 @@ bcBlog/
 ├── src/main/java/com/bc/bcblog/   # 后端代码
 ├── src/main/resources/            # 配置文件
 ├── frontend/                      # Vue3 前端
-└── docs/sql/                      # 数据库脚本
+├── docs/sql/                      # 数据库脚本（全量安装 / 升级脚本 / 服务器结构快照）
+└── tools/                         # 辅助工具（数据库结构对比、密码重置）
 ```
 
 ## 快速开始
@@ -100,6 +101,7 @@ npm run dev
 - 新增配置 `sandbox_system_model`：定时任务等系统级 AI 调用可单独指定模型
 - **合并数据库升级脚本**：新增 `docs/sql/upgrade_20260916_batch.sql`，一份脚本涵盖 001~033 全部表 / 字段 / 索引 / 配置变更，旧的 `upgrade_20260915_batch.sql` 已并入并删除
 - 重新导出 `docs/sql/bc_blog_full.sql`（37 张表，仅结构，不含数据），并重写 `docs/sql/README.md`（执行方式、改动清单、表用途与清理范围）
+- 新增**数据库结构对比工具** `tools/schema-diff/schema-diff.ps1`：上线前把服务器表结构导出到 `docs/sql/schema/`，即可自动比对出「服务器缺哪些表 / 字段 / 索引」，并可生成幂等的升级 SQL 草稿（配套说明见 `tools/schema-diff/README.md`）
 
 ### 2026-09-15
 

@@ -35,6 +35,11 @@ mysql --default-character-set=utf8mb4 -uroot -p bc_blog < upgrade_20260916_batch
 > 执行前请先备份：Navicat 右键数据库 →「转储 SQL 文件」→「结构和数据」。
 > 如果数据库名不是 `bc_blog`，请修改脚本里的 `USE \`bc_blog\`;` 一行。
 
+> **以后怎么出升级脚本**：不需要再靠人工回忆执行过哪些脚本。上线前把服务器现有表结构导出到
+> `docs/sql/schema/`，运行 [`tools/schema-diff/schema-diff.ps1`](../../tools/schema-diff/README.md)，
+> 即可得到「服务器缺哪些表 / 字段 / 索引」的差异报告与一份升级 SQL 草稿，再整理成正式的
+> `upgrade_YYYYMMDD_batch.sql`。详见 [`tools/schema-diff/README.md`](../../tools/schema-diff/README.md)。
+
 ### 本次升级新增的表（20 张）
 
 第 1 部分：用户体系与管理功能
