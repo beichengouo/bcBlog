@@ -68,8 +68,8 @@ bcBlog/
 ## 快速开始
 
 1. 准备数据库（详见 `docs/sql/README.md`）：
-   - 全新安装：执行 `docs/sql/bc_blog_full.sql`，自动建库 `bc_blog` 并创建全部 24 张表。
-   - 已有旧库升级：执行 `docs/sql/upgrade_20260915_batch.sql`，脚本幂等、可重复执行，不会清空数据。
+   - 全新安装：执行 `docs/sql/bc_blog_full.sql`，创建 `bc_blog` 库中的全部 37 张表。
+   - 已有旧库升级：执行 `docs/sql/upgrade_20260916_batch.sql`（已合并 001~033 全部改动），脚本幂等、可重复执行，不会清空数据。
 2. 修改 `src/main/resources/application.yml` 中的数据库账号密码。
 3. 启动后端：运行 `BcBlogApplication`。
 4. 启动前端：
@@ -90,6 +90,16 @@ npm run dev
 登录后请尽快在后台右上角修改密码。
 
 ## 更新日志
+
+### 2026-09-16
+
+- 修复沙盒「输出自查」丢失字段的问题：自查提示词补全全部字段清单并强调原样保留，服务端新增校验（自查结果一旦丢了原 JSON 的字段就整份丢弃）
+- 自查并入行动重试循环，先自查、再校验字段，避免自查结果直接落库导致所有角色都显示兜底值「稍作停留」
+- 角色行动提示词要求 `next_after_minutes` / `next_after_reason` 必填，缺失时自动重试并在提示词中点名缺失字段
+- 沙盒每日记忆由流水账改为第一人称故事化叙述，支持在后台按指定日期补生成 / 覆盖记忆
+- 新增配置 `sandbox_system_model`：定时任务等系统级 AI 调用可单独指定模型
+- **合并数据库升级脚本**：新增 `docs/sql/upgrade_20260916_batch.sql`，一份脚本涵盖 001~033 全部表 / 字段 / 索引 / 配置变更，旧的 `upgrade_20260915_batch.sql` 已并入并删除
+- 重新导出 `docs/sql/bc_blog_full.sql`（37 张表，仅结构，不含数据），并重写 `docs/sql/README.md`（执行方式、改动清单、表用途与清理范围）
 
 ### 2026-09-15
 

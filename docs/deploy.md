@@ -8,7 +8,7 @@
 
 | 文件 | 用途 |
 | --- | --- |
-| `docs/sql/bc_blog_full.sql` | 完整建表脚本（16 张表，仅结构，不含任何密钥数据） |
+| `docs/sql/bc_blog_full.sql` | 完整建表脚本（37 张表，仅结构，不含任何密钥数据） |
 | `src/main/resources/application-prod.yml` | 生产环境配置，敏感信息通过环境变量注入 |
 | `deploy/nginx.conf` | Nginx 站点配置示例 |
 | `deploy/bcblog.service` | systemd 服务示例 |
