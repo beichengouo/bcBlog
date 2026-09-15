@@ -252,6 +252,7 @@ public class SandboxServiceImpl implements SandboxService {
         vo.setNewsPromptExtra(configService.getConfigValue("sandbox_news_prompt_extra", ""));
         vo.setNewsAutoEnabled(configService.getConfigValue("sandbox_news_auto_enabled", "1"));
         vo.setNewsAutoTime(configService.getConfigValue("sandbox_news_auto_time", "07:00"));
+        vo.setSystemModel(configService.getConfigValue("sandbox_system_model", ""));
         return vo;
     }
 
@@ -284,6 +285,7 @@ public class SandboxServiceImpl implements SandboxService {
         writeSetting("sandbox_news_prompt_extra", vo.getNewsPromptExtra());
         writeSetting("sandbox_news_auto_enabled", vo.getNewsAutoEnabled());
         writeSetting("sandbox_news_auto_time", vo.getNewsAutoTime());
+        writeSetting("sandbox_system_model", vo.getSystemModel());
     }
 
     private void writeSetting(String key, String value) {
@@ -688,8 +690,10 @@ public class SandboxServiceImpl implements SandboxService {
                 AuditContext.schedule(reaction ? "沙盒·自动回应" : "沙盒·自动行动");
             }
             try {
-                raw = aiProviderService.chat(provider, character.getModel(),
-                        systemPrompt, userPrompt, temperature);
+                // 需要「下次行动间隔 + 原因」：若 AI 漏给会自动重试（最多 3 次）；
+                // 开启输出自查时，自查也放在这个循环里，先自查再检查字段，避免自查删掉的字段没人救
+                raw = callAiWithInterval(character, provider, systemPrompt, userPrompt, temperature,
+                        locations, companions);
             } finally {
                 AuditContext.clear();
             }
@@ -700,11 +704,6 @@ public class SandboxServiceImpl implements SandboxService {
                     .eq(SandboxCharacter::getId, characterId)
                     .set(SandboxCharacter::getLastError, truncate(msg, 480)));
             throw e instanceof BusinessException ? (BusinessException) e : new BusinessException(msg);
-        }
-
-        // 可选的自查（审查）：让 AI 只做 JSON 校验与数值修正，不改写剧情；默认关闭
-        if ("1".equals(configService.getConfigValue("sandbox_verify_enabled", "0"))) {
-            raw = verifyOutput(character, raw, locations, companions);
         }
 
         LocalDateTime now = LocalDateTime.now();
@@ -795,6 +794,10 @@ public class SandboxServiceImpl implements SandboxService {
             // 由 AI 决定下一次隔多久再行动（例如睡一觉就是几小时）
             aiNextMinutes = Convert.toInt(obj.get("next_after_minutes"), null);
             aiNextReason = truncate(trimToEmpty(obj.getStr("next_after_reason")), 40);
+            // 重试后仍然没给原因时，补一个默认原因，避免前台只显示时间
+            if (aiNextReason == null || aiNextReason.isEmpty()) {
+                aiNextReason = "稍作停留";
+            }
             act.setNextAfterMinutes(aiNextMinutes == null || aiNextMinutes < 0 ? 0 : aiNextMinutes);
             act.setNextAfterReason(aiNextReason == null || aiNextReason.isEmpty() ? null : aiNextReason);
             // 这一步参考/听说了哪几条纪闻
@@ -839,6 +842,132 @@ public class SandboxServiceImpl implements SandboxService {
                     blankToDefault(act.getSummary(), coinChange > 0 ? "日常赚取" : "日常花销"));
         }
         return act;
+    }
+
+    /**
+     * 调用 AI 生成行动，并要求带上「下次行动间隔 + 原因」。
+     * 如果 AI 漏掉这两个字段，会自动重试（最多 3 次）；仍未给出时返回「字段最全」的那一次结果，
+     * 由调用方按默认随机间隔兜底，并补一个默认原因。
+     *
+     * 重试时会把「上一次到底缺了哪个字段」明确写进提示词：系统提示词里追加一段强制修正说明，
+     * 用户提示词的**开头和结尾**各放一次提醒（模型对首尾内容最敏感），并把字段位置也点明。
+     *
+     * 执行顺序：主调用 →（可选）输出自查 → 字段完整性检查。自查排在检查之前，
+     * 这样即使自查把字段改没了，也会被下面的检查发现并触发重试，而不是直接落库。
+     */
+    private String callAiWithInterval(SandboxCharacter character, AiProvider provider,
+                                      String systemPrompt, String userPrompt, double temperature,
+                                      List<SandboxLocation> locations, List<SandboxCharacter> companions) {
+        boolean verifyEnabled = "1".equals(configService.getConfigValue("sandbox_verify_enabled", "0"));
+        // 记下主调用的审计标签，自查时临时换成「输出自查」，查完再还原，保证日志能区分两种调用
+        String mainAction = AuditContext.action();
+        boolean mainScheduled = AuditContext.isSchedule();
+
+        String raw = null;
+        // 兜底：记录「字段最全」的那一次输出，最后全都缺字段时用它（比直接用最后一次更合理）
+        String best = null;
+        int bestMissing = Integer.MAX_VALUE;
+        // 上一次输出缺失的字段说明，第一次调用时为空（首次使用原始提示词）
+        List<String> missing = Collections.emptyList();
+        for (int attempt = 1; attempt <= 3; attempt++) {
+            boolean retry = attempt > 1 && !missing.isEmpty();
+            String attemptSystem = retry ? systemPrompt + buildRetrySystemSuffix(missing) : systemPrompt;
+            String attemptUser = retry ? buildRetryUserPrompt(userPrompt, missing) : userPrompt;
+            raw = aiProviderService.chat(provider, character.getModel(),
+                    attemptSystem, attemptUser, temperature);
+            String candidate = raw;
+            if (verifyEnabled) {
+                // 自查单独打审计标签，方便和主调用区分
+                if (mainScheduled) {
+                    AuditContext.schedule("沙盒·输出自查");
+                } else {
+                    AuditContext.manual("沙盒·输出自查");
+                }
+                try {
+                    candidate = verifyOutput(character, raw, locations, companions);
+                } finally {
+                    // 还原主调用的审计标签，避免后续重试被记成自查
+                    if (mainScheduled) {
+                        AuditContext.schedule(mainAction);
+                    } else {
+                        AuditContext.manual(mainAction);
+                    }
+                }
+            }
+            missing = findMissingIntervalFields(parseJson(candidate));
+            if (missing.isEmpty()) {
+                return candidate;
+            }
+            if (missing.size() < bestMissing) {
+                best = candidate;
+                bestMissing = missing.size();
+            }
+            if (attempt < 3) {
+                log.warn("沙盒角色「{}」第 {} 次输出缺少字段（{}），准备重试", character.getName(), attempt,
+                        String.join("、", missing));
+            } else {
+                log.warn("沙盒角色「{}」重试 {} 次后仍缺少字段（{}），改用默认间隔兜底", character.getName(), attempt,
+                        String.join("、", missing));
+            }
+        }
+        return best == null ? raw : best;
+    }
+
+    /**
+     * 检查 AI 输出的「下次行动间隔」相关字段是否齐全。
+     * 返回缺失字段的中文说明列表；返回空列表表示字段齐全（可以正常入库）。
+     */
+    private List<String> findMissingIntervalFields(JSONObject obj) {
+        List<String> missing = new ArrayList<>();
+        if (obj == null) {
+            // 连 JSON 都没解析出来，属于更严重的情况，单独提示
+            missing.add("整段输出根本不是合法的 JSON 对象（被多余文字包裹、缺少花括号或使用了代码块标记）");
+            return missing;
+        }
+        Integer minutes = Convert.toInt(obj.get("next_after_minutes"), null);
+        if (minutes == null || minutes <= 0) {
+            missing.add("next_after_minutes（下一次行动间隔的分钟数，必须是大于 0 的整数）");
+        }
+        if (!notBlank(obj.getStr("next_after_reason"))) {
+            missing.add("next_after_reason（这段时间在做什么的简短说明，2~6 个字）");
+        }
+        return missing;
+    }
+
+    /** 重试时追加到系统提示词末尾的强制修正说明：点名缺失字段 + 给出写法示例 */
+    private String buildRetrySystemSuffix(List<String> missing) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("\n\n【上一次输出不合格 · 本次必须修正】\n");
+        sb.append("你上一次的回复缺少下列必填内容：\n");
+        for (String item : missing) {
+            sb.append("  - ").append(item).append("\n");
+        }
+        sb.append("这两个字段都不是可选项，也不能写 null、不能省略、不能留空：\n");
+        sb.append("  · next_after_minutes：大于 0 的整数分钟数，例如 45、120、360、540；\n");
+        sb.append("  · next_after_reason：2~6 个字的中文短语，说明这段时间在做什么，例如「睡觉」「赶路」「研究符文」「吃午饭」。\n");
+        sb.append("请重新输出**完整**的 JSON（其余字段一个都不能少）：把 next_after_minutes 和 next_after_reason ")
+                .append("放在整个 JSON 的**最前面**，再依次写 location、actions 等字段，间隔要与你的行动相符。");
+        return sb.toString();
+    }
+
+    /**
+     * 重试时的用户提示词：在原文开头和结尾各插一段提醒。
+     * 放在开头是因为模型对提示词首尾最敏感，放在结尾是为了防止长上下文冲淡要求。
+     */
+    private String buildRetryUserPrompt(String userPrompt, List<String> missing) {
+        StringBuilder head = new StringBuilder();
+        head.append("【重要提醒 · 请先读这段】\n");
+        head.append("你上一次的输出缺少以下必填字段：").append(String.join("；", missing)).append("。\n");
+        head.append("这次必须在 JSON 的**最前面**先写出这两个字段，再写 location 等其余字段：\n");
+        head.append("  \"next_after_minutes\": <大于 0 的整数分钟>,\n");
+        head.append("  \"next_after_reason\": \"<2~6 个字，说明这段时间在做什么>\",\n");
+        head.append("缺任何一个都会导致本次输出被判为失败并再次重试。\n\n");
+
+        String tail = "\n\n【再次强调】本次输出必须以 "
+                + "{\"next_after_minutes\":<整数>,\"next_after_reason\":\"<简短原因>\", 开头，"
+                + "并且只输出这一段 JSON，不要有任何解释文字或代码块标记。";
+        // 长上文容易被模型忽略，因此提醒放在开头和结尾各一次
+        return head + userPrompt + tail;
     }
 
     @Override
@@ -1269,12 +1398,13 @@ public class SandboxServiceImpl implements SandboxService {
 
         sb.append("\n【输出要求】\n")
                 .append("你必须严格只输出一个 JSON 对象，不要输出任何解释、前言、后缀，也不要使用 Markdown 代码块标记。JSON 结构如下：\n")
-                .append("{\"location\":\"这一步所处的地点名称，尽量使用【地图地点】里的名字\",")
+                .append("{\"next_after_minutes\":45,\"next_after_reason\":\"稍作停留\",")
+                .append("\"location\":\"这一步所处的地点名称，尽量使用【地图地点】里的名字\",")
                 .append("\"sub_location\":\"这一步具体所在的小地方（自己创作）\",\"x\":35,\"y\":62,")
                 .append("\"actions\":[\"具体动作一\",\"具体动作二\"],\"inner_voice\":\"角色此刻的心里话（第一人称，一句话）\",")
                 .append("\"status\":{\"体力\":80,\"魔力\":45,\"饥饿度\":30,\"心情\":\"平静\"},")
                 .append("\"coins_change\":0,\"companions\":[],\"favor_changes\":{\"角色名\":3},")
-                .append("\"items_change\":{\"物品名\":1},\"next_after_minutes\":0,\"next_after_reason\":\"\",")
+                .append("\"items_change\":{\"物品名\":1},")
                 .append("\"news_refs\":[],\"summary\":\"30 字以内概括这一步\"}\n")
                 .append("要求：\n")
                 .append("1. actions 写 1~3 条具体、有画面感的动作。\n")
@@ -1309,9 +1439,18 @@ public class SandboxServiceImpl implements SandboxService {
         sb.append("\n12. next_after_minutes 由你自己决定下一次行动隔多久（整数分钟，")
                 .append(intConfig("sandbox_ai_interval_min", 15)).append("~")
                 .append(intConfig("sandbox_ai_interval_max", 720)).append(" 之间），")
-                .append("表示你觉得过多久才会开始下一步；拿不准就填 0，系统会按默认间隔安排。")
+                .append("表示你觉得过多久才会开始下一步；即使拿不准，也要结合行动内容给一个合理的估计值，不要留空。")
                 .append("next_after_reason 用 2~6 个字说明这段时间在做什么（例如「睡觉」「赶路」「研究符文」），")
-                .append("没填间隔时可以留空字符串。");
+                .append("同样不能留空。");
+        sb.append("\n    这两个字段都是**必填项**：next_after_minutes 必须大于 0，next_after_reason 必须填写，")
+                .append("并且间隔要和你的行动相符。几种常见行为的参考间隔：\n")
+                .append("    · 睡觉 / 过夜休息：360~600 分钟（午睡、打盹 30~90 分钟）\n")
+                .append("    · 长途赶路 / 出海：120~240 分钟\n")
+                .append("    · 专注做事（研究符文、熬药、读书）：60~180 分钟\n")
+                .append("    · 吃饭 / 逛街 / 采买：15~45 分钟\n")
+                .append("    · 短暂交谈 / 试探搭话：10~30 分钟\n")
+                .append("    · 警戒 / 守夜 / 等待：30~90 分钟\n")
+                .append("    不要为了省事给一个和行动无关的短间隔（例如「睡觉」却只隔 15 分钟）。");
         sb.append("\n13. news_refs 是数组：如果你这一步听说了、议论了或关注了【今日要闻】里的某条事件，")
                 .append("就把那条事件的原句填进去（必须与上面列出的标题完全一致），没有就填 []；")
                 .append("听说并不代表一定要参与。");
@@ -2281,18 +2420,37 @@ public class SandboxServiceImpl implements SandboxService {
 
     @Override
     public void summarizeDaily() {
+        summarizeFor(LocalDate.now(), true);
+    }
+
+    @Override
+    public void summarizeOn(String date) {
+        LocalDate target;
+        try {
+            target = date == null || date.trim().isEmpty() ? LocalDate.now() : LocalDate.parse(date.trim());
+        } catch (Exception e) {
+            throw new BusinessException("日期格式应为 yyyy-MM-dd");
+        }
+        summarizeFor(target, false);
+    }
+
+    /** 生成指定日期的记忆；schedule=true 表示由定时任务触发（审计日志区分来源） */
+    private void summarizeFor(LocalDate date, boolean schedule) {
         if (!"1".equals(configService.getConfigValue("sandbox_memory_enabled", "1"))) {
             return;
         }
         boolean preset = AuditContext.isSet();
         if (!preset) {
-            AuditContext.schedule("沙盒·记忆总结");
+            if (schedule) {
+                AuditContext.schedule("沙盒·记忆总结");
+            } else {
+                AuditContext.manual("沙盒·补生成记忆");
+            }
         }
-        LocalDate today = LocalDate.now();
         try {
             for (SandboxCharacter character : characterMapper.selectList(null)) {
                 try {
-                    summarize(character, today);
+                    summarize(character, date);
                 } catch (Exception e) {
                     log.warn("沙盒角色「{}」记忆总结失败：{}", character.getName(), e.getMessage());
                 }
@@ -2362,12 +2520,19 @@ public class SandboxServiceImpl implements SandboxService {
     /** 让 AI 把一天的流水整理成一段第一人称的长期记忆 */
     private String aiSummary(SandboxCharacter character, LocalDate date, List<SandboxAct> acts) {
         StringBuilder sys = new StringBuilder();
-        sys.append("你是一个记忆整理器。请把某个角色一天的经历整理成一段第一人称的长期记忆：\n")
-                .append("1. 用角色的口吻写 150~300 字，像回忆一样自然连贯，不要逐条罗列流水账；\n")
-                .append("2. 保留重要事件、去过的地方（要写到二级地点，例如「自由城邦联盟 · 东侧集市」）、")
-                .append("这一阵常待的小地方、遇到的人和相处感受、得到或失去的物品、心情与状态的变化、还没做完的事；\n")
-                .append("3. 不要编造没有发生过的事，也不要写角色不可能知道的信息；\n")
-                .append("4. 只输出这段记忆本身，不要标题、日期、解释或 JSON。\n");
+        sys.append("你是一位擅长第一人称叙事的小说作者。请把这名角色一天的经历，写成一段**像回忆一样的连贯叙述**。\n")
+                .append("写作要求：\n")
+                .append("1. 用「我」的口吻，250~450 字，写成 2~4 个自然段；像在灯下回想今天，而不是汇报行程；\n")
+                .append("2. 有起承转合与情绪起伏：今天从什么事开始、中途发生了什么转折、后来心情怎么变化、")
+                .append("结束时带着怎样的状态入睡（或结束这一天）；\n")
+                .append("3. 句子要有细节和画面感——光线的冷热、食物的味道、斗篷湿透的重量、失败的窘迫、")
+                .append("遇到的人说话的语气；把这些细节串成故事，而不是一条条列举；\n")
+                .append("4. **严禁流水账**：不要使用「今天：」「；」这种罗列格式，不要逐条复述每个动作，")
+                .append("同一地点、同一件事的过程要合并提炼（例如把「买烤肉、吃烤肉、被香气吸引」写成一句话带情绪的场景）；\n")
+                .append("5. 保留值得记住的东西：去过的地方（写到二级地点，如「自由城邦联盟 · 东侧集市」）、")
+                .append("这一阵常待的小地方、遇到的人与相处感受、得到或失去的物品、金钱收支、身体与心情的变化、还没做完的事；\n")
+                .append("6. 不要编造没有发生过的事，也不要写角色不可能知道的信息；\n")
+                .append("7. 只输出这段回忆本身，不要标题、日期、分点符号、解释或 JSON。");
         StringBuilder user = new StringBuilder();
         user.append("角色：").append(character.getName());
         if (notBlank(character.getTitle())) {
@@ -2392,8 +2557,19 @@ public class SandboxServiceImpl implements SandboxService {
             }
             user.append("\n");
         }
-        String content = aiProviderService.chat(character.getProviderId(), character.getModel(),
-                sys.toString(), user.toString(), 0.6);
+        // 记忆总结属于系统级调用：如果实际使用的是系统服务商（与角色绑定的不同），
+        // 角色自己的模型名在系统服务商上通常不存在，这里改用配置的系统模型
+        AiProvider provider = AuditContext.isSchedule()
+                ? aiProviderService.resolveSystemProvider(character.getProviderId())
+                : aiProviderService.resolveManualProvider(character.getProviderId());
+        String model = character.getModel();
+        if (provider != null && !provider.getId().equals(character.getProviderId())) {
+            String systemModel = configService.getConfigValue("sandbox_system_model", "");
+            if (notBlank(systemModel)) {
+                model = systemModel.trim();
+            }
+        }
+        String content = aiProviderService.chat(provider, model, sys.toString(), user.toString(), 0.6);
         return content == null ? null : content.trim();
     }
 
@@ -2407,9 +2583,23 @@ public class SandboxServiceImpl implements SandboxService {
             }
         }
         if (parts.isEmpty()) {
-            return "今天什么也没做，只是发了很久的呆。";
+            return "今天什么也没做，只是发了很久的呆，直到天色暗下来。";
         }
-        return truncate("今天：" + String.join("；", parts) + "。", 2000);
+        // 兜底也要读得顺：不写成「今天：A；B；C」，而是连成几段自然的叙述
+        StringBuilder sb = new StringBuilder();
+        sb.append("（AI 总结暂不可用，以下是根据当天行动整理的记录）\n");
+        int index = 0;
+        for (String part : parts) {
+            if (index == 0) {
+                sb.append("这一天从").append(part).append("开始。");
+            } else if (index % 4 == 0) {
+                sb.append("\n后来，").append(part).append("。");
+            } else {
+                sb.append("接着").append(part).append("。");
+            }
+            index++;
+        }
+        return truncate(sb.toString(), 2000);
     }
 
     /** 最近的记忆（按日期倒序取最近 n 天） */
@@ -2429,6 +2619,11 @@ public class SandboxServiceImpl implements SandboxService {
      * 可选的自查（审查）：把 AI 的输出再交给一次 AI 只做 JSON 校验与数值修正，不改写剧情。
      * 需要在后台把 sandbox_verify_enabled 设为 1 才生效（会翻倍消耗 token）。
      * 任何失败都会退回原始输出，不影响正常流程。
+     *
+     * 注意：自查模型的提示词必须列出**全部**字段，并强调「原样保留所有字段」。
+     * 早期版本只列了 10 个字段，弱模型（如 gemini-flash 系列）会照着清单重建 JSON，
+     * 把 sub_location、items_change、news_refs、next_after_minutes/next_after_reason 全删掉。
+     * 除了提示词，这里还加了一层服务端兜底：只要自查结果丢了原 JSON 的字段，就直接丢弃它。
      */
     private String verifyOutput(SandboxCharacter character, String raw, List<SandboxLocation> locations,
                                 List<SandboxCharacter> companions) {
@@ -2437,17 +2632,27 @@ public class SandboxServiceImpl implements SandboxService {
         }
         try {
             StringBuilder sys = new StringBuilder();
-            sys.append("你是一个 JSON 校验器，只做校验与修正，不要改写故事内容，也不要新增剧情。\n")
-                    .append("输入是某个角色扮演输出的 JSON，请检查后只输出修正过的 JSON：\n")
-                    .append("1. 必须是合法 JSON，字段包含 location、x、y、actions、inner_voice、status、")
-                    .append("coins_change、companions、favor_changes、summary；\n")
-                    .append("2. location 必须是【可用地点】里的名字，x/y 为 0~100 的整数；\n")
-                    .append("3. status 里体力、魔力、饥饿度必须是 0~100 的整数；\n")
+            sys.append("你是一个 JSON 校验器，只做校验与数值修正，不改写故事内容，也不新增剧情。\n")
+                    .append("输入是某个角色扮演输出的 JSON。请**原样保留输入中的每一个字段**（键名一个都不能少），")
+                    .append("只修正其中的数值和名字，然后输出完整的 JSON：\n")
+                    .append("- 不允许删除、省略、改名字段，特别是 sub_location、items_change、news_refs、")
+                    .append("next_after_minutes、next_after_reason 这些字段必须原样保留；\n")
+                    .append("- 不允许新增输入里没有的字段；\n")
+                    .append("- 不允许改写或缩写 actions、inner_voice、summary 的文字内容；\n")
+                    .append("- 即使某个字段看起来多余，也要照抄，不要自作主张删掉。\n")
+                    .append("校验规则：\n")
+                    .append("1. location 必须是【可用地点】里的名字，x/y 为 0~100 的整数；\n")
+                    .append("2. actions 至少保留 1 条，条目内容不要改动；\n")
+                    .append("3. status 里体力、魔力、饥饿度必须是 0~100 的整数，心情等其它键保留原文；\n")
                     .append("4. coins_change 必须与 actions 描述的收支一致，没有花钱或赚钱就改成 0；\n")
                     .append("5. companions 只能填【可用角色名】里的名字；favor_changes 的键也只能是这些名字，")
                     .append("并且必须与 companions 和 actions 的描述相符，幅度限制在 -10~+10，")
                     .append("还要保证加上当前好感度后仍在 -100~100 之内；\n")
-                    .append("6. 不要编造任何角色名或地点名。修正完成后只输出 JSON，不要输出解释。\n");
+                    .append("6. items_change 的键是物品名、值是 ±9 以内的整数，没有变化就保留空对象；\n")
+                    .append("7. next_after_minutes 必须是大于 0 的整数，next_after_reason 必须是 2~6 个字，")
+                    .append("这两个字段绝对不能删除；\n")
+                    .append("8. 不要编造任何角色名或地点名。\n")
+                    .append("只输出这一段完整的 JSON，不要输出解释文字，也不要使用 Markdown 代码块标记。\n");
 
             StringBuilder user = new StringBuilder();
             user.append("【可用地点】");
@@ -2471,11 +2676,40 @@ public class SandboxServiceImpl implements SandboxService {
 
             String content = aiProviderService.chat(character.getProviderId(), character.getModel(),
                     sys.toString(), user.toString(), 0.2);
-            return content == null || content.trim().isEmpty() ? raw : content;
+            if (content == null || content.trim().isEmpty()) {
+                return raw;
+            }
+            // 服务端兜底：自查只该改数值/名字。一旦它把原 JSON 的字段删掉了，就整份丢弃，
+            // 改用原始输出（不指望模型自觉，这一步才是真正的保险）
+            return keepVerifiedIfComplete(raw, content);
         } catch (Exception e) {
             log.warn("沙盒输出自查失败，改用原始输出：{}", e.getMessage());
             return raw;
         }
+    }
+
+    /**
+     * 比对自查前后的字段，决定是否采用自查结果。
+     * 自查结果丢失了原 JSON 的任何字段时返回原始输出，否则返回自查结果。
+     */
+    private String keepVerifiedIfComplete(String raw, String verified) {
+        JSONObject original = parseJson(raw);
+        JSONObject checked = parseJson(verified);
+        if (original == null || checked == null) {
+            log.warn("沙盒输出自查结果无法解析，改用原始输出");
+            return raw;
+        }
+        List<String> lost = new ArrayList<>();
+        for (String key : original.keySet()) {
+            if (!checked.containsKey(key)) {
+                lost.add(key);
+            }
+        }
+        if (!lost.isEmpty()) {
+            log.warn("沙盒输出自查丢了字段（{}），改用原始输出", String.join("、", lost));
+            return raw;
+        }
+        return verified;
     }
 
     /** 取角色上次行动之后收到的低语；第一次行动时取最近几条 */

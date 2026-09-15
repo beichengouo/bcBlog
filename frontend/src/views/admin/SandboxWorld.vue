@@ -284,6 +284,17 @@
           <el-switch v-model="settings.memoryEnabled" active-value="1" inactive-value="0" />
           <span class="tip">每天到点把角色当天的行动总结成一段长期记忆，后续几天的活动会参考它，日志就不必长期堆积</span>
         </el-form-item>
+        <el-form-item label="系统调用模型">
+          <el-input
+            v-model="settings.systemModel"
+            style="width: 280px"
+            placeholder="留空则用角色自己的模型"
+            maxlength="100"
+          />
+          <span class="tip">
+            定时行动、记忆总结等系统级调用回落到系统服务商时使用；请填系统服务商上真实存在的模型名
+          </span>
+        </el-form-item>
         <el-form-item label="记忆总结时间">
           <el-input v-model="settings.memoryTime" style="width: 90px" placeholder="23:50" />
           <span class="tip">服务器时间 HH:mm，建议放在夜间静默开始之前</span>
@@ -349,7 +360,8 @@ const settings = reactive({
   memoryDeleteActs: '0',
   aiIntervalEnabled: '1',
   aiIntervalMin: '15',
-  aiIntervalMax: '720'
+  aiIntervalMax: '720',
+  systemModel: ''
 })
 
 const loading = ref(false)

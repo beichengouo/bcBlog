@@ -208,8 +208,8 @@ public class AdminSandboxController {
 
     /** 立即为所有角色生成当天记忆（调试用，不等定时任务） */
     @PostMapping("/memories/summarize")
-    public Result<Void> summarize() {
-        sandboxService.summarizeDaily();
+    public Result<Void> summarize(@RequestParam(required = false) String date) {
+        sandboxService.summarizeOn(date);
         return Result.ok();
     }
 

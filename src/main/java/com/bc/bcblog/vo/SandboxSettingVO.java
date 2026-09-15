@@ -59,4 +59,6 @@ public class SandboxSettingVO {
     private String newsAutoEnabled;
     /** 自动生成纪闻的时间 HH:mm */
     private String newsAutoTime;
+    /** 系统级 AI 调用（定时行动 / 记忆总结）使用的模型，留空则用角色自身模型 */
+    private String systemModel;
 }

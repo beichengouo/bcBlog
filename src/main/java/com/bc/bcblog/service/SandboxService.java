@@ -115,6 +115,9 @@ public interface SandboxService {
     /** 定时任务入口：到点后为当天有行动的角色生成记忆总结 */
     void summarizeDaily();
 
+    /** 手动补生成指定日期（yyyy-MM-dd）的记忆，用于修正或测试；同一天会覆盖已有记录 */
+    void summarizeOn(String date);
+
     // ---------------- 背包 ----------------
 
     List<SandboxItem> items(Long characterId);
