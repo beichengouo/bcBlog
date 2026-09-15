@@ -186,6 +186,86 @@ public class AiProviderServiceImpl implements AiProviderService {
         return body;
     }
 
+    @Override
+    public AiProvider defaultProvider() {
+        AiProvider p = providerMapper.selectOne(new LambdaQueryWrapper<AiProvider>()
+                .eq(AiProvider::getIsDefault, 1)
+                .orderByAsc(AiProvider::getId)
+                .last("limit 1"));
+        if (p != null) {
+            return p;
+        }
+        // 没有标记默认服务商时退化为第一个
+        return providerMapper.selectOne(new LambdaQueryWrapper<AiProvider>()
+                .orderByAsc(AiProvider::getId)
+                .last("limit 1"));
+    }
+
+    @Override
+    public String chat(Long providerId, String model, String systemPrompt, String userPrompt, Double temperature) {
+        AiProvider p = providerId == null ? defaultProvider() : providerMapper.selectById(providerId);
+        if (p == null) {
+            throw new BusinessException("请先在后台「接口管理 → AI 服务商」添加一个服务商");
+        }
+        if (isBlank(p.getApiKey())) {
+            throw new BusinessException("服务商「" + p.getName() + "」还没有配置 API Key");
+        }
+        if (isBlank(model)) {
+            throw new BusinessException("请先选择该角色使用的模型");
+        }
+
+        String base = trimSlash(p.getBaseUrl());
+        String[] urls = {base + "/chat/completions", base + "/v1/chat/completions"};
+        String key = p.getApiKey().trim();
+        JSONObject body = new JSONObject();
+        body.set("model", model);
+        JSONArray messages = new JSONArray();
+        JSONObject sys = new JSONObject();
+        sys.set("role", "system");
+        sys.set("content", systemPrompt);
+        messages.add(sys);
+        JSONObject user = new JSONObject();
+        user.set("role", "user");
+        user.set("content", userPrompt);
+        messages.add(user);
+        body.set("messages", messages);
+        body.set("temperature", temperature == null ? 0.9 : temperature);
+
+        HttpResponse ok = null;
+        // 先尝试要求返回 JSON 对象，部分兼容接口不支持时自动去掉该参数重试
+        for (boolean withFormat : new boolean[]{true, false}) {
+            for (String u : urls) {
+                JSONObject b = JSONUtil.parseObj(body.toString());
+                if (withFormat) {
+                    JSONObject rf = new JSONObject();
+                    rf.set("type", "json_object");
+                    b.set("response_format", rf);
+                }
+                HttpResponse r = tryPost(u, key, b);
+                if (r != null && r.getStatus() == 200) {
+                    ok = r;
+                    break;
+                }
+                if (r != null && (r.getStatus() == 401 || r.getStatus() == 403)) {
+                    throw new BusinessException("API Key 无效或无权限");
+                }
+            }
+            if (ok != null) {
+                break;
+            }
+        }
+        if (ok == null) {
+            throw new BusinessException("AI 调用失败，请检查接口地址、模型和 API Key");
+        }
+        try {
+            JSONObject json = JSONUtil.parseObj(ok.body());
+            JSONObject message = json.getJSONArray("choices").getJSONObject(0).getJSONObject("message");
+            return message.getStr("content");
+        } catch (Exception e) {
+            throw new BusinessException("AI 返回内容解析失败：" + e.getMessage());
+        }
+    }
+
     private HttpResponse tryPost(String url, String key, JSONObject body) {
         try {
             return HttpRequest.post(url)

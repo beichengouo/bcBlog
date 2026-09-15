@@ -1,3 +1,13 @@
+-- bcBlog 数据库结构导出（仅结构，不含数据）
+-- 用法：在 Navicat 中先创建 bc_blog 数据库（utf8mb4），选中该库后再执行本文件。
+-- 全新安装执行完本文件后，首次启动后端会自动创建默认管理员 admin / Admin@123456。
+-- 已经有数据的旧库请使用 upgrade_*.sql 增量升级，不要执行本文件。
+
+-- MySQL dump 10.13  Distrib 8.0.46, for Win64 (x86_64)
+--
+-- Host: localhost    Database: bc_blog
+-- ------------------------------------------------------
+-- Server version	8.0.46
 
 /*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
 /*!40101 SET @OLD_CHARACTER_SET_RESULTS=@@CHARACTER_SET_RESULTS */;
@@ -9,6 +19,11 @@
 /*!40014 SET @OLD_FOREIGN_KEY_CHECKS=@@FOREIGN_KEY_CHECKS, FOREIGN_KEY_CHECKS=0 */;
 /*!40101 SET @OLD_SQL_MODE=@@SQL_MODE, SQL_MODE='NO_AUTO_VALUE_ON_ZERO' */;
 /*!40111 SET @OLD_SQL_NOTES=@@SQL_NOTES, SQL_NOTES=0 */;
+
+--
+-- Table structure for table `ai_provider`
+--
+
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `ai_provider` (
@@ -19,8 +34,13 @@ CREATE TABLE `ai_provider` (
   `is_default` tinyint NOT NULL DEFAULT '0',
   `create_time` datetime DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='AI服务商配置';
+) ENGINE=InnoDB AUTO_INCREMENT=7 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='AI服务商配置';
 /*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `background`
+--
+
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `background` (
@@ -34,6 +54,11 @@ CREATE TABLE `background` (
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=6 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='页面背景壁纸';
 /*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `blog_article`
+--
+
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `blog_article` (
@@ -55,6 +80,11 @@ CREATE TABLE `blog_article` (
   KEY `idx_status_time` (`status`,`create_time`)
 ) ENGINE=InnoDB AUTO_INCREMENT=6 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='文章表';
 /*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `blog_article_tag`
+--
+
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `blog_article_tag` (
@@ -63,6 +93,11 @@ CREATE TABLE `blog_article_tag` (
   PRIMARY KEY (`article_id`,`tag_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='文章标签关联表';
 /*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `blog_category`
+--
+
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `blog_category` (
@@ -75,6 +110,11 @@ CREATE TABLE `blog_category` (
   KEY `idx_parent` (`parent_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='分类表';
 /*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `blog_comment`
+--
+
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `blog_comment` (
@@ -94,6 +134,11 @@ CREATE TABLE `blog_comment` (
   KEY `idx_article` (`article_id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='评论表';
 /*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `blog_photo`
+--
+
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `blog_photo` (
@@ -105,6 +150,11 @@ CREATE TABLE `blog_photo` (
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='娴佸厜蹇嗗涵鐓х墖';
 /*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `blog_resource`
+--
+
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `blog_resource` (
@@ -120,6 +170,11 @@ CREATE TABLE `blog_resource` (
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='鏅哄簱璧勬簮';
 /*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `blog_tag`
+--
+
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `blog_tag` (
@@ -130,6 +185,11 @@ CREATE TABLE `blog_tag` (
   UNIQUE KEY `uk_name` (`name`)
 ) ENGINE=InnoDB AUTO_INCREMENT=18 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='标签表';
 /*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `live2d_model`
+--
+
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `live2d_model` (
@@ -145,6 +205,11 @@ CREATE TABLE `live2d_model` (
   UNIQUE KEY `uk_model_key` (`model_key`)
 ) ENGINE=InnoDB AUTO_INCREMENT=18 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Live2D 看板娘模型库';
 /*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `music_fallback`
+--
+
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `music_fallback` (
@@ -157,6 +222,11 @@ CREATE TABLE `music_fallback` (
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=5 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='榛樿?姝屾洸';
 /*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `music_playlist`
+--
+
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `music_playlist` (
@@ -169,6 +239,183 @@ CREATE TABLE `music_playlist` (
   UNIQUE KEY `uk_playlist_id` (`playlist_id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='音乐歌单';
 /*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `sandbox_act`
+--
+
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `sandbox_act` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `world_id` bigint NOT NULL DEFAULT '1' COMMENT '所属世界',
+  `character_id` bigint NOT NULL COMMENT '角色ID',
+  `location_name` varchar(100) DEFAULT NULL COMMENT '这一步所处地点',
+  `x` int DEFAULT NULL COMMENT '这一步的横向坐标',
+  `y` int DEFAULT NULL COMMENT '这一步的纵向坐标',
+  `actions` varchar(1000) DEFAULT NULL COMMENT '做了什么（多条用换行分隔）',
+  `inner_voice` varchar(1000) DEFAULT NULL COMMENT '心声',
+  `companions` varchar(200) DEFAULT NULL COMMENT '这一步互动的其他角色，逗号分隔',
+  `favor_change` varchar(200) DEFAULT NULL COMMENT '这一步的好感度变化，如「零 +3」',
+  `status_json` varchar(1000) DEFAULT NULL COMMENT '这一步结束后的状态',
+  `coin_change` int NOT NULL DEFAULT '0' COMMENT '本次金币变化，正为赚取、负为消耗',
+  `summary` varchar(300) DEFAULT NULL COMMENT '一句话概括',
+  `raw_response` text COMMENT 'AI 原始返回，便于排查问题',
+  `from_ai` tinyint NOT NULL DEFAULT '1' COMMENT '是否来自 AI：1 是，0 为兜底记录',
+  `manual` tinyint NOT NULL DEFAULT '0' COMMENT '是否管理员手动执行：1 是（不占用每日额度）',
+  `reaction` tinyint NOT NULL DEFAULT '0' COMMENT '是否由其他角色的互动触发的回应回合：1 是',
+  `create_time` datetime DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_character_time` (`character_id`,`create_time`),
+  KEY `idx_create_time` (`create_time`)
+) ENGINE=InnoDB AUTO_INCREMENT=18 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='沙盒行动记录';
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `sandbox_character`
+--
+
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `sandbox_character` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `world_id` bigint NOT NULL DEFAULT '1' COMMENT '所属世界',
+  `name` varchar(100) NOT NULL COMMENT '角色名',
+  `title` varchar(100) DEFAULT NULL COMMENT '称号',
+  `avatar` varchar(500) DEFAULT NULL COMMENT '头像 / 立绘地址',
+  `appearance` varchar(500) DEFAULT NULL COMMENT '外貌描述（前台展示）',
+  `persona` text COMMENT '人设提示词，写法参考酒馆角色卡',
+  `provider_id` bigint DEFAULT NULL COMMENT '绑定 AI 服务商ID',
+  `model` varchar(100) DEFAULT NULL COMMENT '使用的模型',
+  `temperature` decimal(3,2) NOT NULL DEFAULT '0.90' COMMENT '采样温度 0~2',
+  `x` int NOT NULL DEFAULT '50' COMMENT '当前横向坐标百分比',
+  `y` int NOT NULL DEFAULT '50' COMMENT '当前纵向坐标百分比',
+  `location_name` varchar(100) DEFAULT NULL COMMENT '当前位置名称',
+  `status_json` varchar(1000) DEFAULT NULL COMMENT '当前状态（JSON，内容由 AI 生成）',
+  `coins` int NOT NULL DEFAULT '0' COMMENT '金币余额',
+  `next_run_time` datetime DEFAULT NULL COMMENT '下次 AI 行动时间',
+  `last_run_time` datetime DEFAULT NULL COMMENT '上次 AI 行动时间',
+  `interval_min` int NOT NULL DEFAULT '45' COMMENT '行动间隔最小值（分钟）',
+  `interval_max` int NOT NULL DEFAULT '75' COMMENT '行动间隔最大值（分钟）',
+  `last_error` varchar(500) DEFAULT NULL COMMENT '最后一次调用失败原因',
+  `enabled` tinyint NOT NULL DEFAULT '1' COMMENT '是否启用：1 启用，0 停用',
+  `create_time` datetime DEFAULT CURRENT_TIMESTAMP,
+  `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_world` (`world_id`)
+) ENGINE=InnoDB AUTO_INCREMENT=8 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='沙盒角色';
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `sandbox_coin_log`
+--
+
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `sandbox_coin_log` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `character_id` bigint NOT NULL COMMENT '角色ID',
+  `user_id` bigint DEFAULT NULL COMMENT '贡献人（赚取/消耗为空）',
+  `user_name` varchar(100) DEFAULT NULL COMMENT '贡献人昵称快照',
+  `type` varchar(20) NOT NULL COMMENT '类型：contribute 贡献 / earn 赚取 / spend 消耗 / admin 管理员调整',
+  `coins` int NOT NULL COMMENT '金币变化，正为增加、负为减少',
+  `points_cost` int NOT NULL DEFAULT '0' COMMENT '贡献消耗的积分',
+  `balance` int NOT NULL DEFAULT '0' COMMENT '变化后余额',
+  `remark` varchar(200) DEFAULT NULL COMMENT '说明',
+  `create_time` datetime DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_character` (`character_id`),
+  KEY `idx_create_time` (`create_time`)
+) ENGINE=InnoDB AUTO_INCREMENT=7 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='沙盒金币流水';
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `sandbox_interaction`
+--
+
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `sandbox_interaction` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `character_id` bigint NOT NULL COMMENT '角色ID',
+  `user_id` bigint NOT NULL COMMENT '留言用户ID',
+  `user_name` varchar(100) DEFAULT NULL COMMENT '用户昵称快照',
+  `user_avatar` varchar(500) DEFAULT NULL COMMENT '用户头像快照',
+  `content` varchar(500) NOT NULL COMMENT '低语内容',
+  `points_cost` int NOT NULL DEFAULT '0' COMMENT '消耗积分',
+  `create_time` datetime DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_character` (`character_id`)
+) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='沙盒旅人低语';
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `sandbox_location`
+--
+
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `sandbox_location` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `world_id` bigint NOT NULL DEFAULT '1' COMMENT '所属世界',
+  `name` varchar(100) NOT NULL COMMENT '地点名称',
+  `icon` varchar(500) DEFAULT NULL COMMENT '地点图标：内置图标 key 或上传的图片地址',
+  `x` int NOT NULL DEFAULT '50' COMMENT '横向坐标百分比 0~100',
+  `y` int NOT NULL DEFAULT '50' COMMENT '纵向坐标百分比 0~100',
+  `description` varchar(500) DEFAULT NULL COMMENT '地点描述，会作为 AI 行动参考',
+  `sort_order` int NOT NULL DEFAULT '0' COMMENT '排序，越小越靠前',
+  `create_time` datetime DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_world` (`world_id`)
+) ENGINE=InnoDB AUTO_INCREMENT=12 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='沙盒地图地点';
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `sandbox_relation`
+--
+
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `sandbox_relation` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `world_id` bigint NOT NULL DEFAULT '1' COMMENT '所属世界',
+  `character_id` bigint NOT NULL COMMENT '角色ID（好感度的持有方）',
+  `target_id` bigint NOT NULL COMMENT '对象角色ID',
+  `favor` int NOT NULL DEFAULT '0' COMMENT '好感度 -100~100',
+  `last_change` int NOT NULL DEFAULT '0' COMMENT '上一次实际生效的好感度变化',
+  `last_change_time` datetime DEFAULT NULL COMMENT '上一次好感度变化时间',
+  `remark` varchar(200) DEFAULT NULL COMMENT '管理员备注，例如「在集市认识的酒友」',
+  `create_time` datetime DEFAULT CURRENT_TIMESTAMP,
+  `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_pair` (`character_id`,`target_id`),
+  KEY `idx_target` (`target_id`)
+) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='沙盒角色好感度';
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `sandbox_world`
+--
+
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `sandbox_world` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `name` varchar(100) NOT NULL DEFAULT '' COMMENT '世界名称',
+  `description` varchar(500) DEFAULT NULL COMMENT '世界简介（前台展示）',
+  `map_image` varchar(500) DEFAULT NULL COMMENT '地图背景图地址',
+  `world_prompt` text COMMENT '世界设定：写给 AI 的世界观、规则与文风',
+  `enabled` tinyint NOT NULL DEFAULT '1' COMMENT '是否启用：1 启用，0 停用',
+  `create_time` datetime DEFAULT CURRENT_TIMESTAMP,
+  `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='沙盒世界';
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `site_announcement`
+--
+
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `site_announcement` (
@@ -182,6 +429,11 @@ CREATE TABLE `site_announcement` (
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='站点公告';
 /*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `sys_config`
+--
+
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `sys_config` (
@@ -191,8 +443,13 @@ CREATE TABLE `sys_config` (
   `remark` varchar(200) DEFAULT NULL COMMENT '备注',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_key` (`config_key`)
-) ENGINE=InnoDB AUTO_INCREMENT=35 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='系统配置表';
+) ENGINE=InnoDB AUTO_INCREMENT=56 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='系统配置表';
 /*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `sys_email_template`
+--
+
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `sys_email_template` (
@@ -211,6 +468,11 @@ CREATE TABLE `sys_email_template` (
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='邮件模板';
 /*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `sys_emoji`
+--
+
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `sys_emoji` (
@@ -225,6 +487,11 @@ CREATE TABLE `sys_emoji` (
   KEY `idx_pack` (`pack`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='表情包';
 /*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `sys_invite_code`
+--
+
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `sys_invite_code` (
@@ -240,6 +507,11 @@ CREATE TABLE `sys_invite_code` (
   UNIQUE KEY `uk_creator` (`creator_id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='邀请码';
 /*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `sys_level`
+--
+
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `sys_level` (
@@ -254,6 +526,11 @@ CREATE TABLE `sys_level` (
   UNIQUE KEY `uk_level` (`level`)
 ) ENGINE=InnoDB AUTO_INCREMENT=11 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='等级配置';
 /*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `sys_login_log`
+--
+
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `sys_login_log` (
@@ -266,8 +543,13 @@ CREATE TABLE `sys_login_log` (
   `create_time` datetime DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   KEY `idx_username` (`username`)
-) ENGINE=InnoDB AUTO_INCREMENT=38 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='登录日志表';
+) ENGINE=InnoDB AUTO_INCREMENT=45 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='登录日志表';
 /*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `sys_point_log`
+--
+
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `sys_point_log` (
@@ -281,8 +563,13 @@ CREATE TABLE `sys_point_log` (
   PRIMARY KEY (`id`),
   KEY `idx_user_id` (`user_id`),
   KEY `idx_create_time` (`create_time`)
-) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='积分流水';
+) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='积分流水';
 /*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `sys_resource_unlock`
+--
+
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `sys_resource_unlock` (
@@ -294,6 +581,11 @@ CREATE TABLE `sys_resource_unlock` (
   UNIQUE KEY `uk_user_resource` (`user_id`,`resource_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='资源解锁记录';
 /*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `sys_sign_log`
+--
+
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `sys_sign_log` (
@@ -306,6 +598,11 @@ CREATE TABLE `sys_sign_log` (
   UNIQUE KEY `uk_user_date` (`user_id`,`sign_date`)
 ) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='签到记录';
 /*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `sys_user`
+--
+
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `sys_user` (
@@ -329,8 +626,13 @@ CREATE TABLE `sys_user` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_username` (`username`),
   UNIQUE KEY `uk_email` (`email`)
-) ENGINE=InnoDB AUTO_INCREMENT=7 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='管理员表';
+) ENGINE=InnoDB AUTO_INCREMENT=13 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='管理员表';
 /*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `sys_visit_stat`
+--
+
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `sys_visit_stat` (
@@ -339,7 +641,7 @@ CREATE TABLE `sys_visit_stat` (
   `pv` bigint NOT NULL DEFAULT '0' COMMENT '褰撴棩璁块棶閲',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_stat_date` (`stat_date`)
-) ENGINE=InnoDB AUTO_INCREMENT=75 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='姣忔棩璁块棶閲忕粺璁';
+) ENGINE=InnoDB AUTO_INCREMENT=127 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='姣忔棩璁块棶閲忕粺璁';
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
 
@@ -351,3 +653,4 @@ CREATE TABLE `sys_visit_stat` (
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
+-- Dump completed on 2026-09-15 13:43:27

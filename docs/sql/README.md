@@ -2,20 +2,29 @@
 
 ## 一、全新安装
 
-执行 `bc_blog_full.sql`：会自动建库 `bc_blog` 并创建全部 24 张表（只含结构，不含数据）。
+执行 `bc_blog_full.sql`：在 `bc_blog` 库中创建全部 31 张表（只含结构，不含数据）。
 首次启动后端时，程序会自动写入默认超级管理员 `admin / Admin@123456`。
 
 ## 二、老库升级（备案完成后更新线上数据库，用这一份）
 
-直接执行 **`upgrade_20260915_batch.sql`** 即可，它把「上一次部署版本（Git 提交 `3f13623`，2026-09-14 上线）」
-到当前版本之间的**全部数据库改动**合并成了一份脚本。
+按顺序执行下面两份脚本，即可把「上一次部署版本（Git 提交 `3f13623`，2026-09-14 上线）」
+升级到当前版本：
+
+1. **`upgrade_20260915_batch.sql`** —— 用户体系、积分等级、QQ 邮箱、智库积分解锁、表情包、数据清理等改动
+2. **`upgrade_017_sandbox.sql`** —— 沙盒世界模块（世界/地图/角色/行动记录/旅人低语 5 张表 + 运行参数）
+3. **`upgrade_018_sandbox_location_icon.sql`** —— 沙盒地点增加图标字段（内置图标 key 或上传的图片地址）
+4. **`upgrade_019_sandbox_coins.sql`** —— 沙盒角色金币（余额字段、行动金币变化、金币流水表与兑换比例配置）
+5. **`upgrade_020_sandbox_multi_character.sql`** —— 多角色互动（行动记录新增互动角色字段 + 同轮行动时间窗配置）
+6. **`upgrade_021_sandbox_relation.sql`** —— 角色之间的好感度（好感度表 + 行动记录的好感变化字段）
+7. **`upgrade_022_sandbox_favor_audit.sql`** —— 好感度结算修正（记录实际生效的变化）与可选的 AI 自查开关
+8. **`upgrade_023_sandbox_chain.sql`** —— 互动触发「回应回合」（含深度 / 次数 / 冷却等防循环配置）
 
 脚本特点：
 
 - **幂等**：内部先查 `information_schema`，已存在的表 / 字段 / 索引自动跳过，同一个脚本重复执行不会报错。
 - **只增不删**：不删表、不删业务数据；配置项用 `INSERT IGNORE`，不会覆盖你已经在后台改好的配置。
 - **不含敏感信息**：QQ 邮箱账号、授权码、各类 API Key 都是空值占位，部署后在后台填写。
-- **自检**：执行完会返回一张「已就绪的表」清单（13 张），看到清单即表示升级成功。
+- **自检**：两份脚本执行完都会返回一张「已就绪的表」清单（batch 13 张、沙盒 5 张），看到清单即表示升级成功。
 
 执行方式（二选一）：
 
@@ -83,6 +92,13 @@ mysql --default-character-set=utf8mb4 -uroot -p bc_blog < upgrade_20260915_batch
 | `upgrade_013_user_points.sql` | 积分字段与积分流水表 |
 | `upgrade_014_resource_point_emoji.sql` | 智库封面积分详情、资源解锁、表情包 |
 | `upgrade_015_cleanup_config.sql`、`upgrade_016_cleanup_tighten.sql` | 定期清理配置与默认保留天数 |
+| `upgrade_017_sandbox.sql` | 沙盒世界模块（5 张表 + 运行参数配置） |
+| `upgrade_018_sandbox_location_icon.sql` | 沙盒地点图标字段 |
+| `upgrade_019_sandbox_coins.sql` | 沙盒角色金币、行动金币变化与金币流水 |
+| `upgrade_020_sandbox_multi_character.sql` | 沙盒多角色同时行动与互动角色字段 |
+| `upgrade_021_sandbox_relation.sql` | 沙盒角色好感度表与行动好感变化字段 |
+| `upgrade_022_sandbox_favor_audit.sql` | 好感度实际生效变化字段与 AI 自查开关配置 |
+| `upgrade_023_sandbox_chain.sql` | 互动回应回合字段与防循环配置 |
 | `upgrade_20260915_batch.sql` | **以上全部合并版（推荐）** |
 
 ## 三、表的用途与定期清理说明
@@ -101,5 +117,12 @@ mysql --default-character-set=utf8mb4 -uroot -p bc_blog < upgrade_20260915_batch
 | `sys_user` / `sys_level` / `sys_invite_code` | 用户、等级、邀请码 | 否 | 永久 |
 | `sys_email_template` / `sys_emoji` / `live2d_model` / `site_announcement` / `music_fallback` / `background` / `music_playlist` / `ai_provider` | 各类配置与素材 | 否 | 永久 |
 | `sys_config` | 站点配置 | 否 | 永久 |
+| `sandbox_world` | 沙盒世界（地图背景、世界观设定） | 否 | 永久 |
+| `sandbox_location` | 沙盒地图地点与坐标 | 否 | 永久 |
+| `sandbox_character` | 沙盒角色（人设、立绘、AI 绑定、当前位置与状态） | 否 | 永久 |
+| `sandbox_act` | 沙盒行动记录（每天每个角色约 10 条） | 否 | 永久，可在后台「沙盒日志」逐条删除 |
+| `sandbox_interaction` | 旅人低语（前台登录用户留言，消耗积分） | 否 | 永久 |
+| `sandbox_coin_log` | 沙盒金币流水（旅人贡献 / 角色赚取 / 角色消耗 / 管理员调整） | 否 | 永久 |
+| `sandbox_relation` | 角色之间的好感度（有方向：A 对 B、B 对 A 各一条） | 否 | 永久 |
 
 清理任务每天按后台配置的时间执行一次（默认 03:30，服务器时间），只删除超过保留天数的历史记录。
