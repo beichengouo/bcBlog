@@ -3,6 +3,7 @@ package com.bc.bcblog.controller.admin;
 import com.bc.bcblog.common.Result;
 import com.bc.bcblog.dto.DeepseekApiKeyDTO;
 import com.bc.bcblog.service.ConfigService;
+import com.bc.bcblog.component.SecretCipher;
 import com.bc.bcblog.vo.SiteConfigVO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -24,6 +25,7 @@ import org.springframework.web.multipart.MultipartFile;
 public class AdminConfigController {
 
     private final ConfigService configService;
+    private final SecretCipher secretCipher;
 
     @GetMapping
     public Result<SiteConfigVO> get() {
@@ -59,7 +61,7 @@ public class AdminConfigController {
     /** 查询百度 IP 定位 AK。 */
     @GetMapping("/ip-location-ak")
     public Result<String> getIpLocationAk() {
-        return Result.ok(configService.getIpLocationAk());
+        return Result.ok(secretCipher.mask(configService.getIpLocationAk()));
     }
 
     /** 保存百度 IP 定位 AK。 */
@@ -85,7 +87,7 @@ public class AdminConfigController {
     /** 查询高德 IP 定位 Key。 */
     @GetMapping("/gaode-ip-key")
     public Result<String> getGaodeIpKey() {
-        return Result.ok(configService.getGaodeIpKey());
+        return Result.ok(secretCipher.mask(configService.getGaodeIpKey()));
     }
 
     /** 保存高德 IP 定位 Key。 */
@@ -111,7 +113,7 @@ public class AdminConfigController {
     /** 查询 ACG 随机封面 Token。 */
     @GetMapping("/acg-cover-token")
     public Result<String> getAcgCoverToken() {
-        return Result.ok(configService.getAcgCoverToken());
+        return Result.ok(secretCipher.mask(configService.getAcgCoverToken()));
     }
 
     /** 保存 ACG 随机封面 Token。 */

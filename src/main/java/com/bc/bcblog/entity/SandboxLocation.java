@@ -27,6 +27,10 @@ public class SandboxLocation {
     private Integer x;
     /** 纵向坐标百分比 0~100 */
     private Integer y;
+    /** 区域宽度百分比，0 表示单点 */
+    private Integer width;
+    /** 区域高度百分比，0 表示单点 */
+    private Integer height;
     /** 地点描述，会作为 AI 行动参考 */
     private String description;
     /** 排序，越小越靠前 */

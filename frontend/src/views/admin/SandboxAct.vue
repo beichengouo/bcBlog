@@ -7,6 +7,15 @@
           <el-select v-model="characterId" clearable placeholder="全部角色" style="width: 180px" @change="reload">
             <el-option v-for="c in characters" :key="c.id" :label="c.name" :value="c.id" />
           </el-select>
+          <el-select
+            v-model="locationFilter"
+            clearable
+            placeholder="全部地点"
+            style="width: 170px"
+            @change="reload"
+          >
+            <el-option v-for="loc in locations" :key="'loc-' + loc.id" :label="loc.name" :value="loc.name" />
+          </el-select>
           <el-button @click="reload">刷新</el-button>
         </div>
       </div>
@@ -19,9 +28,9 @@
           <el-table-column label="角色" width="120">
             <template #default="{ row }">{{ characterName(row.characterId) }}</template>
           </el-table-column>
-          <el-table-column label="地点" width="150">
+          <el-table-column label="地点" width="190">
             <template #default="{ row }">
-              <div>{{ row.locationName || '—' }}</div>
+              <div>{{ row.locationName || '—' }}<template v-if="row.subLocation"> · {{ row.subLocation }}</template></div>
               <div class="muted">x={{ row.x }} , y={{ row.y }}</div>
             </template>
           </el-table-column>
@@ -37,6 +46,20 @@
           </el-table-column>
           <el-table-column label="概括" min-width="160" show-overflow-tooltip>
             <template #default="{ row }">{{ row.summary || '—' }}</template>
+          </el-table-column>
+          <el-table-column label="下次间隔" width="150">
+            <template #default="{ row }">
+              <span v-if="row.nextAfterMinutes > 0">
+                {{ formatInterval(row.nextAfterMinutes) }}<em v-if="row.nextAfterReason">（{{ row.nextAfterReason }}）</em>
+              </span>
+              <span v-else class="muted">默认间隔</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="纪闻" min-width="160" show-overflow-tooltip>
+            <template #default="{ row }">
+              <span v-if="row.newsRef">{{ row.newsRef }}</span>
+              <span v-else class="muted">—</span>
+            </template>
           </el-table-column>
           <el-table-column label="互动" width="140">
             <template #default="{ row }">
@@ -190,7 +213,224 @@
           </el-table-column>
         </el-table>
       </el-tab-pane>
+
+      <el-tab-pane label="每日记忆" name="memories">
+        <div class="tab-tools">
+          <el-button type="primary" size="small" :loading="summarizing" @click="onSummarize">
+            立即生成今天的记忆
+          </el-button>
+          <span class="muted">
+            每天到点后自动为当天有行动的角色生成一段记忆（默认 23:50），用于后续几天的活动；
+            保留天数在「系统设置 → 数据清理」里配置，这里可以手动修正内容
+          </span>
+        </div>
+        <el-table :data="memories" v-loading="loadingMemories">
+          <el-table-column prop="memoryDate" label="日期" width="120" />
+          <el-table-column label="角色" width="130">
+            <template #default="{ row }">{{ characterName(row.characterId) }}</template>
+          </el-table-column>
+          <el-table-column label="记忆内容" min-width="360">
+            <template #default="{ row }">
+              <div class="multiline">{{ row.summary || '—' }}</div>
+            </template>
+          </el-table-column>
+          <el-table-column label="当天行动" width="100">
+            <template #default="{ row }">{{ row.actCount || 0 }} 条</template>
+          </el-table-column>
+          <el-table-column label="来源" width="100">
+            <template #default="{ row }">
+              <el-tag size="small" :type="row.fromAi === 1 ? 'success' : 'warning'">
+                {{ row.fromAi === 1 ? 'AI 总结' : '兜底拼接' }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column prop="updateTime" label="更新时间" width="165" />
+          <el-table-column label="操作" width="150">
+            <template #default="{ row }">
+              <el-button size="small" @click="openMemoryEdit(row)">编辑</el-button>
+              <el-button size="small" type="danger" @click="onDeleteMemory(row)">删除</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+        <el-pagination
+          class="pager"
+          layout="total, prev, pager, next"
+          :total="memoryTotal"
+          :page-size="pageSize"
+          :current-page="memoryPage"
+          @current-change="onMemoryPageChange"
+        />
+      </el-tab-pane>
+
+      <el-tab-pane label="旅人纪闻" name="news">
+        <div class="tab-tools">
+          <el-select v-model="newsDate" style="width: 150px" @change="loadNews">
+            <el-option label="今天" value="" />
+            <el-option label="全部日期" value="all" />
+          </el-select>
+          <el-date-picker
+            v-model="newsDatePick"
+            type="date"
+            value-format="YYYY-MM-DD"
+            placeholder="选择某天"
+            style="width: 150px"
+            @change="onNewsDatePick"
+          />
+          <el-button type="primary" :loading="generatingNews" @click="onGenerateNews">生成事件</el-button>
+          <el-button @click="newsSettingVisible = true">栏目设置</el-button>
+          <el-button @click="openNewsEdit(null)">手动新增</el-button>
+          <span class="muted">事件由 AI 独立生成（参考世界观与最近动向），只展示当天，第二天自动清理</span>
+        </div>
+        <el-table :data="newsList" v-loading="loadingNews">
+          <el-table-column prop="newsDate" label="日期" width="110" />
+          <el-table-column label="重要度" width="90">
+            <template #default="{ row }">
+              <el-tag size="small" :type="row.level === 3 ? 'danger' : row.level === 2 ? 'warning' : 'info'">
+                {{ row.level === 3 ? '重大' : row.level === 2 ? '重要' : '普通' }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column prop="title" label="事件" min-width="240" show-overflow-tooltip />
+          <el-table-column prop="content" label="补充说明" min-width="200" show-overflow-tooltip />
+          <el-table-column prop="locationName" label="发生地" width="130" />
+          <el-table-column label="来源" width="90">
+            <template #default="{ row }">
+              <el-tag size="small" :type="row.source === 'ai' ? 'success' : 'primary'">
+                {{ row.source === 'ai' ? 'AI' : '手动' }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="置顶" width="80">
+            <template #default="{ row }">
+              <el-switch
+                size="small"
+                :model-value="row.pinned === 1"
+                @change="(val) => onToggleNews(row, 'pinned', val)"
+              />
+            </template>
+          </el-table-column>
+          <el-table-column label="前台显示" width="100">
+            <template #default="{ row }">
+              <el-switch
+                size="small"
+                :model-value="row.enabled === 1"
+                @change="(val) => onToggleNews(row, 'enabled', val)"
+              />
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="150">
+            <template #default="{ row }">
+              <el-button size="small" @click="openNewsEdit(row)">编辑</el-button>
+              <el-button size="small" type="danger" @click="onDeleteNews(row)">删除</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+        <el-pagination
+          class="pager"
+          layout="total, prev, pager, next"
+          :total="newsTotal"
+          :page-size="pageSize"
+          :current-page="newsPage"
+          @current-change="onNewsPageChange"
+        />
+      </el-tab-pane>
     </el-tabs>
+
+    <!-- 纪闻编辑 -->
+    <el-dialog v-model="newsVisible" :title="newsForm.id ? '编辑事件' : '新增事件'" width="min(94vw, 620px)">
+      <el-form :model="newsForm" label-width="90px">
+        <el-form-item label="事件">
+          <el-input v-model="newsForm.title" type="textarea" :rows="2" maxlength="200" show-word-limit
+                    placeholder="一句话事件，例如：白鸦村举行一年一度的丰收庆典" />
+        </el-form-item>
+        <el-form-item label="补充说明">
+          <el-input v-model="newsForm.content" type="textarea" :rows="3" maxlength="500" show-word-limit />
+        </el-form-item>
+        <el-form-item label="发生地">
+          <el-select v-model="newsForm.locationName" filterable allow-create clearable placeholder="选择或输入地点" style="width: 100%">
+            <el-option v-for="loc in locations" :key="'nl-' + loc.id" :label="loc.name" :value="loc.name" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="重要度">
+          <el-radio-group v-model="newsForm.level">
+            <el-radio :value="1">普通</el-radio>
+            <el-radio :value="2">重要</el-radio>
+            <el-radio :value="3">重大</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item label="日期">
+          <el-date-picker v-model="newsForm.newsDate" type="date" value-format="YYYY-MM-DD" />
+        </el-form-item>
+        <el-form-item label="置顶">
+          <el-switch v-model="newsForm.pinned" :active-value="1" :inactive-value="0" />
+          <span class="tip">置顶的事件排在最前面（当天内有效）</span>
+        </el-form-item>
+        <el-form-item label="启用">
+          <el-switch v-model="newsForm.enabled" :active-value="1" :inactive-value="0" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="newsVisible = false">取消</el-button>
+        <el-button type="primary" :loading="savingNews" @click="onSaveNews">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 纪闻栏目设置 -->
+    <el-dialog v-model="newsSettingVisible" title="旅人纪闻设置" width="min(94vw, 560px)">
+      <el-form :model="newsSetting" label-width="110px">
+        <el-form-item label="栏目名称">
+          <el-input v-model="newsSetting.newsTitle" maxlength="20" placeholder="旅人纪闻" />
+        </el-form-item>
+        <el-form-item label="前台显示">
+          <el-switch v-model="newsSetting.newsEnabled" active-value="1" inactive-value="0" />
+        </el-form-item>
+        <el-form-item label="每次生成条数">
+          <el-input v-model="newsSetting.newsPerGenerate" style="width: 90px" />
+          <span class="tip">生成事件时默认写几条（1~10）</span>
+        </el-form-item>
+        <el-form-item label="每天自动生成">
+          <el-switch v-model="newsSetting.newsAutoEnabled" active-value="1" inactive-value="0" />
+          <span class="range-sep">时间</span>
+          <el-input v-model="newsSetting.newsAutoTime" style="width: 90px" placeholder="07:00" />
+          <span class="tip">到点后自动按上面的服务商与条数生成一次（每天只生成一次）</span>
+        </el-form-item>
+        <el-form-item label="生成用服务商">
+          <el-select v-model="newsSetting.newsProviderId" clearable placeholder="默认服务商" style="width: 200px" @change="onNewsProviderChange">
+            <el-option v-for="p in providers" :key="'np-' + p.id" :label="p.name" :value="String(p.id)" />
+          </el-select>
+          <el-button :loading="newsModelLoading" @click="loadNewsModels">获取模型</el-button>
+        </el-form-item>
+        <el-form-item label="生成用模型">
+          <el-select v-model="newsSetting.newsModel" filterable allow-create clearable placeholder="选择或输入模型" style="width: 260px">
+            <el-option v-for="m in newsModels" :key="m" :label="m" :value="m" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="附加要求">
+          <el-input v-model="newsSetting.newsPromptExtra" type="textarea" :rows="3" maxlength="300" show-word-limit
+                    placeholder="可选，例如：多写一些节庆与商队相关的事件" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="newsSettingVisible = false">取消</el-button>
+        <el-button type="primary" :loading="savingNewsSetting" @click="onSaveNewsSetting">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="memoryVisible" title="编辑记忆" width="min(94vw, 620px)">
+      <el-form :model="memoryForm" label-width="80px">
+        <el-form-item label="角色">
+          <span>{{ characterName(memoryForm.characterId) }}</span>
+          <span class="muted" style="margin-left: 10px">{{ memoryForm.memoryDate }}</span>
+        </el-form-item>
+        <el-form-item label="记忆">
+          <el-input v-model="memoryForm.summary" type="textarea" :rows="10" maxlength="2000" show-word-limit />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="memoryVisible = false">取消</el-button>
+        <el-button type="primary" :loading="savingMemory" @click="onSaveMemory">保存</el-button>
+      </template>
+    </el-dialog>
 
     <el-dialog v-model="relationVisible" :title="relationForm.id ? '编辑关系' : '新增关系'" width="min(92vw, 460px)">
       <el-form :model="relationForm" label-width="90px">
@@ -226,10 +466,11 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   sandboxCharacters,
+  sandboxLocations,
   sandboxActs,
   deleteSandboxAct,
   sandboxInteractions,
@@ -238,12 +479,25 @@ import {
   deleteSandboxCoinLog,
   sandboxRelations,
   saveSandboxRelation,
-  deleteSandboxRelation
+  deleteSandboxRelation,
+  sandboxMemories,
+  saveSandboxMemory,
+  deleteSandboxMemory,
+  summarizeSandboxMemories,
+  sandboxNewsList,
+  saveSandboxNews,
+  deleteSandboxNews,
+  generateSandboxNews,
+  sandboxSettings,
+  saveSandboxSettings
 } from '@/api/sandbox'
+import { aiProviderList, aiProviderModels } from '@/api/ai'
 
 const tab = ref('acts')
 const characters = ref([])
 const characterId = ref(null)
+const locations = ref([])
+const locationFilter = ref('')
 
 const acts = ref([])
 const actTotal = ref(0)
@@ -266,6 +520,50 @@ const relationVisible = ref(false)
 const savingRelation = ref(false)
 const relationForm = reactive({ id: null, characterId: null, targetId: null, favor: 0, remark: '' })
 
+const memories = ref([])
+const memoryTotal = ref(0)
+const memoryPage = ref(1)
+const loadingMemories = ref(false)
+const memoryVisible = ref(false)
+const savingMemory = ref(false)
+const summarizing = ref(false)
+const memoryForm = reactive({ id: null, characterId: null, memoryDate: '', summary: '' })
+
+const newsList = ref([])
+const newsTotal = ref(0)
+const newsPage = ref(1)
+const loadingNews = ref(false)
+const newsDate = ref('')
+const newsDatePick = ref('')
+const newsVisible = ref(false)
+const savingNews = ref(false)
+const generatingNews = ref(false)
+const newsForm = reactive({
+  id: null,
+  title: '',
+  content: '',
+  locationName: '',
+  level: 1,
+  newsDate: '',
+  pinned: 0,
+  enabled: 1
+})
+const newsSettingVisible = ref(false)
+const savingNewsSetting = ref(false)
+const newsModelLoading = ref(false)
+const providers = ref([])
+const newsModels = ref([])
+const newsSetting = reactive({
+  newsTitle: '旅人纪闻',
+  newsEnabled: '1',
+  newsPerGenerate: '3',
+  newsProviderId: '',
+  newsModel: '',
+  newsPromptExtra: '',
+  newsAutoEnabled: '1',
+  newsAutoTime: '07:00'
+})
+
 const pageSize = 10
 
 async function loadCharacters() {
@@ -273,6 +571,11 @@ async function loadCharacters() {
     characters.value = await sandboxCharacters()
   } catch (e) {
     characters.value = []
+  }
+  try {
+    locations.value = await sandboxLocations()
+  } catch (e) {
+    locations.value = []
   }
 }
 
@@ -284,7 +587,12 @@ function characterName(id) {
 async function loadActs() {
   loadingActs.value = true
   try {
-    const data = await sandboxActs({ characterId: characterId.value || undefined, page: actPage.value, size: pageSize })
+    const data = await sandboxActs({
+      characterId: characterId.value || undefined,
+      locationName: locationFilter.value || undefined,
+      page: actPage.value,
+      size: pageSize
+    })
     acts.value = data.list || []
     actTotal.value = data.total || 0
   } finally {
@@ -314,8 +622,249 @@ function reload() {
     loadWhispers()
   } else if (tab.value === 'coins') {
     loadCoinLogs()
+  } else if (tab.value === 'memories') {
+    loadMemories()
+  } else if (tab.value === 'news') {
+    loadNews()
   } else {
     loadRelations()
+  }
+}
+
+async function loadNews() {
+  loadingNews.value = true
+  try {
+    const data = await sandboxNewsList({ date: newsDate.value || undefined, page: newsPage.value, size: pageSize })
+    newsList.value = data.list || []
+    newsTotal.value = data.total || 0
+  } finally {
+    loadingNews.value = false
+  }
+}
+
+function onNewsPageChange(page) {
+  newsPage.value = page
+  loadNews()
+}
+
+function onNewsDatePick(value) {
+  newsDate.value = value || ''
+  newsPage.value = 1
+  loadNews()
+}
+
+function openNewsEdit(row) {
+  if (row) {
+    Object.assign(newsForm, {
+      id: row.id,
+      title: row.title,
+      content: row.content || '',
+      locationName: row.locationName || '',
+      level: row.level || 1,
+      newsDate: row.newsDate,
+      pinned: row.pinned || 0,
+      enabled: row.enabled == null ? 1 : row.enabled
+    })
+  } else {
+    Object.assign(newsForm, {
+      id: null,
+      title: '',
+      content: '',
+      locationName: '',
+      level: 1,
+      newsDate: new Date().toISOString().slice(0, 10),
+      pinned: 0,
+      enabled: 1
+    })
+  }
+  newsVisible.value = true
+}
+
+async function onSaveNews() {
+  if (!newsForm.title.trim()) {
+    ElMessage.warning('请填写事件内容')
+    return
+  }
+  savingNews.value = true
+  try {
+    await saveSandboxNews({ ...newsForm, source: 'admin' })
+    ElMessage.success('已保存')
+    newsVisible.value = false
+    await loadNews()
+  } finally {
+    savingNews.value = false
+  }
+}
+
+async function onDeleteNews(row) {
+  await ElMessageBox.confirm('确定删除这条事件吗？', '提示', { type: 'warning' })
+  await deleteSandboxNews(row.id)
+  ElMessage.success('已删除')
+  await loadNews()
+}
+
+/** 列表里一键切换置顶 / 前台显示 */
+async function onToggleNews(row, field, value) {
+  const flag = value ? 1 : 0
+  await saveSandboxNews({
+    id: row.id,
+    title: row.title,
+    content: row.content,
+    locationName: row.locationName,
+    level: row.level,
+    newsDate: row.newsDate,
+    source: row.source || 'admin',
+    pinned: field === 'pinned' ? flag : row.pinned,
+    enabled: field === 'enabled' ? flag : row.enabled
+  })
+  row[field] = flag
+  ElMessage.success(field === 'pinned' ? (flag ? '已置顶' : '已取消置顶') : flag ? '已在前台显示' : '已停止显示')
+}
+
+/** 由 AI 生成当天事件 */
+async function onGenerateNews() {
+  try {
+    await ElMessageBox.confirm('将按「栏目设置」里的服务商与模型生成若干条当天事件，确定继续吗？', '生成旅人纪闻', {
+      type: 'warning'
+    })
+  } catch (e) {
+    return
+  }
+  generatingNews.value = true
+  try {
+    const count = await generateSandboxNews({})
+    ElMessage.success(`已生成 ${count} 条事件`)
+    await loadNews()
+  } finally {
+    generatingNews.value = false
+  }
+}
+
+async function loadNewsSetting() {
+  try {
+    const data = await sandboxSettings()
+    newsSetting.newsTitle = data.newsTitle || '旅人纪闻'
+    newsSetting.newsEnabled = data.newsEnabled === undefined ? '1' : data.newsEnabled
+    newsSetting.newsPerGenerate = data.newsPerGenerate || '3'
+    newsSetting.newsProviderId = data.newsProviderId || ''
+    newsSetting.newsModel = data.newsModel || ''
+    newsSetting.newsPromptExtra = data.newsPromptExtra || ''
+    newsSetting.newsAutoEnabled = data.newsAutoEnabled === undefined ? '1' : data.newsAutoEnabled
+    newsSetting.newsAutoTime = data.newsAutoTime || '07:00'
+  } catch (e) {
+    // 读取失败时保留默认值
+  }
+  try {
+    providers.value = await aiProviderList()
+  } catch (e) {
+    providers.value = []
+  }
+}
+
+function onNewsProviderChange() {
+  newsModels.value = []
+  newsSetting.newsModel = ''
+}
+
+async function loadNewsModels() {
+  if (!newsSetting.newsProviderId) {
+    ElMessage.warning('请先选择服务商')
+    return
+  }
+  newsModelLoading.value = true
+  try {
+    newsModels.value = await aiProviderModels(Number(newsSetting.newsProviderId))
+    if (!newsModels.value.length) {
+      ElMessage.warning('没有获取到模型，可手动输入模型名')
+    }
+  } finally {
+    newsModelLoading.value = false
+  }
+}
+
+async function onSaveNewsSetting() {
+  savingNewsSetting.value = true
+  try {
+    await saveSandboxSettings({ ...newsSetting })
+    ElMessage.success('设置已保存')
+    newsSettingVisible.value = false
+  } finally {
+    savingNewsSetting.value = false
+  }
+}
+
+async function loadMemories() {
+  loadingMemories.value = true
+  try {
+    const data = await sandboxMemories({
+      characterId: characterId.value || undefined,
+      page: memoryPage.value,
+      size: pageSize
+    })
+    memories.value = data.list || []
+    memoryTotal.value = data.total || 0
+  } finally {
+    loadingMemories.value = false
+  }
+}
+
+function onMemoryPageChange(page) {
+  memoryPage.value = page
+  loadMemories()
+}
+
+function openMemoryEdit(row) {
+  memoryForm.id = row.id
+  memoryForm.characterId = row.characterId
+  memoryForm.memoryDate = row.memoryDate
+  memoryForm.summary = row.summary || ''
+  memoryVisible.value = true
+}
+
+async function onSaveMemory() {
+  if (!memoryForm.summary.trim()) {
+    ElMessage.warning('记忆内容不能为空')
+    return
+  }
+  savingMemory.value = true
+  try {
+    await saveSandboxMemory({
+      characterId: memoryForm.characterId,
+      memoryDate: memoryForm.memoryDate,
+      summary: memoryForm.summary
+    })
+    ElMessage.success('记忆已保存')
+    memoryVisible.value = false
+    await loadMemories()
+  } finally {
+    savingMemory.value = false
+  }
+}
+
+async function onDeleteMemory(row) {
+  await ElMessageBox.confirm('确定删除这条记忆吗？', '提示', { type: 'warning' })
+  await deleteSandboxMemory(row.id)
+  ElMessage.success('已删除')
+  await loadMemories()
+}
+
+async function onSummarize() {
+  try {
+    await ElMessageBox.confirm(
+      '将为「今天有行动」的所有角色各调用一次 AI 生成当天记忆（已有则覆盖）。确定继续吗？',
+      '立即生成记忆',
+      { type: 'warning' }
+    )
+  } catch (e) {
+    return
+  }
+  summarizing.value = true
+  try {
+    await summarizeSandboxMemories()
+    ElMessage.success('记忆生成完成')
+    await loadMemories()
+  } finally {
+    summarizing.value = false
   }
 }
 
@@ -406,6 +955,20 @@ function onCoinPageChange(page) {
   loadCoinLogs()
 }
 
+/** 把分钟格式化成「6 小时」「40 分钟」 */
+function formatInterval(minutes) {
+  const value = Number(minutes) || 0
+  if (value <= 0) {
+    return '—'
+  }
+  if (value < 60) {
+    return `${value} 分钟`
+  }
+  const hours = Math.floor(value / 60)
+  const mins = value % 60
+  return mins ? `${hours} 小时 ${mins} 分钟` : `${hours} 小时`
+}
+
 function coinTypeText(type) {
   if (type === 'contribute') return '旅人贡献'
   if (type === 'earn') return '日常赚取'
@@ -454,6 +1017,7 @@ async function onDeleteWhisper(row) {
 onMounted(async () => {
   await loadCharacters()
   await loadActs()
+  await loadNewsSetting()
 })
 </script>
 

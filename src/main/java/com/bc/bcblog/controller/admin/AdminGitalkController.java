@@ -4,6 +4,7 @@ import com.bc.bcblog.common.Result;
 import com.bc.bcblog.common.PageResult;
 import com.bc.bcblog.dto.GitalkReplyDTO;
 import com.bc.bcblog.service.GitalkService;
+import com.bc.bcblog.component.SecretCipher;
 import com.bc.bcblog.vo.GitalkCommentVO;
 import com.bc.bcblog.vo.GitalkConfigVO;
 import lombok.RequiredArgsConstructor;
@@ -23,10 +24,17 @@ import org.springframework.web.bind.annotation.RestController;
 public class AdminGitalkController {
 
     private final GitalkService gitalkService;
+    private final SecretCipher secretCipher;
 
     @GetMapping("/config")
     public Result<GitalkConfigVO> config() {
-        return Result.ok(gitalkService.getConfig());
+        GitalkConfigVO vo = gitalkService.getConfig();
+        // 密钥与 Token 只回显掩码
+        if (vo != null) {
+            vo.setClientSecret(secretCipher.mask(vo.getClientSecret()));
+            vo.setToken(secretCipher.mask(vo.getToken()));
+        }
+        return Result.ok(vo);
     }
 
     @PostMapping("/config")

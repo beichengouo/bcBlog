@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import com.bc.bcblog.component.SecretCipher;
 
 /**
  * DeepSeek 余额查询接口。
@@ -22,10 +23,12 @@ import org.springframework.web.bind.annotation.RestController;
 public class DeepseekController {
 
     private final DeepseekService deepseekService;
+    private final SecretCipher secretCipher;
 
     @GetMapping("/api-key")
     public Result<String> apiKey() {
-        return Result.ok(deepseekService.getApiKey());
+        // 只回显掩码，明文不出后台接口
+        return Result.ok(secretCipher.mask(deepseekService.getApiKey()));
     }
 
     @PostMapping("/api-key")

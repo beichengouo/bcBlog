@@ -2,15 +2,20 @@ package com.bc.bcblog.controller.admin;
 
 import com.bc.bcblog.common.PageResult;
 import com.bc.bcblog.common.Result;
+import com.bc.bcblog.dto.SandboxCharacterGenerateDTO;
 import com.bc.bcblog.entity.SandboxAct;
 import com.bc.bcblog.entity.SandboxCharacter;
 import com.bc.bcblog.entity.SandboxCoinLog;
 import com.bc.bcblog.entity.SandboxInteraction;
+import com.bc.bcblog.entity.SandboxItem;
 import com.bc.bcblog.entity.SandboxLocation;
+import com.bc.bcblog.entity.SandboxMemory;
+import com.bc.bcblog.entity.SandboxNews;
 import com.bc.bcblog.entity.SandboxRelation;
 import com.bc.bcblog.entity.SandboxWorld;
 import com.bc.bcblog.service.SandboxService;
 import com.bc.bcblog.vo.SandboxRelationVO;
+import com.bc.bcblog.vo.SandboxCharacterDraftVO;
 import com.bc.bcblog.vo.SandboxRunAllVO;
 import com.bc.bcblog.vo.SandboxSettingVO;
 import lombok.RequiredArgsConstructor;
@@ -24,6 +29,8 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
+import java.util.Map;
+import cn.hutool.core.convert.Convert;
 
 /** 后台沙盒世界管理接口：地图、地点、角色、行动日志与旅人低语。 */
 @RestController
@@ -89,6 +96,12 @@ public class AdminSandboxController {
         return Result.ok(sandboxService.saveCharacter(character));
     }
 
+    /** AI 一键创作角色：结合当前世界观生成角色卡，供新增角色表单填充 */
+    @PostMapping("/characters/generate")
+    public Result<SandboxCharacterDraftVO> generateCharacter(@RequestBody SandboxCharacterGenerateDTO dto) {
+        return Result.ok(sandboxService.generateCharacter(dto));
+    }
+
     @DeleteMapping("/characters/{id}")
     public Result<Void> deleteCharacter(@PathVariable Long id) {
         sandboxService.deleteCharacter(id);
@@ -111,9 +124,10 @@ public class AdminSandboxController {
 
     @GetMapping("/acts")
     public Result<PageResult<SandboxAct>> acts(@RequestParam(required = false) Long characterId,
+                                               @RequestParam(required = false) String locationName,
                                                @RequestParam(defaultValue = "1") long page,
                                                @RequestParam(defaultValue = "10") long size) {
-        return Result.ok(sandboxService.acts(characterId, page, size));
+        return Result.ok(sandboxService.acts(characterId, locationName, page, size));
     }
 
     @DeleteMapping("/acts/{id}")
@@ -169,5 +183,81 @@ public class AdminSandboxController {
     public Result<Void> deleteRelation(@PathVariable Long id) {
         sandboxService.deleteRelation(id);
         return Result.ok();
+    }
+
+    // ---------------- 每日记忆 ----------------
+
+    @GetMapping("/memories")
+    public Result<PageResult<SandboxMemory>> memories(@RequestParam(required = false) Long characterId,
+                                                      @RequestParam(defaultValue = "1") long page,
+                                                      @RequestParam(defaultValue = "10") long size) {
+        return Result.ok(sandboxService.memoryPage(characterId, page, size));
+    }
+
+    @PostMapping("/memories")
+    public Result<Void> saveMemory(@RequestBody SandboxMemory memory) {
+        sandboxService.saveMemory(memory);
+        return Result.ok();
+    }
+
+    @DeleteMapping("/memories/{id}")
+    public Result<Void> deleteMemory(@PathVariable Long id) {
+        sandboxService.deleteMemory(id);
+        return Result.ok();
+    }
+
+    /** 立即为所有角色生成当天记忆（调试用，不等定时任务） */
+    @PostMapping("/memories/summarize")
+    public Result<Void> summarize() {
+        sandboxService.summarizeDaily();
+        return Result.ok();
+    }
+
+    // ---------------- 角色背包 ----------------
+
+    @GetMapping("/items")
+    public Result<List<SandboxItem>> items(@RequestParam Long characterId) {
+        return Result.ok(sandboxService.items(characterId));
+    }
+
+    @PostMapping("/items")
+    public Result<SandboxItem> saveItem(@RequestBody SandboxItem item) {
+        return Result.ok(sandboxService.saveItem(item));
+    }
+
+    @DeleteMapping("/items/{id}")
+    public Result<Void> deleteItem(@PathVariable Long id) {
+        sandboxService.deleteItem(id);
+        return Result.ok();
+    }
+
+    // ---------------- 旅人纪闻 ----------------
+
+    @GetMapping("/news")
+    public Result<PageResult<SandboxNews>> news(@RequestParam(required = false) String date,
+                                                @RequestParam(defaultValue = "1") long page,
+                                                @RequestParam(defaultValue = "10") long size) {
+        return Result.ok(sandboxService.newsPage(date, page, size));
+    }
+
+    @PostMapping("/news")
+    public Result<Void> saveNews(@RequestBody SandboxNews news) {
+        sandboxService.saveNews(news);
+        return Result.ok();
+    }
+
+    @DeleteMapping("/news/{id}")
+    public Result<Void> deleteNews(@PathVariable Long id) {
+        sandboxService.deleteNews(id);
+        return Result.ok();
+    }
+
+    /** 由 AI 生成若干条当天纪闻 */
+    @PostMapping("/news/generate")
+    public Result<Integer> generateNews(@RequestBody Map<String, Object> body) {
+        Integer count = Convert.toInt(body.get("count"), null);
+        Long providerId = Convert.toLong(body.get("providerId"), null);
+        String model = body.get("model") == null ? null : String.valueOf(body.get("model"));
+        return Result.ok(sandboxService.generateNews(count, providerId, model));
     }
 }

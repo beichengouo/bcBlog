@@ -40,4 +40,12 @@ public class SiteConfigVO {
     private Integer cleanupVisitStatDays;
     private Integer cleanupSignLogDays;
     private Integer cleanupPointLogDays;
+    /** 沙盒行动日志保留天数 */
+    private Integer cleanupSandboxActDays;
+    /** 沙盒每日记忆保留天数 */
+    private Integer cleanupSandboxMemoryDays;
+    /** 旅人纪闻保留天数（1 = 只留当天） */
+    private Integer cleanupSandboxNewsDays;
+    /** API 调用审计保留天数 */
+    private Integer cleanupAdminApiLogDays;
 }

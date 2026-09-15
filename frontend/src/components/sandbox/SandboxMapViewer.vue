@@ -27,16 +27,6 @@
           <img class="viewer-img" :src="mapImage" alt="地图" draggable="false" />
 
           <div
-            v-for="anchor in anchors"
-            :key="'vanchor-' + anchor.x + '-' + anchor.y"
-            class="viewer-anchor"
-            :style="{ left: anchor.x + '%', top: anchor.y + '%' }"
-          >
-            <span class="anchor-dot"></span>
-            <span class="anchor-count">{{ anchor.size }}</span>
-          </div>
-
-          <div
             v-for="loc in locations"
             :key="'vloc-' + loc.id"
             class="viewer-loc"
@@ -46,22 +36,47 @@
             <span class="viewer-loc-name">{{ loc.name }}</span>
           </div>
 
+          <!-- 地点区域：默认只显示地名，点击后才展开该地的角色 -->
           <div
-            v-for="c in characters"
-            :key="'vactor-' + c.id"
-            class="viewer-actor"
-            :class="{ active: activeId === c.id }"
-            :style="{ left: c.displayX + '%', top: c.displayY + '%' }"
-            @click.stop="onSelect(c)"
+            v-for="loc in locations"
+            :key="'varea-' + loc.id"
+            class="viewer-area"
+            :class="{ on: activeLocationId === loc.id }"
+            :style="areaStyle(loc)"
+            @click.stop="toggleLocation(loc)"
           >
-            <img v-if="c.avatar" class="viewer-actor-img" :src="c.avatar" :alt="c.name" draggable="false" />
-            <span v-else class="viewer-actor-img fallback">{{ (c.name || '?').slice(0, 1) }}</span>
-            <span class="viewer-actor-name">{{ c.name }}</span>
+            <span class="viewer-area-label">
+              <LocationIcon :icon="loc.icon" :size="14" />
+              <span>{{ loc.name }}</span>
+            </span>
+            <span v-if="charactersIn(loc).length" class="viewer-area-count">{{ charactersIn(loc).length }}</span>
+          </div>
+
+          <div v-if="activeLocation" class="viewer-actors" :style="actorsStyle" @click.stop>
+            <button
+              v-for="member in charactersIn(activeLocation)"
+              :key="'vactor-' + member.id"
+              type="button"
+              class="viewer-actor"
+              :class="{ active: activeId === member.id }"
+              @click="onSelect(member)"
+            >
+              <img
+                v-if="member.avatar"
+                class="viewer-actor-img"
+                :src="member.avatar"
+                :alt="member.name"
+                draggable="false"
+              />
+              <span v-else class="viewer-actor-img fallback">{{ (member.name || '?').slice(0, 1) }}</span>
+              <span class="viewer-actor-name">{{ member.name }}</span>
+            </button>
+            <span v-if="!charactersIn(activeLocation).length" class="viewer-area-empty">这里暂时没有角色</span>
           </div>
         </div>
       </div>
 
-      <p class="viewer-hint">双指缩放 / 单指拖动 · 双击放大 · 点击角色查看档案</p>
+      <p class="viewer-hint">双指缩放 / 单指拖动 · 点击地点查看该地的角色</p>
     </div>
   </teleport>
 </template>
@@ -76,7 +91,6 @@ const props = defineProps({
   title: { type: String, default: '' },
   locations: { type: Array, default: () => [] },
   characters: { type: Array, default: () => [] },
-  anchors: { type: Array, default: () => [] },
   activeId: { type: [Number, String], default: null }
 })
 
@@ -84,6 +98,8 @@ const emit = defineEmits(['update:visible', 'select'])
 
 const MAX_SCALE = 6
 const stageRef = ref(null)
+/** 当前展开的地点（同时间只展开一个） */
+const activeLocationId = ref(null)
 const scale = ref(1)
 const panX = ref(0)
 const panY = ref(0)
@@ -148,8 +164,83 @@ function reset() {
 }
 
 function close() {
+  activeLocationId.value = null
   emit('update:visible', false)
 }
+
+/** 地点区域：x,y 左上角 + width,height（0 表示单点） */
+function areaRect(location) {
+  return {
+    left: Number(location.x == null ? 50 : location.x),
+    top: Number(location.y == null ? 50 : location.y),
+    width: Math.max(0, Number(location.width || 0)),
+    height: Math.max(0, Number(location.height || 0))
+  }
+}
+
+function areaStyle(location) {
+  const rect = areaRect(location)
+  return {
+    left: rect.left + '%',
+    top: rect.top + '%',
+    width: Math.max(3, rect.width) + '%',
+    height: Math.max(2.2, rect.height) + '%'
+  }
+}
+
+function inArea(location, x, y) {
+  const rect = areaRect(location)
+  if (rect.width <= 0 || rect.height <= 0) {
+    return Math.abs(rect.left - x) <= 2 && Math.abs(rect.top - y) <= 2
+  }
+  return x >= rect.left && x <= rect.left + rect.width && y >= rect.top && y <= rect.top + rect.height
+}
+
+function locationOf(character) {
+  const byName = props.locations.find((loc) => loc.name === character.locationName)
+  if (byName) {
+    return byName
+  }
+  const x = Number(character.x == null ? 50 : character.x)
+  const y = Number(character.y == null ? 50 : character.y)
+  return props.locations.find((loc) => inArea(loc, x, y)) || null
+}
+
+function charactersIn(location) {
+  if (!location) {
+    return []
+  }
+  return props.characters.filter((character) => {
+    const hit = locationOf(character)
+    return hit && hit.id === location.id
+  })
+}
+
+function toggleLocation(location) {
+  if (moved) {
+    return
+  }
+  activeLocationId.value = activeLocationId.value === location.id ? null : location.id
+}
+
+const activeLocation = computed(
+  () => props.locations.find((loc) => loc.id === activeLocationId.value) || null
+)
+
+/** 角色头像行贴在区域下方，靠下时改到上方 */
+const actorsStyle = computed(() => {
+  const location = activeLocation.value
+  if (!location) {
+    return {}
+  }
+  const rect = areaRect(location)
+  const below = rect.top + rect.height < 68
+  return {
+    left: Math.min(70, Math.max(0, rect.left - 2)) + '%',
+    top: (below ? rect.top + Math.max(rect.height, 2.2) : rect.top) + '%',
+    transform: below ? 'translateY(8px)' : 'translateY(calc(-100% - 8px))'
+  }
+})
 
 function backdropClick() {
   // 拖动地图结束时的点击不要误关全屏
@@ -160,6 +251,7 @@ function backdropClick() {
 function onSelect(character) {
   // 拖动地图时不要误触发角色点击
   if (moved) return
+  activeLocationId.value = null
   emit('select', character)
 }
 
@@ -262,6 +354,7 @@ watch(
   (value) => {
     if (value) {
       reset()
+      activeLocationId.value = null
       document.body.style.overflow = 'hidden'
       window.addEventListener('resize', measure)
       // 等 DOM 渲染完成再量尺寸
@@ -399,20 +492,76 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 
-.viewer-actor {
+/* 地点区域：默认只显示地名，点开后下方浮出角色头像 */
+.viewer-area {
   position: absolute;
-  transform: translate(-50%, -50%);
+  padding: 2px 4px;
+  border: 1.5px dashed rgba(255, 255, 255, 0.8);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.16);
+  cursor: pointer;
+  overflow: hidden;
+  transition: background 0.25s ease, border-color 0.25s ease;
+}
+.viewer-area.on { border-color: #ff6f9f; background: rgba(255, 111, 159, 0.24); }
+.viewer-area-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.45);
+  white-space: nowrap;
+  overflow: hidden;
+}
+.viewer-area-count {
+  position: absolute;
+  right: 4px;
+  bottom: 3px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  font-size: 11px;
+  line-height: 18px;
+  text-align: center;
+  color: #fff;
+  background: linear-gradient(120deg, #ff6f9f, #a06bd8);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+}
+.viewer-actors {
+  position: absolute;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  max-width: 70%;
+  padding: 6px 8px;
+  border-radius: 14px;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(6px);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.38);
+}
+.viewer-area-empty { font-size: 12px; color: rgba(255, 255, 255, 0.75); }
+
+.viewer-actor {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 3px;
   cursor: pointer;
-  z-index: 2;
+  padding: 0;
+  border: none;
+  background: transparent;
 }
 .viewer-actor.active .viewer-actor-img { box-shadow: 0 0 0 3px #ff6f9f, 0 8px 20px rgba(0, 0, 0, 0.4); }
 .viewer-actor-img {
-  width: 52px;
-  height: 52px;
+  width: 42px;
+  height: 42px;
   border-radius: 50%;
   object-fit: cover;
   border: 2px solid rgba(255, 255, 255, 0.9);
@@ -422,8 +571,10 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: center;
   color: #333;
-  font-size: 20px;
+  font-size: 17px;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
+.viewer-actor:hover .viewer-actor-img { transform: translateY(-2px); }
 .viewer-actor-name {
   font-size: 12px;
   padding: 1px 9px;

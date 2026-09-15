@@ -11,12 +11,18 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.bc.bcblog.common.BusinessException;
 import com.bc.bcblog.common.PageResult;
+import com.bc.bcblog.dto.SandboxCharacterGenerateDTO;
 import com.bc.bcblog.component.SensitiveWordFilter;
+import com.bc.bcblog.component.AuditContext;
+import com.bc.bcblog.entity.AiProvider;
 import com.bc.bcblog.entity.SandboxAct;
 import com.bc.bcblog.entity.SandboxCharacter;
 import com.bc.bcblog.entity.SandboxCoinLog;
 import com.bc.bcblog.entity.SandboxInteraction;
+import com.bc.bcblog.entity.SandboxItem;
 import com.bc.bcblog.entity.SandboxLocation;
+import com.bc.bcblog.entity.SandboxMemory;
+import com.bc.bcblog.entity.SandboxNews;
 import com.bc.bcblog.entity.SandboxRelation;
 import com.bc.bcblog.entity.SandboxWorld;
 import com.bc.bcblog.entity.SysUser;
@@ -24,7 +30,10 @@ import com.bc.bcblog.mapper.SandboxActMapper;
 import com.bc.bcblog.mapper.SandboxCharacterMapper;
 import com.bc.bcblog.mapper.SandboxCoinLogMapper;
 import com.bc.bcblog.mapper.SandboxInteractionMapper;
+import com.bc.bcblog.mapper.SandboxItemMapper;
 import com.bc.bcblog.mapper.SandboxLocationMapper;
+import com.bc.bcblog.mapper.SandboxMemoryMapper;
+import com.bc.bcblog.mapper.SandboxNewsMapper;
 import com.bc.bcblog.mapper.SandboxRelationMapper;
 import com.bc.bcblog.mapper.SandboxWorldMapper;
 import com.bc.bcblog.mapper.SysUserMapper;
@@ -33,6 +42,7 @@ import com.bc.bcblog.service.ConfigService;
 import com.bc.bcblog.service.PointService;
 import com.bc.bcblog.service.SandboxService;
 import com.bc.bcblog.vo.SandboxCharacterVO;
+import com.bc.bcblog.vo.SandboxCharacterDraftVO;
 import com.bc.bcblog.vo.SandboxCoinResultVO;
 import com.bc.bcblog.vo.SandboxPortalVO;
 import com.bc.bcblog.vo.SandboxRelationVO;
@@ -75,6 +85,12 @@ public class SandboxServiceImpl implements SandboxService {
     private static final int PORTAL_ACT_LIMIT = 5;
     /** 前台角色档案面板展示的最近金币流水条数 */
     private static final int PORTAL_COIN_LOG_LIMIT = 5;
+    /** 前台角色档案面板展示的最近记忆条数 */
+    private static final int PORTAL_MEMORY_LIMIT = 3;
+    /** 单次行动物品数量变化上限 */
+    private static final int ITEM_STEP_MAX = 9;
+    /** 背包最多保留的物品种类 */
+    private static final int ITEM_KIND_MAX = 20;
     /** 拼提示词时携带的旅人低语条数 */
     private static final int PROMPT_WHISPER_LIMIT = 5;
     /** 提示词里默认的世界设定，管理员没填时使用 */
@@ -102,6 +118,9 @@ public class SandboxServiceImpl implements SandboxService {
     private final SandboxInteractionMapper interactionMapper;
     private final SandboxCoinLogMapper coinLogMapper;
     private final SandboxRelationMapper relationMapper;
+    private final SandboxMemoryMapper memoryMapper;
+    private final SandboxItemMapper itemMapper;
+    private final SandboxNewsMapper newsMapper;
     private final AiProviderService aiProviderService;
     private final ConfigService configService;
     private final PointService pointService;
@@ -161,15 +180,34 @@ public class SandboxServiceImpl implements SandboxService {
         if (location.getY() != null) {
             location.setY(clamp(location.getY()));
         }
+        // 区域宽高：0 表示单点，限制在 0~100
+        if (location.getWidth() != null) {
+            location.setWidth(Math.max(0, Math.min(100, location.getWidth())));
+        }
+        if (location.getHeight() != null) {
+            location.setHeight(Math.max(0, Math.min(100, location.getHeight())));
+        }
         if (location.getId() == null) {
             location.setX(location.getX() == null ? 50 : location.getX());
             location.setY(location.getY() == null ? 50 : location.getY());
+            // 新地点默认给一块区域，方便直接拖动缩放
+            location.setWidth(location.getWidth() == null ? 12 : location.getWidth());
+            location.setHeight(location.getHeight() == null ? 7 : location.getHeight());
             if (location.getSortOrder() == null) {
                 location.setSortOrder(0);
             }
             if (location.getWorldId() == null) {
                 location.setWorldId(worldId());
             }
+        }
+        // 区域不能超出地图边界
+        if (location.getX() != null && location.getWidth() != null && location.getWidth() > 0) {
+            location.setX(Math.min(location.getX(), 100 - location.getWidth()));
+        }
+        if (location.getY() != null && location.getHeight() != null && location.getHeight() > 0) {
+            location.setY(Math.min(location.getY(), 100 - location.getHeight()));
+        }
+        if (location.getId() == null) {
             locationMapper.insert(location);
         } else {
             locationMapper.updateById(location);
@@ -199,6 +237,21 @@ public class SandboxServiceImpl implements SandboxService {
         vo.setChainMaxDepth(configService.getConfigValue("sandbox_chain_max_depth", "1"));
         vo.setChainLimitPerRound(configService.getConfigValue("sandbox_chain_limit_per_round", "3"));
         vo.setReactionCooldownMinutes(configService.getConfigValue("sandbox_reaction_cooldown_minutes", "15"));
+        vo.setMemoryEnabled(configService.getConfigValue("sandbox_memory_enabled", "1"));
+        vo.setMemoryTime(configService.getConfigValue("sandbox_memory_time", "23:50"));
+        vo.setMemoryPromptDays(configService.getConfigValue("sandbox_memory_prompt_days", "5"));
+        vo.setMemoryDeleteActs(configService.getConfigValue("sandbox_memory_delete_acts", "0"));
+        vo.setAiIntervalEnabled(configService.getConfigValue("sandbox_ai_interval_enabled", "1"));
+        vo.setAiIntervalMin(configService.getConfigValue("sandbox_ai_interval_min", "15"));
+        vo.setAiIntervalMax(configService.getConfigValue("sandbox_ai_interval_max", "720"));
+        vo.setNewsTitle(configService.getConfigValue("sandbox_news_title", "旅人纪闻"));
+        vo.setNewsEnabled(configService.getConfigValue("sandbox_news_enabled", "1"));
+        vo.setNewsPerGenerate(configService.getConfigValue("sandbox_news_per_generate", "3"));
+        vo.setNewsProviderId(configService.getConfigValue("sandbox_news_provider_id", ""));
+        vo.setNewsModel(configService.getConfigValue("sandbox_news_model", ""));
+        vo.setNewsPromptExtra(configService.getConfigValue("sandbox_news_prompt_extra", ""));
+        vo.setNewsAutoEnabled(configService.getConfigValue("sandbox_news_auto_enabled", "1"));
+        vo.setNewsAutoTime(configService.getConfigValue("sandbox_news_auto_time", "07:00"));
         return vo;
     }
 
@@ -216,6 +269,21 @@ public class SandboxServiceImpl implements SandboxService {
         writeSetting("sandbox_chain_max_depth", vo.getChainMaxDepth());
         writeSetting("sandbox_chain_limit_per_round", vo.getChainLimitPerRound());
         writeSetting("sandbox_reaction_cooldown_minutes", vo.getReactionCooldownMinutes());
+        writeSetting("sandbox_memory_enabled", vo.getMemoryEnabled());
+        writeSetting("sandbox_memory_time", vo.getMemoryTime());
+        writeSetting("sandbox_memory_prompt_days", vo.getMemoryPromptDays());
+        writeSetting("sandbox_memory_delete_acts", vo.getMemoryDeleteActs());
+        writeSetting("sandbox_ai_interval_enabled", vo.getAiIntervalEnabled());
+        writeSetting("sandbox_ai_interval_min", vo.getAiIntervalMin());
+        writeSetting("sandbox_ai_interval_max", vo.getAiIntervalMax());
+        writeSetting("sandbox_news_title", vo.getNewsTitle());
+        writeSetting("sandbox_news_enabled", vo.getNewsEnabled());
+        writeSetting("sandbox_news_per_generate", vo.getNewsPerGenerate());
+        writeSetting("sandbox_news_provider_id", vo.getNewsProviderId());
+        writeSetting("sandbox_news_model", vo.getNewsModel());
+        writeSetting("sandbox_news_prompt_extra", vo.getNewsPromptExtra());
+        writeSetting("sandbox_news_auto_enabled", vo.getNewsAutoEnabled());
+        writeSetting("sandbox_news_auto_time", vo.getNewsAutoTime());
     }
 
     private void writeSetting(String key, String value) {
@@ -231,6 +299,165 @@ public class SandboxServiceImpl implements SandboxService {
     public List<SandboxCharacter> characters() {
         return characterMapper.selectList(new LambdaQueryWrapper<SandboxCharacter>()
                 .orderByAsc(SandboxCharacter::getId));
+    }
+
+    @Override
+    public SandboxCharacterDraftVO generateCharacter(SandboxCharacterGenerateDTO dto) {
+        if (dto == null || dto.getRequirement() == null || dto.getRequirement().trim().isEmpty()) {
+            throw new BusinessException("请先输入你的角色需求");
+        }
+        SandboxWorld world = world();
+        List<SandboxLocation> locations = locations();
+        List<SandboxCharacter> exists = characters();
+
+        AiProvider provider = aiProviderService.resolveManualProvider(dto.getProviderId());
+        String raw;
+        AuditContext.manual("沙盒·AI 创作角色");
+        try {
+            raw = aiProviderService.chat(provider, dto.getModel(),
+                    buildDraftSystemPrompt(),
+                    buildDraftUserPrompt(world, locations, exists, dto.getRequirement().trim()), 0.9);
+        } finally {
+            AuditContext.clear();
+        }
+        JSONObject obj = parseJson(raw);
+        if (obj == null) {
+            throw new BusinessException("AI 返回内容无法解析成 JSON，请重试或换一个模型");
+        }
+        String name = truncate(trimToEmpty(obj.getStr("name")), 90);
+        if (name.isEmpty()) {
+            throw new BusinessException("AI 没有给出角色名，请重试或换一个模型");
+        }
+
+        SandboxCharacterDraftVO vo = new SandboxCharacterDraftVO();
+        vo.setName(name);
+        vo.setTitle(truncate(trimToEmpty(obj.getStr("title")), 90));
+        vo.setAppearance(truncate(trimToEmpty(obj.getStr("appearance")), 480));
+        vo.setPersona(truncate(trimToEmpty(obj.getStr("persona")), 2000));
+
+        // 初始地点：能对上地图里的地点就用它的坐标，对不上则保留 AI 给的名字与坐标
+        String locationName = truncate(trimToEmpty(obj.getStr("location")), 90);
+        SandboxLocation matched = matchLocation(locations, locationName);
+        if (matched != null) {
+            vo.setLocationName(matched.getName());
+            vo.setX(matched.getX());
+            vo.setY(matched.getY());
+        } else {
+            vo.setLocationName(locationName.isEmpty() ? null : locationName);
+            vo.setX(clamp(Convert.toInt(obj.get("x"), 50)));
+            vo.setY(clamp(Convert.toInt(obj.get("y"), 50)));
+        }
+        vo.setSubLocation(truncate(trimToEmpty(obj.getStr("sub_location")), 90));
+
+        // 初始状态：标准项限幅到 0~100，其余键原样保留
+        Map<String, Object> status = new LinkedHashMap<>();
+        status.put("体力", 100);
+        status.put("魔力", 100);
+        status.put("饥饿度", 20);
+        status.put("心情", "平静");
+        Object rawStatus = obj.get("status");
+        if (rawStatus instanceof JSONObject) {
+            JSONObject statusObj = (JSONObject) rawStatus;
+            for (String key : statusObj.keySet()) {
+                if (key == null || key.trim().isEmpty()) {
+                    continue;
+                }
+                status.put(key.trim(), normalizeStatusValue(key.trim(), statusObj.get(key)));
+            }
+        }
+        vo.setStatus(status);
+
+        int coins = Convert.toInt(obj.get("coins"), 10);
+        vo.setCoins(Math.max(0, Math.min(100, coins)));
+
+        // 初始物品：最多 6 件，数量 1~5，品质按 AI 给的或按名字推断
+        List<SandboxItem> items = new ArrayList<>();
+        JSONArray itemArray = obj.getJSONArray("items");
+        if (itemArray != null) {
+            for (int i = 0; i < itemArray.size() && items.size() < 6; i++) {
+                Object node = itemArray.get(i);
+                if (!(node instanceof JSONObject)) {
+                    continue;
+                }
+                JSONObject itemObj = (JSONObject) node;
+                String itemName = truncate(trimToEmpty(itemObj.getStr("name")), 60);
+                if (itemName.isEmpty()) {
+                    continue;
+                }
+                SandboxItem item = new SandboxItem();
+                item.setName(itemName);
+                item.setQuantity(Math.max(1, Math.min(5, Convert.toInt(itemObj.get("quantity"), 1))));
+                Integer rarity = Convert.toInt(itemObj.get("rarity"), null);
+                item.setRarity(rarity == null ? inferRarity(itemName) : Math.max(1, Math.min(5, rarity)));
+                item.setDescription(truncate(trimToEmpty(itemObj.getStr("description")), 200));
+                items.add(item);
+            }
+        }
+        vo.setItems(items);
+        vo.setRaw(truncate(raw, 4000));
+        return vo;
+    }
+
+    /** AI 生成角色草稿的系统提示词 */
+    private String buildDraftSystemPrompt() {
+        StringBuilder sb = new StringBuilder();
+        sb.append("你是一位二次元幻想世界的角色设计师。请根据世界观与管理员的需求设计一个新角色，")
+                .append("并给出可以直接开局的初始设定。\n")
+                .append("你必须严格只输出一个 JSON 对象，不要输出解释、前言、后缀，也不要使用 Markdown 代码块标记。JSON 结构如下：\n")
+                .append("{\"name\":\"角色名（2~4 个字）\",\"title\":\"称号（6~12 字）\",")
+                .append("\"appearance\":\"外貌描述（40~80 字）\",")
+                .append("\"persona\":\"人设（200~400 字，用 \\n 分行，包含身份、性格、说话方式、目标、能力、禁忌）\",")
+                .append("\"location\":\"初始所在地点，必须从【地图地点】里选一个\",")
+                .append("\"sub_location\":\"初始所在的小地方，自己创作，4~12 字\",")
+                .append("\"status\":{\"体力\":100,\"魔力\":100,\"饥饿度\":20,\"心情\":\"平静\"},")
+                .append("\"coins\":10,")
+                .append("\"items\":[{\"name\":\"干粮\",\"quantity\":2,\"rarity\":1,\"description\":\"用油纸包着的干粮\"}]}\n")
+                .append("要求：\n")
+                .append("1. 角色名不要与【已有角色】重复，人设也不要去撞已有角色的定位与身份；\n")
+                .append("2. 必须符合【世界观】的风格；location 只能从【地图地点】里挑一个；\n")
+                .append("3. status 里体力、魔力、饥饿度是 0~100 的整数，心情用简短词语；\n")
+                .append("4. coins 是初始金币，0~30 之间的整数；\n")
+                .append("5. items 是背包里的初始物品，2~4 件，都是符合身份的日常小物件；")
+                .append("rarity 用 1~5（1 普通 / 2 精良 / 3 稀有 / 4 史诗 / 5 传说），不要给神器；\n")
+                .append("6. 不要输出立绘、绘图关键词、英文名或任何与 JSON 无关的内容。");
+        return sb.toString();
+    }
+
+    /** AI 生成角色草稿的用户提示词：世界观 + 地图地点 + 已有角色 + 管理员需求 */
+    private String buildDraftUserPrompt(SandboxWorld world, List<SandboxLocation> locations,
+                                        List<SandboxCharacter> exists, String requirement) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("【世界观】\n").append(blankToDefault(world.getWorldPrompt(), DEFAULT_WORLD_PROMPT)).append("\n\n");
+        sb.append("【地图地点】");
+        if (locations.isEmpty()) {
+            sb.append("（管理员还没有添加地点，可以自行设定一个合理的地点名）");
+        } else {
+            List<String> names = new ArrayList<>();
+            for (SandboxLocation location : locations) {
+                String text = location.getName();
+                if (notBlank(location.getDescription())) {
+                    text += "（" + truncate(location.getDescription(), 30) + "）";
+                }
+                names.add(text);
+            }
+            sb.append(String.join("、", names));
+        }
+        sb.append("\n【已有角色】");
+        if (exists.isEmpty()) {
+            sb.append("（暂无）");
+        } else {
+            List<String> characters = new ArrayList<>();
+            for (SandboxCharacter character : exists) {
+                String text = character.getName();
+                if (notBlank(character.getTitle())) {
+                    text += "（" + character.getTitle() + "）";
+                }
+                characters.add(text);
+            }
+            sb.append(String.join("、", characters));
+        }
+        sb.append("\n\n【管理员需求】\n").append(requirement);
+        return sb.toString();
     }
 
     @Override
@@ -311,15 +538,20 @@ public class SandboxServiceImpl implements SandboxService {
                 .eq(SandboxRelation::getCharacterId, id)
                 .or()
                 .eq(SandboxRelation::getTargetId, id));
+        // 背包物品与每日记忆一起清理
+        itemMapper.delete(new LambdaQueryWrapper<SandboxItem>().eq(SandboxItem::getCharacterId, id));
+        memoryMapper.delete(new LambdaQueryWrapper<SandboxMemory>().eq(SandboxMemory::getCharacterId, id));
         characterMapper.deleteById(id);
     }
 
     // ============================== 行动记录 ==============================
 
     @Override
-    public PageResult<SandboxAct> acts(Long characterId, long page, long size) {
+    public PageResult<SandboxAct> acts(Long characterId, String locationName, long page, long size) {
         LambdaQueryWrapper<SandboxAct> wrapper = new LambdaQueryWrapper<SandboxAct>()
                 .eq(characterId != null, SandboxAct::getCharacterId, characterId)
+                .eq(locationName != null && !locationName.trim().isEmpty(),
+                        SandboxAct::getLocationName, locationName == null ? null : locationName.trim())
                 .orderByDesc(SandboxAct::getCreateTime)
                 .orderByDesc(SandboxAct::getId);
         IPage<SandboxAct> result = actMapper.selectPage(new Page<>(page, size), wrapper);
@@ -432,16 +664,35 @@ public class SandboxServiceImpl implements SandboxService {
         // 同世界的其它角色与它们最近的动静，让角色有机会相遇、互动
         List<SandboxCharacter> companions = otherCharacters(characterId);
         List<SandboxAct> companionActs = neighborActs(companions);
+        // 长期记忆（每日总结）与背包，都会写进提示词
+        List<SandboxMemory> memories = recentMemories(characterId, intConfig("sandbox_memory_prompt_days", 5));
+        List<SandboxItem> backpack = items(characterId);
+        // 今天的旅人纪闻：行动时会参考，但不强制参与
+        List<SandboxNews> news = todayNews();
 
         String systemPrompt = buildSystemPrompt(character, world, locations, companions);
         String userPrompt = buildUserPrompt(character, recent, whispers, companions, companionActs, reaction,
-                trigger == null ? null : characterNameOf(companions, trigger.getCharacterId()), trigger);
+                trigger == null ? null : characterNameOf(companions, trigger.getCharacterId()), trigger,
+                memories, backpack, news);
 
         String raw;
         try {
             double temperature = character.getTemperature() == null ? 0.9 : character.getTemperature().doubleValue();
-            raw = aiProviderService.chat(character.getProviderId(), character.getModel(),
-                    systemPrompt, userPrompt, temperature);
+            // 手动执行用发起人自己的服务商，定时执行用系统服务商
+            AiProvider provider = manual
+                    ? aiProviderService.resolveManualProvider(character.getProviderId())
+                    : aiProviderService.resolveSystemProvider(character.getProviderId());
+            if (manual) {
+                AuditContext.manual(reaction ? "沙盒·回应回合" : "沙盒·立即执行一次");
+            } else {
+                AuditContext.schedule(reaction ? "沙盒·自动回应" : "沙盒·自动行动");
+            }
+            try {
+                raw = aiProviderService.chat(provider, character.getModel(),
+                        systemPrompt, userPrompt, temperature);
+            } finally {
+                AuditContext.clear();
+            }
         } catch (Exception e) {
             // 失败时只记录原因，不生成记录，避免接口异常时时间线被刷屏
             String msg = e.getMessage() == null ? "AI 调用失败" : e.getMessage();
@@ -468,48 +719,86 @@ public class SandboxServiceImpl implements SandboxService {
         Integer x = character.getX();
         Integer y = character.getY();
         String locationName = character.getLocationName();
+        String subLocation = character.getSubLocation();
         String statusJson = character.getStatusJson();
         int coins = character.getCoins() == null ? 0 : character.getCoins();
         int coinChange = 0;
+        Integer aiNextMinutes = null;
+        String aiNextReason = null;
 
         JSONObject obj = parseJson(raw);
         if (obj == null) {
             // AI 没有按格式返回：原文保存下来，方便管理员在后台看到并调整提示词
             act.setFromAi(0);
-            act.setActions(truncate(sensitiveWordFilter.filter(trimToEmpty(raw)), 1000));
+            // 注意：沙盒角色的 AI 回复不做敏感词过滤，保持原文（过滤会误伤正常词汇）
+            act.setActions(truncate(trimToEmpty(raw), 1000));
             act.setSummary("AI 返回内容不是约定的 JSON，已原样保存");
         } else {
             act.setFromAi(1);
             String aiLocation = obj.getStr("location");
             Integer aiX = Convert.toInt(obj.get("x"), null);
             Integer aiY = Convert.toInt(obj.get("y"), null);
-            if (aiX == null || aiY == null) {
-                SandboxLocation matched = matchLocation(locations, aiLocation);
-                if (matched != null) {
-                    aiX = matched.getX();
-                    aiY = matched.getY();
-                }
+            // 1) 先按名字找地点；名字对不上时，看坐标落在哪个区域里
+            SandboxLocation target = matchLocation(locations, aiLocation);
+            if (target == null && aiX != null && aiY != null) {
+                target = locationAtPoint(locations, clamp(aiX), clamp(aiY));
+            }
+            // 2) 坐标缺省时用地点中心补齐
+            if (target != null && (aiX == null || aiY == null)) {
+                aiX = centerX(target);
+                aiY = centerY(target);
+            }
+            // 3) 把坐标夹进所选地点的区域，保证角色确实落在这一片地区里
+            if (target != null && aiX != null && aiY != null) {
+                int[] fixed = clampToArea(target, clamp(aiX), clamp(aiY));
+                aiX = fixed[0];
+                aiY = fixed[1];
             }
             x = clamp(aiX == null ? x : aiX);
             y = clamp(aiY == null ? y : aiY);
 
-            if (aiLocation == null || aiLocation.trim().isEmpty()) {
+            if (target != null) {
+                locationName = target.getName();
+            } else if (aiLocation == null || aiLocation.trim().isEmpty()) {
                 SandboxLocation nearest = nearestLocation(locations, x, y);
                 locationName = nearest == null ? locationName : nearest.getName();
             } else {
                 locationName = truncate(aiLocation.trim(), 90);
             }
 
+            // 二级地点：AI 自行创作；没给且一级地点没变就沿用上一次，换地方了则清空
+            String previousLocation = character.getLocationName();
+            boolean locationChanged = previousLocation == null
+                    ? locationName != null
+                    : !previousLocation.equals(locationName);
+            String aiSubLocation = obj.getStr("sub_location");
+            if (aiSubLocation != null && !aiSubLocation.trim().isEmpty()) {
+                subLocation = truncate(aiSubLocation.trim(), 90);
+            } else if (locationChanged) {
+                subLocation = null;
+            }
+
             act.setLocationName(locationName);
+            act.setSubLocation(subLocation);
             act.setX(x);
             act.setY(y);
-            act.setActions(truncate(sensitiveWordFilter.filter(joinActions(obj.getJSONArray("actions"))), 1000));
-            act.setInnerVoice(truncate(sensitiveWordFilter.filter(trimToEmpty(obj.getStr("inner_voice"))), 1000));
-            act.setSummary(truncate(sensitiveWordFilter.filter(trimToEmpty(obj.getStr("summary"))), 280));
+            // 沙盒角色行动是 AI 创作内容，按管理员设置不做敏感词过滤，保持原文
+            act.setActions(truncate(joinActions(obj.getJSONArray("actions")), 1000));
+            act.setInnerVoice(truncate(trimToEmpty(obj.getStr("inner_voice")), 1000));
+            act.setSummary(truncate(trimToEmpty(obj.getStr("summary")), 280));
             // 这一步和哪些角色互动了（只保留世界里真实存在的角色名）
             act.setCompanions(matchCompanions(obj.getJSONArray("companions"), companions));
             // 好感度变化：AI 返回 { "角色名": 3 }，服务端累加到对应关系上
             act.setFavorChange(applyFavorChanges(character, obj.get("favor_changes"), companions));
+            // 物品变化：AI 返回 { "物品名": 1 }，正为获得、负为消耗
+            act.setItemChange(applyItemChanges(character, obj.get("items_change")));
+            // 由 AI 决定下一次隔多久再行动（例如睡一觉就是几小时）
+            aiNextMinutes = Convert.toInt(obj.get("next_after_minutes"), null);
+            aiNextReason = truncate(trimToEmpty(obj.getStr("next_after_reason")), 40);
+            act.setNextAfterMinutes(aiNextMinutes == null || aiNextMinutes < 0 ? 0 : aiNextMinutes);
+            act.setNextAfterReason(aiNextReason == null || aiNextReason.isEmpty() ? null : aiNextReason);
+            // 这一步参考/听说了哪几条纪闻
+            act.setNewsRef(matchNewsRefs(obj.getJSONArray("news_refs"), news));
 
             // 状态合并：AI 没提到的状态项沿用上一次的值，避免凭空丢失
             statusJson = mergeStatus(character.getStatusJson(), obj.get("status"));
@@ -529,16 +818,18 @@ public class SandboxServiceImpl implements SandboxService {
         }
         act.setCoinChange(coinChange);
 
-        LocalDateTime next = nextRunTime(character, now);
+        LocalDateTime next = resolveNextRunTime(character, now, aiNextMinutes);
         characterMapper.update(null, new LambdaUpdateWrapper<SandboxCharacter>()
                 .eq(SandboxCharacter::getId, characterId)
                 .set(SandboxCharacter::getX, x)
                 .set(SandboxCharacter::getY, y)
                 .set(SandboxCharacter::getLocationName, locationName)
+                .set(SandboxCharacter::getSubLocation, subLocation)
                 .set(SandboxCharacter::getStatusJson, statusJson)
                 .set(SandboxCharacter::getCoins, coins)
                 .set(SandboxCharacter::getLastRunTime, now)
                 .set(SandboxCharacter::getNextRunTime, next)
+                .set(SandboxCharacter::getNextReason, aiNextReason == null || aiNextReason.isEmpty() ? null : aiNextReason)
                 .set(SandboxCharacter::getLastError, null));
 
         actMapper.insert(act);
@@ -770,6 +1061,8 @@ public class SandboxServiceImpl implements SandboxService {
         vo.setEnabled("1".equals(configService.getConfigValue("sandbox_enabled", "0")));
         vo.setWhisperPoints(intConfig("sandbox_whisper_points", 1));
         vo.setCoinRate(Math.max(1, intConfig("sandbox_coin_rate", 10)));
+        vo.setNewsTitle(configService.getConfigValue("sandbox_news_title", "旅人纪闻"));
+        vo.setNews(todayNews());
         vo.setWorld(world());
         vo.setLocations(locations());
         List<SandboxCharacterVO> list = new ArrayList<>();
@@ -790,12 +1083,20 @@ public class SandboxServiceImpl implements SandboxService {
         vo.setX(character.getX());
         vo.setY(character.getY());
         vo.setLocationName(character.getLocationName());
+        vo.setSubLocation(character.getSubLocation());
         vo.setEnabled(character.getEnabled());
         vo.setStatus(parseStatus(character.getStatusJson()));
         vo.setCoins(character.getCoins() == null ? 0 : character.getCoins());
         vo.setNextRunTime(character.getNextRunTime());
+        vo.setNextReason(character.getNextReason());
         vo.setLastRunTime(character.getLastRunTime());
         vo.setRelations(relationsOf(character.getId()));
+        vo.setItems(items(character.getId()));
+        List<SandboxMemory> memories = memoryMapper.selectList(new LambdaQueryWrapper<SandboxMemory>()
+                .eq(SandboxMemory::getCharacterId, character.getId())
+                .orderByDesc(SandboxMemory::getMemoryDate)
+                .last("limit " + PORTAL_MEMORY_LIMIT));
+        vo.setRecentMemories(memories);
         List<SandboxCoinLog> coinLogs = coinLogMapper.selectList(new LambdaQueryWrapper<SandboxCoinLog>()
                 .eq(SandboxCoinLog::getCharacterId, character.getId())
                 .orderByDesc(SandboxCoinLog::getCreateTime)
@@ -859,6 +1160,23 @@ public class SandboxServiceImpl implements SandboxService {
     }
 
     /** 把一天切成几个时段，让 AI 更容易写出符合时间的行为 */
+    /** 事件与角色的距离描述，用自然语言表达，避免生硬数字 */
+    private String distanceText(int x1, int y1, int x2, int y2) {
+        double dx = x1 - x2;
+        double dy = (y1 - y2) * 9.0 / 16.0;
+        double distance = Math.sqrt(dx * dx + dy * dy);
+        if (distance <= 6) {
+            return "就在同一个地区";
+        }
+        if (distance <= 20) {
+            return "大约半天路程";
+        }
+        if (distance <= 40) {
+            return "大约一两天路程";
+        }
+        return "非常遥远";
+    }
+
     private String periodOfDay(LocalTime time) {
         int hour = time.getHour();
         if (hour < 5) {
@@ -911,8 +1229,18 @@ public class SandboxServiceImpl implements SandboxService {
             sb.append("- （管理员还没有在地图上添加地点，可以自行合理地设定一个符合世界观的去处）\n");
         } else {
             for (SandboxLocation location : locations) {
-                sb.append("- ").append(location.getName())
-                        .append("（x=").append(location.getX()).append(", y=").append(location.getY()).append("）");
+                int lx = location.getX() == null ? 50 : location.getX();
+                int ly = location.getY() == null ? 50 : location.getY();
+                int lw = location.getWidth() == null ? 0 : location.getWidth();
+                int lh = location.getHeight() == null ? 0 : location.getHeight();
+                sb.append("- ").append(location.getName());
+                if (lw > 0 && lh > 0) {
+                    sb.append("（区域 x ").append(lx).append("~").append(lx + lw)
+                            .append("、y ").append(ly).append("~").append(ly + lh)
+                            .append("；中心 x=").append(lx + lw / 2).append(", y=").append(ly + lh / 2).append("）");
+                } else {
+                    sb.append("（坐标 x=").append(lx).append(", y=").append(ly).append("）");
+                }
                 if (notBlank(location.getDescription())) {
                     sb.append("：").append(location.getDescription());
                 }
@@ -929,7 +1257,7 @@ public class SandboxServiceImpl implements SandboxService {
                 if (notBlank(other.getTitle())) {
                     sb.append("（").append(other.getTitle()).append("）");
                 }
-                sb.append("：当前在").append(blankToDefault(other.getLocationName(), "某处"))
+                sb.append("：当前在").append(blankToDefault(placeText(other.getLocationName(), other.getSubLocation()), "某处"))
                         .append("（x=").append(other.getX() == null ? 50 : other.getX())
                         .append(", y=").append(other.getY() == null ? 50 : other.getY()).append("）");
                 if (notBlank(other.getAppearance())) {
@@ -941,11 +1269,13 @@ public class SandboxServiceImpl implements SandboxService {
 
         sb.append("\n【输出要求】\n")
                 .append("你必须严格只输出一个 JSON 对象，不要输出任何解释、前言、后缀，也不要使用 Markdown 代码块标记。JSON 结构如下：\n")
-                .append("{\"location\":\"这一步所处的地点名称，尽量使用【地图地点】里的名字\",\"x\":35,\"y\":62,")
+                .append("{\"location\":\"这一步所处的地点名称，尽量使用【地图地点】里的名字\",")
+                .append("\"sub_location\":\"这一步具体所在的小地方（自己创作）\",\"x\":35,\"y\":62,")
                 .append("\"actions\":[\"具体动作一\",\"具体动作二\"],\"inner_voice\":\"角色此刻的心里话（第一人称，一句话）\",")
                 .append("\"status\":{\"体力\":80,\"魔力\":45,\"饥饿度\":30,\"心情\":\"平静\"},")
                 .append("\"coins_change\":0,\"companions\":[],\"favor_changes\":{\"角色名\":3},")
-                .append("\"summary\":\"30 字以内概括这一步\"}\n")
+                .append("\"items_change\":{\"物品名\":1},\"next_after_minutes\":0,\"next_after_reason\":\"\",")
+                .append("\"news_refs\":[],\"summary\":\"30 字以内概括这一步\"}\n")
                 .append("要求：\n")
                 .append("1. actions 写 1~3 条具体、有画面感的动作。\n")
                 .append("2. status 必须包含体力、魔力、饥饿度（0~100 的整数）与心情（简短词语），可以再补充其它状态项；")
@@ -962,19 +1292,46 @@ public class SandboxServiceImpl implements SandboxService {
                 .append("变化幅度只能是 -10~+10 的整数，日常小事 ±1~3，重要事件才用 ±5~10；")
                 .append("还要参考【你与其他角色的关系】里的当前好感度：接近 100 时不要再给正数，接近 -100 时不要再给负数；")
                 .append("并且这一步做了什么必须写在 actions 里，不允许出现「好感变了但行动里看不出来」的情况。\n")
-                .append("7. 整体风格温和、日常、有生活感，避免暴力与不适内容。");
+                .append("7. items_change 表示背包物品的变化，格式是 {\"物品名\": 数量变化}：")
+                .append("获得东西填正数（例如采到草药 2、买到干粮 1），用掉或丢失填负数（例如吃掉干粮 -1）；")
+                .append("没有变化填 {}。物品是具体的小东西（干粮、草药、萤石灯、旧地图、戒指……），")
+                .append("金币请写在 coins_change 里、不要当成物品；物品名要简短且与 actions 描述一致，")
+                .append("单次数量变化不超过 ±9，不要凭空得到贵重或神器的东西。\n")
+                .append("8. 背包里已有的物品可以继续使用或送人；【最近的记忆】是你对过去几天的印象，")
+                .append("请保持人设与记忆连贯，不要做出与记忆矛盾的事。\n")
+                .append("9. 整体风格温和、日常、有生活感，避免暴力与不适内容。\n")
+                .append("10. sub_location 是二级地点：请根据你所在的一级地点，自行创作一个具体的小地方，")
+                .append("例如「东侧集市」「城墙下的旧书摊」「酒馆二层」「长满萤石的树洞」；")
+                .append("要求 4~12 个字、具体可感、与一级地点的风格一致，不要直接重复一级地点名，")
+                .append("也不要写「某处」「附近」这类空泛的词；换了地方就换一个新的小地点，留在原地可以沿用同一个。");
+        sb.append("\n11. x / y 必须写在你所选地点的范围内（地点后面标注了区域范围），")
+                .append("不要越界到别的地区；如果只是在这个地区里走动，仍然用同一个地点名。");
+        sb.append("\n12. next_after_minutes 由你自己决定下一次行动隔多久（整数分钟，")
+                .append(intConfig("sandbox_ai_interval_min", 15)).append("~")
+                .append(intConfig("sandbox_ai_interval_max", 720)).append(" 之间），")
+                .append("表示你觉得过多久才会开始下一步；拿不准就填 0，系统会按默认间隔安排。")
+                .append("next_after_reason 用 2~6 个字说明这段时间在做什么（例如「睡觉」「赶路」「研究符文」），")
+                .append("没填间隔时可以留空字符串。");
+        sb.append("\n13. news_refs 是数组：如果你这一步听说了、议论了或关注了【今日要闻】里的某条事件，")
+                .append("就把那条事件的原句填进去（必须与上面列出的标题完全一致），没有就填 []；")
+                .append("听说并不代表一定要参与。");
+        sb.append("\n14. 背包管理：每次行动都顺便看一眼背包——能用掉的就用掉（吃掉干粮、喝掉药水等，")
+                .append("让饥饿度或体力、魔力得到恢复），用不上的可以丢掉或送人（在 items_change 里写负数，")
+                .append("数量减到 0 会自动从背包移除）；不要长期囤积用不上的东西，也不要一次丢光所有物资。");
         return sb.toString();
     }
 
     /** 用户提示词：当前状态 + 最近记忆 + 其他居民的动静 + 旅人的话 + 本次指令 */
     private String buildUserPrompt(SandboxCharacter c, List<SandboxAct> recent, List<SandboxInteraction> whispers,
                                    List<SandboxCharacter> companions, List<SandboxAct> companionActs,
-                                   boolean reaction, String triggerName, SandboxAct trigger) {
+                                   boolean reaction, String triggerName, SandboxAct trigger,
+                                   List<SandboxMemory> memories, List<SandboxItem> backpack,
+                                   List<SandboxNews> news) {
         StringBuilder sb = new StringBuilder();
         LocalDateTime now = LocalDateTime.now();
         sb.append("【当前状态】\n")
                 .append("现在时间：").append(timeText(now)).append("\n")
-                .append("当前位置：").append(blankToDefault(c.getLocationName(), "尚未确定"))
+                .append("当前位置：").append(blankToDefault(placeText(c.getLocationName(), c.getSubLocation()), "尚未确定"))
                 .append("（x=").append(c.getX() == null ? 50 : c.getX())
                 .append(", y=").append(c.getY() == null ? 50 : c.getY()).append("）\n")
                 .append("身上金币：").append(c.getCoins() == null ? 0 : c.getCoins()).append(" 枚\n");
@@ -982,12 +1339,41 @@ public class SandboxServiceImpl implements SandboxService {
         if (!status.isEmpty()) {
             sb.append("当前状态：").append(JSONUtil.toJsonStr(status)).append("\n");
         }
+        // 背包：把物品清单明确列出来，AI 才知道自己身上有什么
+        sb.append("背包物品：");
+        if (backpack.isEmpty()) {
+            sb.append("（空空如也）\n");
+        } else {
+            List<String> itemTexts = new ArrayList<>();
+            for (SandboxItem item : backpack) {
+                itemTexts.add(item.getName() + " x" + (item.getQuantity() == null ? 1 : item.getQuantity()));
+            }
+            sb.append(String.join("、", itemTexts)).append("\n");
+            if (backpack.size() >= 12) {
+                sb.append("（背包已经有 ").append(backpack.size())
+                        .append(" 种物品，比较满了：这一步可以顺手用掉、送人或丢掉一些不常用的东西）\n");
+            }
+        }
+        if (!memories.isEmpty()) {
+            sb.append("\n【最近的记忆】按时间从早到晚，这是你对过去几天的印象：\n");
+            List<SandboxMemory> ordered = new ArrayList<>(memories);
+            ordered.sort((a, b) -> {
+                LocalDate da = a.getMemoryDate() == null ? LocalDate.MIN : a.getMemoryDate();
+                LocalDate db = b.getMemoryDate() == null ? LocalDate.MIN : b.getMemoryDate();
+                return da.compareTo(db);
+            });
+            for (SandboxMemory memory : ordered) {
+                sb.append("- ").append(memory.getMemoryDate()).append("：")
+                        .append(blankToDefault(memory.getSummary(), "（这天没有留下什么印象）"))
+                        .append("\n");
+            }
+        }
         // 回应回合：把「刚刚发生了什么」明确写出来，避免被搭话的一方毫不知情
         if (reaction && trigger != null) {
             sb.append("\n【刚刚发生的事】").append(blankToDefault(triggerName, "另一位居民"))
                     .append(" 于 ").append(trigger.getCreateTime() == null ? ""
                             : trigger.getCreateTime().format(DATE_TIME_FORMATTER))
-                    .append(" 在 ").append(blankToDefault(trigger.getLocationName(), "某处")).append("：\n")
+                    .append(" 在 ").append(blankToDefault(placeText(trigger.getLocationName(), trigger.getSubLocation()), "某处")).append("：\n")
                     .append(blankToDefault(trigger.getActions(), blankToDefault(trigger.getSummary(), "")))
                     .append("\n请自然地回应这件事：可以直接搭话、可以并肩行动、也可以只是心里想一想；")
                     .append("不必强行改变你原本的打算，也不要重复上面已经写过的动作。\n");
@@ -1000,7 +1386,7 @@ public class SandboxServiceImpl implements SandboxService {
             Collections.reverse(ordered);
             for (SandboxAct act : ordered) {
                 sb.append("- ").append(act.getCreateTime() == null ? "" : act.getCreateTime().format(DATE_TIME_FORMATTER))
-                        .append(" 在").append(blankToDefault(act.getLocationName(), "某处")).append("：")
+                        .append(" 在").append(blankToDefault(placeText(act.getLocationName(), act.getSubLocation()), "某处")).append("：")
                         .append(blankToDefault(act.getSummary(), blankToDefault(act.getActions(), "")))
                         .append("\n");
             }
@@ -1017,7 +1403,7 @@ public class SandboxServiceImpl implements SandboxService {
                 sb.append("- ").append(characterNameOf(companions, act.getCharacterId()))
                         .append(" 于 ").append(act.getCreateTime() == null ? ""
                                 : act.getCreateTime().format(DATE_TIME_FORMATTER))
-                        .append(" 在").append(blankToDefault(act.getLocationName(), "某处")).append("：")
+                        .append(" 在").append(blankToDefault(placeText(act.getLocationName(), act.getSubLocation()), "某处")).append("：")
                         .append(blankToDefault(act.getSummary(), blankToDefault(act.getActions(), "")))
                         .append("\n");
             }
@@ -1030,6 +1416,24 @@ public class SandboxServiceImpl implements SandboxService {
             for (String line : relationLines) {
                 sb.append("- ").append(line).append("\n");
             }
+        }
+        if (!news.isEmpty()) {
+            sb.append("\n【今日要闻】世界上今天发生的事（你可以听说、议论、担心，也可以决定前往，但不一定要参与）：\n");
+            int myX = c.getX() == null ? 50 : c.getX();
+            int myY = c.getY() == null ? 50 : c.getY();
+            for (SandboxNews item : news) {
+                sb.append("- ").append(item.getTitle());
+                if (notBlank(item.getLocationName())) {
+                    sb.append("（发生在").append(item.getLocationName());
+                    if (item.getX() != null && item.getY() != null) {
+                        sb.append("，距离你").append(distanceText(myX, myY, item.getX(), item.getY()));
+                    }
+                    sb.append("）");
+                }
+                sb.append("\n");
+            }
+            sb.append("（请结合距离与自身状态——体力、魔力、金币、正在做的事——决定是否关注或前往；")
+                    .append("也可以完全不理会，只在心里想一想。）\n");
         }
         if (!whispers.isEmpty()) {
             sb.append("\n【旅人的低语】最近有人对角色说：\n");
@@ -1080,6 +1484,35 @@ public class SandboxServiceImpl implements SandboxService {
             }
         }
         return "某位居民";
+    }
+
+    /** 把 AI 返回的 news_refs 收敛为今天真实存在的纪闻标题，避免编造 */
+    private String matchNewsRefs(JSONArray array, List<SandboxNews> news) {
+        if (array == null || array.isEmpty() || news == null || news.isEmpty()) {
+            return null;
+        }
+        List<String> hits = new ArrayList<>();
+        for (int i = 0; i < array.size(); i++) {
+            String text = array.getStr(i);
+            if (text == null) {
+                continue;
+            }
+            String target = text.trim();
+            if (target.isEmpty()) {
+                continue;
+            }
+            for (SandboxNews item : news) {
+                String title = item.getTitle();
+                if (title == null || hits.contains(title)) {
+                    continue;
+                }
+                // 兼容 AI 只写事件关键词的情况
+                if (title.equals(target) || title.contains(target) || target.contains(title)) {
+                    hits.add(title);
+                }
+            }
+        }
+        return hits.isEmpty() ? null : truncate(String.join("、", hits), 290);
     }
 
     /** 把 AI 返回的 companions 收敛为世界里真实存在的角色名，避免出现编造的名字 */
@@ -1182,7 +1615,7 @@ public class SandboxServiceImpl implements SandboxService {
             vo.setTargetName(other.getName());
             vo.setTargetTitle(other.getTitle());
             vo.setTargetAvatar(other.getAvatar());
-            vo.setTargetLocation(other.getLocationName());
+            vo.setTargetLocation(placeText(other.getLocationName(), other.getSubLocation()));
             vo.setFavor(favor);
             vo.setFavorLevel(favorLevel(favor));
             vo.setLastChange(relation == null ? null : relation.getLastChange());
@@ -1356,6 +1789,642 @@ public class SandboxServiceImpl implements SandboxService {
         return changes.isEmpty() ? null : truncate(String.join("、", changes), 190);
     }
 
+    // ============================== 背包 ==============================
+
+    @Override
+    public List<SandboxItem> items(Long characterId) {
+        if (characterId == null) {
+            return new ArrayList<>();
+        }
+        return itemMapper.selectList(new LambdaQueryWrapper<SandboxItem>()
+                .eq(SandboxItem::getCharacterId, characterId)
+                .orderByAsc(SandboxItem::getId));
+    }
+
+    @Override
+    public SandboxItem saveItem(SandboxItem item) {
+        if (item.getCharacterId() == null) {
+            throw new BusinessException("请选择角色");
+        }
+        if (item.getName() == null || item.getName().trim().isEmpty()) {
+            throw new BusinessException("物品名称不能为空");
+        }
+        item.setName(item.getName().trim());
+        if (item.getQuantity() == null || item.getQuantity() < 1) {
+            item.setQuantity(1);
+        }
+        // 品质限幅 1~5；调用方没传时不覆盖已有品质，新建时按物品名推断
+        Integer rarity = item.getRarity() == null ? null : Math.max(1, Math.min(5, item.getRarity()));
+        String icon = item.getIcon() == null ? null : item.getIcon().trim();
+        SandboxItem exists = itemMapper.selectOne(new LambdaQueryWrapper<SandboxItem>()
+                .eq(SandboxItem::getCharacterId, item.getCharacterId())
+                .eq(SandboxItem::getName, item.getName())
+                .last("limit 1"));
+        LocalDateTime now = LocalDateTime.now();
+        if (exists == null) {
+            if (item.getWorldId() == null) {
+                item.setWorldId(worldId());
+            }
+            item.setRarity(rarity == null ? inferRarity(item.getName()) : rarity);
+            item.setIcon(icon == null || icon.isEmpty() ? null : icon);
+            item.setId(null);
+            item.setCreateTime(now);
+            item.setUpdateTime(now);
+            itemMapper.insert(item);
+            return item;
+        }
+        // 只更新调用方显式传过来的字段，避免改数量时把图标/品质/说明清空
+        LambdaUpdateWrapper<SandboxItem> wrapper = new LambdaUpdateWrapper<SandboxItem>()
+                .eq(SandboxItem::getId, exists.getId())
+                .set(SandboxItem::getQuantity, item.getQuantity())
+                .set(SandboxItem::getUpdateTime, now);
+        if (rarity != null) {
+            wrapper.set(SandboxItem::getRarity, rarity);
+        }
+        if (icon != null) {
+            wrapper.set(SandboxItem::getIcon, icon.isEmpty() ? null : icon);
+        }
+        if (item.getDescription() != null) {
+            wrapper.set(SandboxItem::getDescription, item.getDescription());
+        }
+        itemMapper.update(null, wrapper);
+        item.setId(exists.getId());
+        item.setRarity(rarity == null ? exists.getRarity() : rarity);
+        item.setIcon(icon == null ? exists.getIcon() : icon);
+        return item;
+    }
+
+    @Override
+    public void deleteItem(Long id) {
+        itemMapper.deleteById(id);
+    }
+
+    // ============================== 旅人纪闻 ==============================
+
+    @Override
+    public List<SandboxNews> todayNews() {
+        return newsMapper.selectList(new LambdaQueryWrapper<SandboxNews>()
+                .eq(SandboxNews::getNewsDate, LocalDate.now())
+                .eq(SandboxNews::getEnabled, 1)
+                .orderByDesc(SandboxNews::getPinned)
+                .orderByDesc(SandboxNews::getLevel)
+                .orderByDesc(SandboxNews::getId)
+                .last("limit 10"));
+    }
+
+    @Override
+    public PageResult<SandboxNews> newsPage(String date, long page, long size) {
+        LambdaQueryWrapper<SandboxNews> wrapper = new LambdaQueryWrapper<SandboxNews>()
+                .orderByDesc(SandboxNews::getNewsDate)
+                .orderByDesc(SandboxNews::getPinned)
+                .orderByDesc(SandboxNews::getId);
+        if (date == null || date.trim().isEmpty()) {
+            wrapper.eq(SandboxNews::getNewsDate, LocalDate.now());
+        } else if (!"all".equalsIgnoreCase(date.trim())) {
+            try {
+                wrapper.eq(SandboxNews::getNewsDate, LocalDate.parse(date.trim()));
+            } catch (Exception e) {
+                throw new BusinessException("日期格式应为 yyyy-MM-dd");
+            }
+        }
+        IPage<SandboxNews> result = newsMapper.selectPage(new Page<>(page, size), wrapper);
+        return PageResult.of(result.getTotal(), result.getRecords());
+    }
+
+    @Override
+    public void saveNews(SandboxNews news) {
+        if (news.getTitle() == null || news.getTitle().trim().isEmpty()) {
+            throw new BusinessException("事件内容不能为空");
+        }
+        news.setTitle(news.getTitle().trim());
+        if (news.getNewsDate() == null) {
+            news.setNewsDate(LocalDate.now());
+        }
+        if (news.getLevel() == null || news.getLevel() < 1 || news.getLevel() > 3) {
+            news.setLevel(1);
+        }
+        if (news.getPinned() == null) {
+            news.setPinned(0);
+        }
+        if (news.getEnabled() == null) {
+            news.setEnabled(1);
+        }
+        if (news.getWorldId() == null) {
+            news.setWorldId(worldId());
+        }
+        if (news.getSource() == null || news.getSource().trim().isEmpty()) {
+            news.setSource("admin");
+        }
+        // 补坐标：优先匹配地图地点的区域中心
+        if (news.getX() == null || news.getY() == null) {
+            SandboxLocation matched = matchLocation(locations(), news.getLocationName());
+            if (matched != null) {
+                news.setX(centerX(matched));
+                news.setY(centerY(matched));
+                news.setLocationName(matched.getName());
+            }
+        }
+        if (news.getId() == null) {
+            news.setCreateTime(LocalDateTime.now());
+            newsMapper.insert(news);
+        } else {
+            newsMapper.updateById(news);
+        }
+    }
+
+    @Override
+    public void deleteNews(Long id) {
+        newsMapper.deleteById(id);
+    }
+
+    @Override
+    public int generateNews(Integer count, Long providerId, String model) {
+        int size = count == null ? intConfig("sandbox_news_per_generate", 3) : count;
+        size = Math.max(1, Math.min(10, size));
+        Long provider = providerId;
+        if (provider == null) {
+            String configured = configService.getConfigValue("sandbox_news_provider_id", "");
+            provider = configured == null || configured.trim().isEmpty() ? null : Convert.toLong(configured.trim(), null);
+        }
+        String useModel = model;
+        if (useModel == null || useModel.trim().isEmpty()) {
+            useModel = configService.getConfigValue("sandbox_news_model", "");
+        }
+        if (useModel == null || useModel.trim().isEmpty()) {
+            throw new BusinessException("请先选择生成事件使用的模型");
+        }
+
+        SandboxWorld world = world();
+        List<SandboxLocation> locations = locations();
+        // 最近的世界动向：只取少量角色行动概括，作为氛围参考
+        List<String> recentMoves = new ArrayList<>();
+        for (SandboxCharacter character : characters()) {
+            List<SandboxAct> acts = recentActs(character.getId(), 1);
+            for (SandboxAct act : acts) {
+                String text = blankToDefault(act.getSummary(), blankToDefault(act.getActions(), ""));
+                if (notBlank(text)) {
+                    recentMoves.add(character.getName() + " 近日在" + blankToDefault(act.getLocationName(), "某处")
+                            + "：" + truncate(text.replace("\n", " "), 60));
+                }
+            }
+        }
+        List<String> existing = new ArrayList<>();
+        for (SandboxNews news : todayNews()) {
+            existing.add(news.getTitle());
+        }
+
+        String systemPrompt = buildNewsSystemPrompt(size);
+        String userPrompt = buildNewsUserPrompt(world, locations, recentMoves, existing);
+        AiProvider newsProvider = aiProviderService.resolveManualProvider(provider);
+        if (!AuditContext.isSet()) {
+            AuditContext.manual("沙盒·生成旅人纪闻");
+        }
+        String raw;
+        try {
+            raw = aiProviderService.chat(newsProvider, useModel.trim(), systemPrompt, userPrompt, 0.95);
+        } finally {
+            AuditContext.clear();
+        }
+        JSONObject obj = parseJson(raw);
+        if (obj == null) {
+            throw new BusinessException("AI 返回内容无法解析成 JSON，请重试或换一个模型");
+        }
+        JSONArray events = obj.getJSONArray("events");
+        if (events == null || events.isEmpty()) {
+            throw new BusinessException("AI 没有生成任何事件，请重试或调整附加要求");
+        }
+
+        // 生成前顺手清掉过期纪闻（默认只保留当天）
+        cleanupExpiredNews();
+
+        int created = 0;
+        LocalDateTime now = LocalDateTime.now();
+        for (int i = 0; i < events.size() && created < size; i++) {
+            Object node = events.get(i);
+            if (!(node instanceof JSONObject)) {
+                continue;
+            }
+            JSONObject item = (JSONObject) node;
+            String title = truncate(trimToEmpty(item.getStr("title")), 190);
+            if (title.isEmpty() || existing.contains(title)) {
+                continue;
+            }
+            SandboxNews news = new SandboxNews();
+            news.setWorldId(world.getId() == null ? 1L : world.getId());
+            news.setTitle(title);
+            news.setContent(truncate(trimToEmpty(item.getStr("content")), 490));
+            String locationName = truncate(trimToEmpty(item.getStr("location")), 90);
+            SandboxLocation matched = matchLocation(locations, locationName);
+            if (matched != null) {
+                news.setLocationName(matched.getName());
+                news.setX(centerX(matched));
+                news.setY(centerY(matched));
+            } else {
+                news.setLocationName(locationName.isEmpty() ? null : locationName);
+                news.setX(clamp(Convert.toInt(item.get("x"), 50)));
+                news.setY(clamp(Convert.toInt(item.get("y"), 50)));
+            }
+            int level = Convert.toInt(item.get("level"), 1);
+            news.setLevel(Math.max(1, Math.min(3, level)));
+            news.setSource("ai");
+            news.setNewsDate(LocalDate.now());
+            news.setPinned(0);
+            news.setEnabled(1);
+            news.setCreateTime(now);
+            newsMapper.insert(news);
+            existing.add(title);
+            created++;
+        }
+        if (created == 0) {
+            throw new BusinessException("生成的事件与今天已有的重复，请调整附加要求后重试");
+        }
+        log.info("旅人纪闻生成完成，新增 {} 条", created);
+        return created;
+    }
+
+    @Override
+    public void autoGenerateNews() {
+        if (!"1".equals(configService.getConfigValue("sandbox_news_enabled", "1"))) {
+            return;
+        }
+        boolean preset = AuditContext.isSet();
+        if (!preset) {
+            AuditContext.schedule("沙盒·自动生成旅人纪闻");
+        }
+        try {
+            int created = generateNews(null, null, null);
+            log.info("旅人纪闻自动生成完成，新增 {} 条", created);
+        } catch (Exception e) {
+            log.warn("旅人纪闻自动生成失败：{}", e.getMessage());
+        } finally {
+            if (!preset) {
+                AuditContext.clear();
+            }
+        }
+    }
+
+    /** 清理超过保留天数的纪闻（默认保留当天） */
+    private void cleanupExpiredNews() {
+        int keepDays = Math.max(1, intConfig("cleanup_sandbox_news_days", 1));
+        newsMapper.delete(new LambdaQueryWrapper<SandboxNews>()
+                .lt(SandboxNews::getNewsDate, LocalDate.now().minusDays(keepDays - 1L)));
+    }
+
+    /** 生成事件的系统提示词 */
+    private String buildNewsSystemPrompt(int count) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("你是一位奇幻世界的编年史官。请为今天的世界写出 ").append(count)
+                .append(" 条「旅人纪闻」，内容是这个世界里自然发生的大事，写成适合快报的一句话。\n")
+                .append("你必须严格只输出一个 JSON 对象，不要输出解释、前后缀或 Markdown 代码块标记。JSON 结构如下：\n")
+                .append("{\"events\":[{\"title\":\"一句话事件（20~40 字）\",\"content\":\"补充说明（40~120 字）\",")
+                .append("\"location\":\"发生地点，必须从【地图地点】里选一个\",\"level\":1}]}\n")
+                .append("要求：\n")
+                .append("1. level 表示重要度：1 普通 / 2 重要 / 3 重大；\n")
+                .append("2. 事件之间要各不相同、有画面感、符合世界观，可以是节庆、天象、商队、遗迹异动、灾害、")
+                .append("物价波动、贵族动向、怪物出没等；\n")
+                .append("3. location 只能从给定地点里选；\n")
+                .append("4. 这些事件是「世界本身发生的事」，**不要围绕某个具体角色的私人行为来写**，")
+                .append("也不要写成角色日记；\n")
+                .append("5. 不要使用真实世界的国家、品牌、人物或事件；\n")
+                .append("6. 【最近的世界动向】只作为氛围参考，最多只让其中一条与它有一点关联，其余请完全独立创作。");
+        return sb.toString();
+    }
+
+    /** 生成事件的用户提示词：世界观 + 地图地点 + 最近动向 + 已有纪闻 + 附加要求 */
+    private String buildNewsUserPrompt(SandboxWorld world, List<SandboxLocation> locations,
+                                       List<String> recentMoves, List<String> existing) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("【世界观】\n").append(blankToDefault(world.getWorldPrompt(), DEFAULT_WORLD_PROMPT)).append("\n\n");
+        sb.append("【地图地点】");
+        if (locations.isEmpty()) {
+            sb.append("（还没有地点，可以自行设定一个合理的地点名）");
+        } else {
+            List<String> names = new ArrayList<>();
+            for (SandboxLocation location : locations) {
+                names.add(location.getName());
+            }
+            sb.append(String.join("、", names));
+        }
+        sb.append("\n\n【最近的世界动向】");
+        if (recentMoves.isEmpty()) {
+            sb.append("（暂无）");
+        } else {
+            sb.append("\n");
+            for (String move : recentMoves) {
+                sb.append("- ").append(move).append("\n");
+            }
+        }
+        sb.append("\n【今天已经有的纪闻】");
+        if (existing.isEmpty()) {
+            sb.append("（暂无，请全部新写）");
+        } else {
+            sb.append("\n");
+            for (String title : existing) {
+                sb.append("- ").append(title).append("\n");
+            }
+            sb.append("（不要与上面重复）");
+        }
+        String extra = configService.getConfigValue("sandbox_news_prompt_extra", "");
+        if (extra != null && !extra.trim().isEmpty()) {
+            sb.append("\n\n【附加要求】\n").append(extra.trim());
+        }
+        return sb.toString();
+    }
+
+    /** 应用 AI 返回的物品变化，返回给前台展示的文字，例如「获得 干粮 +1、用掉 面包 -1」 */
+    private String applyItemChanges(SandboxCharacter character, Object itemObj) {
+        if (!(itemObj instanceof JSONObject)) {
+            return null;
+        }
+        JSONObject obj = (JSONObject) itemObj;
+        if (obj.isEmpty()) {
+            return null;
+        }
+        List<String> changes = new ArrayList<>();
+        LocalDateTime now = LocalDateTime.now();
+        List<SandboxItem> current = items(character.getId());
+        for (String key : obj.keySet()) {
+            String name = key == null ? "" : key.trim();
+            if (name.isEmpty() || name.length() > 60) {
+                continue;
+            }
+            int delta = Convert.toInt(obj.get(key), 0);
+            if (delta == 0) {
+                continue;
+            }
+            delta = Math.max(-ITEM_STEP_MAX, Math.min(ITEM_STEP_MAX, delta));
+            SandboxItem item = null;
+            for (SandboxItem it : current) {
+                if (it.getName() != null && it.getName().equals(name)) {
+                    item = it;
+                    break;
+                }
+            }
+            if (item == null) {
+                // 没有的东西不能减少；背包种类也做上限，避免无限膨胀
+                if (delta < 0 || current.size() >= ITEM_KIND_MAX) {
+                    continue;
+                }
+                SandboxItem created = new SandboxItem();
+                created.setWorldId(character.getWorldId());
+                created.setCharacterId(character.getId());
+                created.setName(name);
+                created.setQuantity(delta);
+                // AI 新得到的物品按名字猜一个初始品质，管理员可在后台调整
+                created.setRarity(inferRarity(name));
+                created.setCreateTime(now);
+                created.setUpdateTime(now);
+                itemMapper.insert(created);
+                current.add(created);
+                changes.add("获得 " + name + " +" + delta);
+                continue;
+            }
+            int quantity = (item.getQuantity() == null ? 1 : item.getQuantity()) + delta;
+            if (quantity <= 0) {
+                itemMapper.deleteById(item.getId());
+                current.remove(item);
+                changes.add("用掉 " + name + " " + delta);
+            } else {
+                itemMapper.update(null, new LambdaUpdateWrapper<SandboxItem>()
+                        .eq(SandboxItem::getId, item.getId())
+                        .set(SandboxItem::getQuantity, quantity)
+                        .set(SandboxItem::getUpdateTime, now));
+                item.setQuantity(quantity);
+                changes.add((delta > 0 ? "获得 " : "用掉 ") + name + " " + (delta > 0 ? "+" : "") + delta);
+            }
+        }
+        return changes.isEmpty() ? null : truncate(String.join("、", changes), 290);
+    }
+
+    /** 按物品名猜一个初始品质：1 普通 / 2 精良 / 3 稀有 / 4 史诗 / 5 传说 */
+    private int inferRarity(String name) {
+        if (name == null) {
+            return 1;
+        }
+        if (containsAny(name, "神器", "圣物", "传说", "远古", "龙", "神之", "贤者之石")) {
+            return 5;
+        }
+        if (containsAny(name, "秘宝", "史诗", "魔法书", "秘银", "精灵", "王家", "禁书", "圣", "魔导")) {
+            return 4;
+        }
+        if (containsAny(name, "戒指", "宝石", "水晶", "护符", "卷轴", "法杖", "魔杖", "古地图", "秘药",
+                "星辉", "符文", "项链", "秘钥")) {
+            return 3;
+        }
+        if (containsAny(name, "药水", "药剂", "草药", "干肉", "匕首", "短剑", "长剑", "斗篷", "护腕",
+                "皮革", "萤石", "铁", "钥匙")) {
+            return 2;
+        }
+        return 1;
+    }
+
+    private boolean containsAny(String text, String... keys) {
+        for (String key : keys) {
+            if (text.contains(key)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // ============================== 每日记忆 ==============================
+
+    @Override
+    public PageResult<SandboxMemory> memoryPage(Long characterId, long page, long size) {
+        LambdaQueryWrapper<SandboxMemory> wrapper = new LambdaQueryWrapper<SandboxMemory>()
+                .eq(characterId != null, SandboxMemory::getCharacterId, characterId)
+                .orderByDesc(SandboxMemory::getMemoryDate)
+                .orderByAsc(SandboxMemory::getCharacterId);
+        IPage<SandboxMemory> result = memoryMapper.selectPage(new Page<>(page, size), wrapper);
+        return PageResult.of(result.getTotal(), result.getRecords());
+    }
+
+    @Override
+    public void saveMemory(SandboxMemory memory) {
+        if (memory.getCharacterId() == null) {
+            throw new BusinessException("请选择角色");
+        }
+        if (memory.getMemoryDate() == null) {
+            throw new BusinessException("请选择记忆日期");
+        }
+        SandboxMemory exists = memoryMapper.selectOne(new LambdaQueryWrapper<SandboxMemory>()
+                .eq(SandboxMemory::getCharacterId, memory.getCharacterId())
+                .eq(SandboxMemory::getMemoryDate, memory.getMemoryDate())
+                .last("limit 1"));
+        LocalDateTime now = LocalDateTime.now();
+        if (exists == null) {
+            if (memory.getWorldId() == null) {
+                memory.setWorldId(worldId());
+            }
+            memory.setId(null);
+            if (memory.getActCount() == null) {
+                memory.setActCount(0);
+            }
+            if (memory.getFromAi() == null) {
+                memory.setFromAi(0);
+            }
+            memory.setCreateTime(now);
+            memory.setUpdateTime(now);
+            memoryMapper.insert(memory);
+        } else {
+            memoryMapper.update(null, new LambdaUpdateWrapper<SandboxMemory>()
+                    .eq(SandboxMemory::getId, exists.getId())
+                    .set(SandboxMemory::getSummary, memory.getSummary())
+                    .set(SandboxMemory::getUpdateTime, now));
+        }
+    }
+
+    @Override
+    public void deleteMemory(Long id) {
+        memoryMapper.deleteById(id);
+    }
+
+    @Override
+    public void summarizeDaily() {
+        if (!"1".equals(configService.getConfigValue("sandbox_memory_enabled", "1"))) {
+            return;
+        }
+        boolean preset = AuditContext.isSet();
+        if (!preset) {
+            AuditContext.schedule("沙盒·记忆总结");
+        }
+        LocalDate today = LocalDate.now();
+        try {
+            for (SandboxCharacter character : characterMapper.selectList(null)) {
+                try {
+                    summarize(character, today);
+                } catch (Exception e) {
+                    log.warn("沙盒角色「{}」记忆总结失败：{}", character.getName(), e.getMessage());
+                }
+            }
+        } finally {
+            if (!preset) {
+                AuditContext.clear();
+            }
+        }
+    }
+
+    /** 把某个角色某一天的行动总结成一条记忆（当天没有行动则跳过） */
+    private void summarize(SandboxCharacter character, LocalDate date) {
+        List<SandboxAct> acts = actMapper.selectList(new LambdaQueryWrapper<SandboxAct>()
+                .eq(SandboxAct::getCharacterId, character.getId())
+                .ge(SandboxAct::getCreateTime, date.atStartOfDay())
+                .lt(SandboxAct::getCreateTime, date.plusDays(1).atStartOfDay())
+                .orderByAsc(SandboxAct::getCreateTime));
+        if (acts.isEmpty()) {
+            return;
+        }
+        String summary = null;
+        boolean fromAi = true;
+        try {
+            summary = aiSummary(character, date, acts);
+        } catch (Exception e) {
+            log.warn("沙盒角色「{}」{} 的 AI 记忆总结失败，改用兜底拼接：{}",
+                    character.getName(), date, e.getMessage());
+        }
+        if (summary == null || summary.trim().isEmpty()) {
+            summary = fallbackSummary(acts);
+            fromAi = false;
+        }
+        SandboxMemory exist = memoryMapper.selectOne(new LambdaQueryWrapper<SandboxMemory>()
+                .eq(SandboxMemory::getCharacterId, character.getId())
+                .eq(SandboxMemory::getMemoryDate, date)
+                .last("limit 1"));
+        LocalDateTime now = LocalDateTime.now();
+        if (exist == null) {
+            SandboxMemory memory = new SandboxMemory();
+            memory.setWorldId(character.getWorldId());
+            memory.setCharacterId(character.getId());
+            memory.setMemoryDate(date);
+            memory.setSummary(truncate(summary, 2000));
+            memory.setActCount(acts.size());
+            memory.setFromAi(fromAi ? 1 : 0);
+            memory.setCreateTime(now);
+            memory.setUpdateTime(now);
+            memoryMapper.insert(memory);
+        } else {
+            memoryMapper.update(null, new LambdaUpdateWrapper<SandboxMemory>()
+                    .eq(SandboxMemory::getId, exist.getId())
+                    .set(SandboxMemory::getSummary, truncate(summary, 2000))
+                    .set(SandboxMemory::getActCount, acts.size())
+                    .set(SandboxMemory::getFromAi, fromAi ? 1 : 0)
+                    .set(SandboxMemory::getUpdateTime, now));
+        }
+        // 可选：总结完成后删除当天日志（默认关闭，前台时间线会看不到当天内容）
+        if ("1".equals(configService.getConfigValue("sandbox_memory_delete_acts", "0"))) {
+            actMapper.delete(new LambdaQueryWrapper<SandboxAct>()
+                    .eq(SandboxAct::getCharacterId, character.getId())
+                    .ge(SandboxAct::getCreateTime, date.atStartOfDay())
+                    .lt(SandboxAct::getCreateTime, date.plusDays(1).atStartOfDay()));
+        }
+    }
+
+    /** 让 AI 把一天的流水整理成一段第一人称的长期记忆 */
+    private String aiSummary(SandboxCharacter character, LocalDate date, List<SandboxAct> acts) {
+        StringBuilder sys = new StringBuilder();
+        sys.append("你是一个记忆整理器。请把某个角色一天的经历整理成一段第一人称的长期记忆：\n")
+                .append("1. 用角色的口吻写 150~300 字，像回忆一样自然连贯，不要逐条罗列流水账；\n")
+                .append("2. 保留重要事件、去过的地方（要写到二级地点，例如「自由城邦联盟 · 东侧集市」）、")
+                .append("这一阵常待的小地方、遇到的人和相处感受、得到或失去的物品、心情与状态的变化、还没做完的事；\n")
+                .append("3. 不要编造没有发生过的事，也不要写角色不可能知道的信息；\n")
+                .append("4. 只输出这段记忆本身，不要标题、日期、解释或 JSON。\n");
+        StringBuilder user = new StringBuilder();
+        user.append("角色：").append(character.getName());
+        if (notBlank(character.getTitle())) {
+            user.append("（").append(character.getTitle()).append("）");
+        }
+        user.append("\n日期：").append(date).append("\n【当天的行动】\n");
+        for (SandboxAct act : acts) {
+            user.append("- ").append(act.getCreateTime() == null ? "" : act.getCreateTime().format(TIME_FORMATTER))
+                    .append(" 在").append(blankToDefault(placeText(act.getLocationName(), act.getSubLocation()), "某处")).append("：")
+                    .append(blankToDefault(act.getActions(), blankToDefault(act.getSummary(), "")));
+            if (notBlank(act.getInnerVoice())) {
+                user.append("（心声：").append(act.getInnerVoice()).append("）");
+            }
+            if (act.getCoinChange() != null && act.getCoinChange() != 0) {
+                user.append(" 金币").append(act.getCoinChange() > 0 ? "+" : "").append(act.getCoinChange());
+            }
+            if (notBlank(act.getItemChange())) {
+                user.append(" 物品：").append(act.getItemChange());
+            }
+            if (notBlank(act.getFavorChange())) {
+                user.append(" 好感：").append(act.getFavorChange());
+            }
+            user.append("\n");
+        }
+        String content = aiProviderService.chat(character.getProviderId(), character.getModel(),
+                sys.toString(), user.toString(), 0.6);
+        return content == null ? null : content.trim();
+    }
+
+    /** AI 总结失败时的兜底：把当天每条行动的概括拼起来 */
+    private String fallbackSummary(List<SandboxAct> acts) {
+        List<String> parts = new ArrayList<>();
+        for (SandboxAct act : acts) {
+            String text = blankToDefault(act.getSummary(), blankToDefault(act.getActions(), ""));
+            if (notBlank(text)) {
+                parts.add(text.replace("\n", " "));
+            }
+        }
+        if (parts.isEmpty()) {
+            return "今天什么也没做，只是发了很久的呆。";
+        }
+        return truncate("今天：" + String.join("；", parts) + "。", 2000);
+    }
+
+    /** 最近的记忆（按日期倒序取最近 n 天） */
+    private List<SandboxMemory> recentMemories(Long characterId, int days) {
+        if (characterId == null || days <= 0) {
+            return new ArrayList<>();
+        }
+        int limit = Math.max(1, days);
+        return memoryMapper.selectList(new LambdaQueryWrapper<SandboxMemory>()
+                .eq(SandboxMemory::getCharacterId, characterId)
+                .ge(SandboxMemory::getMemoryDate, LocalDate.now().minusDays(limit - 1L))
+                .orderByDesc(SandboxMemory::getMemoryDate)
+                .last("limit " + limit));
+    }
+
     /**
      * 可选的自查（审查）：把 AI 的输出再交给一次 AI 只做 JSON 校验与数值修正，不改写剧情。
      * 需要在后台把 sandbox_verify_enabled 设为 1 才生效（会翻倍消耗 token）。
@@ -1502,6 +2571,97 @@ public class SandboxServiceImpl implements SandboxService {
         return nearest;
     }
 
+    // ============================== 地点区域工具 ==============================
+
+    /** 地点区域左上角 X */
+    private int areaX(SandboxLocation location) {
+        return location.getX() == null ? 50 : location.getX();
+    }
+
+    /** 地点区域左上角 Y */
+    private int areaY(SandboxLocation location) {
+        return location.getY() == null ? 50 : location.getY();
+    }
+
+    /** 地点区域宽度，0 表示单点 */
+    private int areaWidth(SandboxLocation location) {
+        return location.getWidth() == null ? 0 : location.getWidth();
+    }
+
+    /** 地点区域高度，0 表示单点 */
+    private int areaHeight(SandboxLocation location) {
+        return location.getHeight() == null ? 0 : location.getHeight();
+    }
+
+    /** 地点中心 X */
+    private int centerX(SandboxLocation location) {
+        return areaX(location) + Math.max(0, areaWidth(location) / 2);
+    }
+
+    /** 地点中心 Y */
+    private int centerY(SandboxLocation location) {
+        return areaY(location) + Math.max(0, areaHeight(location) / 2);
+    }
+
+    /** 坐标是否落在地点区域内（单点地点允许 2% 的容差） */
+    private boolean inLocationArea(SandboxLocation location, int x, int y) {
+        int width = areaWidth(location);
+        int height = areaHeight(location);
+        if (width <= 0 || height <= 0) {
+            return Math.abs(areaX(location) - x) <= 2 && Math.abs(areaY(location) - y) <= 2;
+        }
+        return x >= areaX(location) && x <= areaX(location) + width
+                && y >= areaY(location) && y <= areaY(location) + height;
+    }
+
+    /** 坐标落在哪个地点区域内，没有命中返回 null */
+    private SandboxLocation locationAtPoint(List<SandboxLocation> locations, int x, int y) {
+        for (SandboxLocation location : locations) {
+            if (inLocationArea(location, x, y)) {
+                return location;
+            }
+        }
+        return null;
+    }
+
+    /** 把坐标夹到地点区域内（单点地点不处理） */
+    private int[] clampToArea(SandboxLocation location, int x, int y) {
+        int width = areaWidth(location);
+        int height = areaHeight(location);
+        if (width <= 0 || height <= 0) {
+            return new int[]{x, y};
+        }
+        int left = areaX(location);
+        int top = areaY(location);
+        return new int[]{
+                Math.max(left, Math.min(left + width, x)),
+                Math.max(top, Math.min(top + height, y))
+        };
+    }
+
+    /**
+     * 计算下一次行动时间：优先采用 AI 自己给出的间隔（例如睡觉就是几小时），
+     * 没有给或功能关闭时，回退到角色配置的随机区间；两种情况都会避开夜间静默。
+     */
+    private LocalDateTime resolveNextRunTime(SandboxCharacter character, LocalDateTime from, Integer aiMinutes) {
+        boolean enabled = "1".equals(configService.getConfigValue("sandbox_ai_interval_enabled", "1"));
+        if (enabled && aiMinutes != null && aiMinutes > 0) {
+            int min = character.getAiIntervalMin() == null
+                    ? intConfig("sandbox_ai_interval_min", 15) : character.getAiIntervalMin();
+            int max = character.getAiIntervalMax() == null
+                    ? intConfig("sandbox_ai_interval_max", 720) : character.getAiIntervalMax();
+            if (min < 1) {
+                min = 1;
+            }
+            if (max < min) {
+                max = min;
+            }
+            int minutes = Math.max(min, Math.min(max, aiMinutes));
+            return shiftOutOfNight(from.plusMinutes(minutes));
+        }
+        return nextRunTime(character, from);
+    }
+
     /** 计算下一次行动时间：在角色配置的间隔区间内随机，并避开夜间静默 */
     private LocalDateTime nextRunTime(SandboxCharacter character, LocalDateTime from) {
         int min = character.getIntervalMin() == null ? intConfig("sandbox_interval_min", 45) : character.getIntervalMin();
@@ -1634,5 +2794,14 @@ public class SandboxServiceImpl implements SandboxService {
 
     private String blankToDefault(String text, String defaultValue) {
         return notBlank(text) ? text.trim() : defaultValue;
+    }
+
+    /** 地点显示：一级地点 · 二级地点；两级都没有时返回 null */
+    private String placeText(String locationName, String subLocation) {
+        if (!notBlank(locationName) && !notBlank(subLocation)) {
+            return null;
+        }
+        String main = blankToDefault(locationName, "某处");
+        return notBlank(subLocation) ? main + " · " + subLocation.trim() : main;
     }
 }

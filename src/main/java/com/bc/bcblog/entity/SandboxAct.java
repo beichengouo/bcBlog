@@ -20,6 +20,8 @@ public class SandboxAct {
     private Long characterId;
     /** 这一步所处地点 */
     private String locationName;
+    /** 这一步的二级地点（AI 自行创作，如「东侧集市」） */
+    private String subLocation;
     /** 这一步的横向坐标 */
     private Integer x;
     /** 这一步的纵向坐标 */
@@ -32,12 +34,20 @@ public class SandboxAct {
     private String companions;
     /** 这一步的好感度变化，如「零 +3」 */
     private String favorChange;
+    /** 这一步的物品变化，如「获得 干粮 +1」 */
+    private String itemChange;
     /** 这一步结束后的状态（JSON） */
     private String statusJson;
     /** 这一步的金币变化，正为赚取、负为消耗 */
     private Integer coinChange;
     /** 一句话概括 */
     private String summary;
+    /** 这一步之后 AI 期望的间隔分钟数，0 表示未指定 */
+    private Integer nextAfterMinutes;
+    /** 间隔原因，如「睡觉」 */
+    private String nextAfterReason;
+    /** 这一步参考/听说的旅人纪闻标题 */
+    private String newsRef;
     /** AI 原始返回，便于排查问题 */
     private String rawResponse;
     /** 是否来自 AI：1 是，0 为兜底记录 */

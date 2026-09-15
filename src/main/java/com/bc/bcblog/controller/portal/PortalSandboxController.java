@@ -41,9 +41,10 @@ public class PortalSandboxController {
     /** 行动时间线（可按角色筛选） */
     @GetMapping("/acts")
     public Result<PageResult<SandboxAct>> acts(@RequestParam(required = false) Long characterId,
+                                               @RequestParam(required = false) String locationName,
                                                @RequestParam(defaultValue = "1") long page,
                                                @RequestParam(defaultValue = "10") long size) {
-        return Result.ok(sandboxService.acts(characterId, page, size));
+        return Result.ok(sandboxService.acts(characterId, locationName, page, size));
     }
 
     /** 某个角色收到的旅人低语 */

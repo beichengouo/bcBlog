@@ -1,14 +1,19 @@
 package com.bc.bcblog.service;
 
 import com.bc.bcblog.common.PageResult;
+import com.bc.bcblog.dto.SandboxCharacterGenerateDTO;
 import com.bc.bcblog.entity.SandboxAct;
 import com.bc.bcblog.entity.SandboxCharacter;
 import com.bc.bcblog.entity.SandboxCoinLog;
 import com.bc.bcblog.entity.SandboxInteraction;
+import com.bc.bcblog.entity.SandboxItem;
 import com.bc.bcblog.entity.SandboxLocation;
+import com.bc.bcblog.entity.SandboxMemory;
+import com.bc.bcblog.entity.SandboxNews;
 import com.bc.bcblog.entity.SandboxRelation;
 import com.bc.bcblog.entity.SandboxWorld;
 import com.bc.bcblog.vo.SandboxPortalVO;
+import com.bc.bcblog.vo.SandboxCharacterDraftVO;
 import com.bc.bcblog.vo.SandboxCoinResultVO;
 import com.bc.bcblog.vo.SandboxRelationVO;
 import com.bc.bcblog.vo.SandboxRunAllVO;
@@ -44,11 +49,15 @@ public interface SandboxService {
 
     SandboxCharacter saveCharacter(SandboxCharacter character);
 
+    /** AI 一键创作角色草稿：结合当前世界观、地图地点与已有角色生成，供「新增角色」表单填充 */
+    SandboxCharacterDraftVO generateCharacter(SandboxCharacterGenerateDTO dto);
+
     void deleteCharacter(Long id);
 
     // ---------------- 行动记录 ----------------
 
-    PageResult<SandboxAct> acts(Long characterId, long page, long size);
+    /** 行动记录（可按角色、按一级地点筛选；locationName 为空表示全部） */
+    PageResult<SandboxAct> acts(Long characterId, String locationName, long page, long size);
 
     void deleteAct(Long id);
 
@@ -92,6 +101,45 @@ public interface SandboxService {
     void saveRelation(SandboxRelation relation);
 
     void deleteRelation(Long id);
+
+    // ---------------- 每日记忆 ----------------
+
+    /** 记忆列表（后台，characterId 为空时查全部） */
+    PageResult<SandboxMemory> memoryPage(Long characterId, long page, long size);
+
+    /** 新增/修改一条记忆（管理员可直接编辑角色记忆） */
+    void saveMemory(SandboxMemory memory);
+
+    void deleteMemory(Long id);
+
+    /** 定时任务入口：到点后为当天有行动的角色生成记忆总结 */
+    void summarizeDaily();
+
+    // ---------------- 背包 ----------------
+
+    List<SandboxItem> items(Long characterId);
+
+    SandboxItem saveItem(SandboxItem item);
+
+    void deleteItem(Long id);
+
+    // ---------------- 旅人纪闻 ----------------
+
+    /** 前台当天的纪闻列表（按置顶与重要度排序） */
+    List<SandboxNews> todayNews();
+
+    /** 后台分页查询：date 为空时查当天，传 all 查全部 */
+    PageResult<SandboxNews> newsPage(String date, long page, long size);
+
+    void saveNews(SandboxNews news);
+
+    void deleteNews(Long id);
+
+    /** 由 AI 生成若干条纪闻，返回实际新增条数 */
+    int generateNews(Integer count, Long providerId, String model);
+
+    /** 定时任务入口：按后台配置自动生成当天纪闻（失败只记日志，不抛异常） */
+    void autoGenerateNews();
 
     // ---------------- 前台聚合 ----------------
 

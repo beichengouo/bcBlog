@@ -42,6 +42,11 @@ export function saveSandboxCharacter(data) {
   return request.post('/admin/sandbox/characters', data)
 }
 
+// AI 一键创作角色卡（结合当前世界观，耗时长一些）
+export function generateSandboxCharacter(data) {
+  return request.post('/admin/sandbox/characters/generate', data, { timeout: 180000 })
+}
+
 export function deleteSandboxCharacter(id) {
   return request.delete(`/admin/sandbox/characters/${id}`)
 }
@@ -122,4 +127,53 @@ export function saveSandboxRelation(data) {
 
 export function deleteSandboxRelation(id) {
   return request.delete(`/admin/sandbox/relations/${id}`)
+}
+
+// 后台：每日记忆
+export function sandboxMemories(params) {
+  return request.get('/admin/sandbox/memories', { params })
+}
+
+export function saveSandboxMemory(data) {
+  return request.post('/admin/sandbox/memories', data)
+}
+
+export function deleteSandboxMemory(id) {
+  return request.delete(`/admin/sandbox/memories/${id}`)
+}
+
+// 后台：立即生成当天记忆（调试用）
+export function summarizeSandboxMemories() {
+  return request.post('/admin/sandbox/memories/summarize', null, { timeout: 600000 })
+}
+
+// 后台：角色背包
+export function sandboxItems(characterId) {
+  return request.get('/admin/sandbox/items', { params: { characterId } })
+}
+
+export function saveSandboxItem(data) {
+  return request.post('/admin/sandbox/items', data)
+}
+
+export function deleteSandboxItem(id) {
+  return request.delete(`/admin/sandbox/items/${id}`)
+}
+
+// 后台：旅人纪闻
+export function sandboxNewsList(params) {
+  return request.get('/admin/sandbox/news', { params })
+}
+
+export function saveSandboxNews(data) {
+  return request.post('/admin/sandbox/news', data)
+}
+
+export function deleteSandboxNews(id) {
+  return request.delete(`/admin/sandbox/news/${id}`)
+}
+
+// 由 AI 生成若干条当天事件（耗时长一些）
+export function generateSandboxNews(data) {
+  return request.post('/admin/sandbox/news/generate', data, { timeout: 180000 })
 }

@@ -18,6 +18,9 @@
 6. **`upgrade_021_sandbox_relation.sql`** —— 角色之间的好感度（好感度表 + 行动记录的好感变化字段）
 7. **`upgrade_022_sandbox_favor_audit.sql`** —— 好感度结算修正（记录实际生效的变化）与可选的 AI 自查开关
 8. **`upgrade_023_sandbox_chain.sql`** —— 互动触发「回应回合」（含深度 / 次数 / 冷却等防循环配置）
+9. **`upgrade_024_sandbox_memory_item.sql`** —— 每日记忆总结与角色背包（2 张新表 + 日志保留天数接入数据清理）
+10. **`upgrade_025_sandbox_item_rarity.sql`** —— 背包物品品质与自定义图标字段
+11. **`upgrade_026_sandbox_sub_location.sql`** —— 二级地点（行动记录与角色当前位置新增 sub_location 字段）
 
 脚本特点：
 
@@ -99,6 +102,9 @@ mysql --default-character-set=utf8mb4 -uroot -p bc_blog < upgrade_20260915_batch
 | `upgrade_021_sandbox_relation.sql` | 沙盒角色好感度表与行动好感变化字段 |
 | `upgrade_022_sandbox_favor_audit.sql` | 好感度实际生效变化字段与 AI 自查开关配置 |
 | `upgrade_023_sandbox_chain.sql` | 互动回应回合字段与防循环配置 |
+| `upgrade_024_sandbox_memory_item.sql` | 沙盒每日记忆表、角色背包表与物品变化字段 |
+| `upgrade_025_sandbox_item_rarity.sql` | 背包物品品质与图标字段 |
+| `upgrade_026_sandbox_sub_location.sql` | 沙盒二级地点字段（行动记录 + 角色当前位置） |
 | `upgrade_20260915_batch.sql` | **以上全部合并版（推荐）** |
 
 ## 三、表的用途与定期清理说明
@@ -124,5 +130,7 @@ mysql --default-character-set=utf8mb4 -uroot -p bc_blog < upgrade_20260915_batch
 | `sandbox_interaction` | 旅人低语（前台登录用户留言，消耗积分） | 否 | 永久 |
 | `sandbox_coin_log` | 沙盒金币流水（旅人贡献 / 角色赚取 / 角色消耗 / 管理员调整） | 否 | 永久 |
 | `sandbox_relation` | 角色之间的好感度（有方向：A 对 B、B 对 A 各一条） | 否 | 永久 |
+| `sandbox_memory` | 沙盒角色每日记忆（每晚总结，角色长期记忆的来源） | 是 | 30 天 |
+| `sandbox_item` | 沙盒角色背包物品 | 否 | 永久 |
 
 清理任务每天按后台配置的时间执行一次（默认 03:30，服务器时间），只删除超过保留天数的历史记录。

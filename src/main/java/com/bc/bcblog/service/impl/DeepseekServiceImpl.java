@@ -1,6 +1,7 @@
 package com.bc.bcblog.service.impl;
 
 import cn.hutool.http.HttpRequest;
+import cn.dev33.satoken.stp.StpUtil;
 import cn.hutool.http.HttpResponse;
 import cn.hutool.json.JSONArray;
 import cn.hutool.json.JSONObject;
@@ -8,6 +9,12 @@ import cn.hutool.json.JSONUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.bc.bcblog.common.BusinessException;
 import com.bc.bcblog.entity.SysConfig;
+import com.bc.bcblog.entity.SysUser;
+import com.bc.bcblog.component.SecretCipher;
+import com.bc.bcblog.mapper.SysUserMapper;
+import com.bc.bcblog.service.AdminKeyService;
+import com.bc.bcblog.service.AuditLogService;
+import com.bc.bcblog.service.ConfigService;
 import com.bc.bcblog.mapper.SysConfigMapper;
 import com.bc.bcblog.service.DeepseekService;
 import com.bc.bcblog.vo.AiArticleVO;
@@ -30,38 +37,72 @@ public class DeepseekServiceImpl implements DeepseekService {
     private static final String CHAT_URL = "https://api.deepseek.com/chat/completions";
 
     private final SysConfigMapper configMapper;
+    private final ConfigService configService;
+    private final AdminKeyService adminKeyService;
+    private final SecretCipher secretCipher;
+    private final SysUserMapper sysUserMapper;
+    private final AuditLogService auditLogService;
 
     @Override
     public String getApiKey() {
-        SysConfig c = configMapper.selectOne(new LambdaQueryWrapper<SysConfig>()
-                .eq(SysConfig::getConfigKey, KEY));
-        return c == null ? null : c.getConfigValue();
+        Long uid = currentAdminId();
+        // 超管与定时任务使用系统 Key；其他管理员使用自己配置的 Key
+        if (uid == null || isSuper(uid)) {
+            return configService.getConfigValue(KEY, "");
+        }
+        return adminKeyService.get(uid, KEY);
     }
 
     @Override
     public void saveApiKey(String apiKey) {
-        if (apiKey == null || apiKey.trim().isEmpty()) {
-            throw new BusinessException("API Key 不能为空");
+        if (secretCipher.isUnchanged(apiKey)) {
+            return;
         }
-        SysConfig existing = configMapper.selectOne(new LambdaQueryWrapper<SysConfig>()
-                .eq(SysConfig::getConfigKey, KEY));
-        if (existing == null) {
-            SysConfig c = new SysConfig();
-            c.setConfigKey(KEY);
-            c.setConfigValue(apiKey.trim());
-            configMapper.insert(c);
+        Long uid = currentAdminId();
+        if (uid == null) {
+            throw new BusinessException(403, "未登录");
+        }
+        if (isSuper(uid)) {
+            configService.setConfigValue(KEY, apiKey.trim());
         } else {
-            existing.setConfigValue(apiKey.trim());
-            configMapper.updateById(existing);
+            adminKeyService.save(uid, KEY, apiKey.trim());
         }
+    }
+
+    private Long currentAdminId() {
+        try {
+            return StpUtil.isLogin() ? StpUtil.getLoginIdAsLong() : null;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private boolean isSuper(Long uid) {
+        if (uid == null) {
+            return false;
+        }
+        SysUser user = sysUserMapper.selectById(uid);
+        return user != null && "SUPER".equals(user.getRole());
     }
 
     @Override
     public DeepseekBalanceVO queryBalance() {
         String apiKey = getApiKey();
         if (apiKey == null || apiKey.trim().isEmpty()) {
-            throw new BusinessException("请先配置 DeepSeek API Key");
+            throw new BusinessException("请先配置你自己的 DeepSeek API Key");
         }
+        long start = System.currentTimeMillis();
+        try {
+            DeepseekBalanceVO vo = queryBalanceInternal(apiKey);
+            auditLogService.record("DeepSeek 余额查询", true, null, System.currentTimeMillis() - start);
+            return vo;
+        } catch (RuntimeException e) {
+            auditLogService.record("DeepSeek 余额查询", false, e.getMessage(), System.currentTimeMillis() - start);
+            throw e;
+        }
+    }
+
+    private DeepseekBalanceVO queryBalanceInternal(String apiKey) {
 
         HttpResponse resp;
         try {

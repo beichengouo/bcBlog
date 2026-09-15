@@ -53,6 +53,7 @@ const routes = [
       { path: 'levels', component: () => import('@/views/admin/LevelManage.vue'), meta: { title: '等级配置', menu: 'levels' } },
       { path: 'invites', component: () => import('@/views/admin/InviteManage.vue'), meta: { title: '邀请码管理', menu: 'invites', superOnly: true } },
       { path: 'logs', component: () => import('@/views/admin/LoginLog.vue'), meta: { title: '登录日志', menu: 'logs' } },
+      { path: 'audit', component: () => import('@/views/admin/ApiAudit.vue'), meta: { title: 'API 调用审计', menu: 'audit', superOnly: true } },
       { path: 'points', component: () => import('@/views/admin/PointManage.vue'), meta: { title: '积分管理', menu: 'points' } }
     ]
   }

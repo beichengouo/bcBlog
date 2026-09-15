@@ -1,6 +1,7 @@
 package com.bc.bcblog.service.impl;
 
 import cn.hutool.http.HttpRequest;
+import cn.dev33.satoken.stp.StpUtil;
 import cn.hutool.http.HttpResponse;
 import cn.hutool.json.JSONArray;
 import cn.hutool.json.JSONObject;
@@ -9,10 +10,15 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.bc.bcblog.common.BusinessException;
 import com.bc.bcblog.entity.AiProvider;
+import com.bc.bcblog.entity.SysUser;
 import com.bc.bcblog.mapper.AiProviderMapper;
+import com.bc.bcblog.mapper.SysUserMapper;
+import com.bc.bcblog.component.SecretCipher;
+import com.bc.bcblog.service.AuditLogService;
 import com.bc.bcblog.service.AiProviderService;
 import com.bc.bcblog.vo.AiArticleVO;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -21,15 +27,32 @@ import java.util.List;
 /** AI 服务商服务，兼容 OpenAI 风格接口。 */
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class AiProviderServiceImpl implements AiProviderService {
 
     private final AiProviderMapper providerMapper;
+    private final SysUserMapper sysUserMapper;
+    private final SecretCipher secretCipher;
+    private final AuditLogService auditLogService;
 
     @Override
     public List<AiProvider> list() {
-        return providerMapper.selectList(new LambdaQueryWrapper<AiProvider>()
+        Long uid = currentAdminId();
+        boolean superAdmin = isSuper(uid);
+        LambdaQueryWrapper<AiProvider> wrapper = new LambdaQueryWrapper<AiProvider>()
                 .orderByDesc(AiProvider::getIsDefault)
-                .orderByAsc(AiProvider::getId));
+                .orderByAsc(AiProvider::getId);
+        if (superAdmin || uid == null) {
+            // 超管：系统服务商 + 自己的
+            wrapper.and(w -> w.isNull(AiProvider::getOwnerId).or().eq(AiProvider::getOwnerId, uid));
+        } else {
+            // 其他管理员：只看到自己的
+            wrapper.eq(AiProvider::getOwnerId, uid);
+        }
+        List<AiProvider> list = providerMapper.selectList(wrapper);
+        // 回显掩码，绝不返回明文密钥
+        list.forEach(p -> p.setApiKey(secretCipher.mask(p.getApiKey())));
+        return list;
     }
 
     @Override
@@ -40,8 +63,35 @@ public class AiProviderServiceImpl implements AiProviderService {
         if (provider.getBaseUrl() == null || provider.getBaseUrl().trim().isEmpty()) {
             throw new BusinessException("接口地址不能为空");
         }
+        Long uid = currentAdminId();
+        if (uid == null) {
+            throw new BusinessException(403, "未登录，无法保存服务商");
+        }
+        boolean superAdmin = isSuper(uid);
+        // 归属：超管维护系统服务商（owner 为空），其他管理员只能用自己的
+        provider.setOwnerId(superAdmin ? null : uid);
+        // 密钥：提交掩码或空值表示保持原值；存入数据库前加密
+        String submittedKey = provider.getApiKey();
+        AiProvider existing = provider.getId() == null ? null : providerMapper.selectById(provider.getId());
+        if (existing != null) {
+            if (!visibleTo(existing, uid, superAdmin)) {
+                throw new BusinessException(403, "只能修改自己的服务商");
+            }
+            if (secretCipher.isUnchanged(submittedKey)) {
+                provider.setApiKey(existing.getApiKey());
+            } else {
+                provider.setApiKey(secretCipher.encrypt(submittedKey.trim()));
+            }
+        } else if (secretCipher.isUnchanged(submittedKey)) {
+            provider.setApiKey(null);
+        } else {
+            provider.setApiKey(secretCipher.encrypt(submittedKey.trim()));
+        }
         if (provider.getId() == null) {
-            provider.setIsDefault(providerMapper.selectCount(null) == 0 ? 1 : 0);
+            Long own = providerMapper.selectCount(new LambdaQueryWrapper<AiProvider>()
+                    .eq(superAdmin, AiProvider::getOwnerId, uid)
+                    .isNull(!superAdmin, AiProvider::getOwnerId));
+            provider.setIsDefault(own == null || own == 0 ? 1 : 0);
             providerMapper.insert(provider);
         } else {
             providerMapper.updateById(provider);
@@ -50,10 +100,19 @@ public class AiProviderServiceImpl implements AiProviderService {
 
     @Override
     public void delete(Long id) {
+        AiProvider target = providerMapper.selectById(id);
+        if (target == null) {
+            return;
+        }
+        if (!visibleTo(target, currentAdminId(), isSuper(currentAdminId()))) {
+            throw new BusinessException(403, "只能删除自己的服务商");
+        }
         providerMapper.deleteById(id);
         if (providerMapper.selectCount(new LambdaQueryWrapper<AiProvider>()
                 .eq(AiProvider::getIsDefault, 1)) == 0) {
             AiProvider first = providerMapper.selectOne(new LambdaQueryWrapper<AiProvider>()
+                    .eq(target.getOwnerId() != null, AiProvider::getOwnerId, target.getOwnerId())
+                    .isNull(target.getOwnerId() == null, AiProvider::getOwnerId)
                     .orderByAsc(AiProvider::getId).last("limit 1"));
             if (first != null) {
                 first.setIsDefault(1);
@@ -64,8 +123,19 @@ public class AiProviderServiceImpl implements AiProviderService {
 
     @Override
     public void setDefault(Long id) {
-        providerMapper.update(null, new LambdaUpdateWrapper<AiProvider>()
-                .set(AiProvider::getIsDefault, 0));
+        AiProvider target = requireProvider(id);
+        Long uid = currentAdminId();
+        if (!visibleTo(target, uid, isSuper(uid))) {
+            throw new BusinessException(403, "只能操作自己的服务商");
+        }
+        LambdaUpdateWrapper<AiProvider> wrapper = new LambdaUpdateWrapper<AiProvider>()
+                .set(AiProvider::getIsDefault, 0);
+        if (target.getOwnerId() == null) {
+            wrapper.isNull(AiProvider::getOwnerId);
+        } else {
+            wrapper.eq(AiProvider::getOwnerId, target.getOwnerId());
+        }
+        providerMapper.update(null, wrapper);
         AiProvider p = new AiProvider();
         p.setId(id);
         p.setIsDefault(1);
@@ -75,14 +145,18 @@ public class AiProviderServiceImpl implements AiProviderService {
     @Override
     public List<String> listModels(Long id) {
         AiProvider p = requireProvider(id);
+        if (!visibleTo(p, currentAdminId(), isSuper(currentAdminId()))) {
+            throw new BusinessException(403, "只能查看自己的服务商");
+        }
         if (isBlank(p.getApiKey())) {
             throw new BusinessException("请先为该服务商配置 API Key");
         }
+        String apiKey = secretCipher.decrypt(p.getApiKey());
         String base = trimSlash(p.getBaseUrl());
         for (String u : new String[]{base + "/models", base + "/v1/models"}) {
             try {
                 HttpResponse r = HttpRequest.get(u)
-                        .header("Authorization", "Bearer " + p.getApiKey().trim())
+                        .header("Authorization", "Bearer " + (apiKey == null ? "" : apiKey.trim()))
                         .timeout(20000)
                         .execute();
                 if (r.getStatus() == 200) {
@@ -120,7 +194,8 @@ public class AiProviderServiceImpl implements AiProviderService {
 
         String base = trimSlash(p.getBaseUrl());
         String[] urls = {base + "/chat/completions", base + "/v1/chat/completions"};
-        String key = p.getApiKey().trim();
+        String key = secretCipher.decrypt(p.getApiKey());
+        key = key == null ? "" : key.trim();
 
         HttpResponse ok = null;
         for (String u : urls) {
@@ -188,35 +263,125 @@ public class AiProviderServiceImpl implements AiProviderService {
 
     @Override
     public AiProvider defaultProvider() {
+        // 系统服务商 = 归属为空（超管维护），定时任务使用
         AiProvider p = providerMapper.selectOne(new LambdaQueryWrapper<AiProvider>()
+                .isNull(AiProvider::getOwnerId)
                 .eq(AiProvider::getIsDefault, 1)
                 .orderByAsc(AiProvider::getId)
                 .last("limit 1"));
         if (p != null) {
             return p;
         }
-        // 没有标记默认服务商时退化为第一个
         return providerMapper.selectOne(new LambdaQueryWrapper<AiProvider>()
+                .isNull(AiProvider::getOwnerId)
                 .orderByAsc(AiProvider::getId)
                 .last("limit 1"));
     }
 
     @Override
-    public String chat(Long providerId, String model, String systemPrompt, String userPrompt, Double temperature) {
-        AiProvider p = providerId == null ? defaultProvider() : providerMapper.selectById(providerId);
-        if (p == null) {
-            throw new BusinessException("请先在后台「接口管理 → AI 服务商」添加一个服务商");
+    public AiProvider resolveManualProvider(Long preferredId) {
+        Long uid = currentAdminId();
+        boolean superAdmin = isSuper(uid);
+        AiProvider preferred = preferredId == null ? null : providerMapper.selectById(preferredId);
+        if (preferred != null && visibleTo(preferred, uid, superAdmin)) {
+            return preferred;
         }
+        // 角色绑定的是系统/别人的服务商时，改用当前管理员自己的
+        if (uid != null) {
+            AiProvider own = providerMapper.selectOne(new LambdaQueryWrapper<AiProvider>()
+                    .eq(AiProvider::getOwnerId, uid)
+                    .orderByDesc(AiProvider::getIsDefault)
+                    .orderByAsc(AiProvider::getId)
+                    .last("limit 1"));
+            if (own != null) {
+                return own;
+            }
+        }
+        AiProvider system = defaultProvider();
+        if (superAdmin && system != null) {
+            return system;
+        }
+        throw new BusinessException("请先在「接口管理 → AI 服务商」里配置你自己的 API Key 与模型");
+    }
+
+    @Override
+    public AiProvider resolveSystemProvider(Long preferredId) {
+        AiProvider preferred = preferredId == null ? null : providerMapper.selectById(preferredId);
+        if (preferred != null && preferred.getOwnerId() == null) {
+            return preferred;
+        }
+        AiProvider system = defaultProvider();
+        if (system == null) {
+            throw new BusinessException("定时任务需要系统服务商，请让超级管理员在「AI 服务商」里配置一个");
+        }
+        return system;
+    }
+
+    /** 服务商是否对当前调用者可见/可用：系统服务商仅超管可用，其他只能用自己的 */
+    private boolean visibleTo(AiProvider provider, Long uid, boolean superAdmin) {
+        if (provider == null) {
+            return false;
+        }
+        if (provider.getOwnerId() == null) {
+            return superAdmin;
+        }
+        return uid != null && provider.getOwnerId().equals(uid);
+    }
+
+    private Long currentAdminId() {
+        try {
+            return StpUtil.isLogin() ? StpUtil.getLoginIdAsLong() : null;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private boolean isSuper(Long uid) {
+        if (uid == null) {
+            return false;
+        }
+        SysUser user = sysUserMapper.selectById(uid);
+        return user != null && "SUPER".equals(user.getRole());
+    }
+
+    @Override
+    public String chat(Long providerId, String model, String systemPrompt, String userPrompt, Double temperature) {
+        // 手动调用用调用者自己的服务商，定时任务（无登录上下文）用系统服务商
+        AiProvider provider = currentAdminId() == null
+                ? resolveSystemProvider(providerId)
+                : resolveManualProvider(providerId);
+        return chat(provider, model, systemPrompt, userPrompt, temperature);
+    }
+
+    @Override
+    public String chat(AiProvider provider, String model, String systemPrompt, String userPrompt, Double temperature) {
+        AiProvider p = provider == null ? resolveManualProvider(null) : provider;
         if (isBlank(p.getApiKey())) {
             throw new BusinessException("服务商「" + p.getName() + "」还没有配置 API Key");
         }
         if (isBlank(model)) {
-            throw new BusinessException("请先选择该角色使用的模型");
+            throw new BusinessException("请先选择要使用的模型");
         }
+        long start = System.currentTimeMillis();
+        try {
+            String result = doChat(p, model, systemPrompt, userPrompt, temperature);
+            auditLogService.record(p.getName() + " / " + model, true, null, System.currentTimeMillis() - start);
+            return result;
+        } catch (Exception e) {
+            auditLogService.record(p.getName() + " / " + model, false, e.getMessage(),
+                    System.currentTimeMillis() - start);
+            throw e;
+        }
+    }
+
+    /** 真正发起请求（密钥在这里解密使用） */
+    private String doChat(AiProvider p, String model, String systemPrompt, String userPrompt, Double temperature) {
 
         String base = trimSlash(p.getBaseUrl());
         String[] urls = {base + "/chat/completions", base + "/v1/chat/completions"};
-        String key = p.getApiKey().trim();
+        // 密钥是加密存储的，这里必须先解密再使用
+        String key = secretCipher.decrypt(p.getApiKey());
+        key = key == null ? "" : key.trim();
         JSONObject body = new JSONObject();
         body.set("model", model);
         JSONArray messages = new JSONArray();
@@ -245,6 +410,15 @@ public class AiProviderServiceImpl implements AiProviderService {
                 if (r != null && r.getStatus() == 200) {
                     ok = r;
                     break;
+                }
+                if (r != null) {
+                    // 记录上游返回的原始状态与内容，便于排查「API Key 无效」到底是哪一步被拒
+                    String snippet = r.body() == null ? "" : r.body();
+                    if (snippet.length() > 300) {
+                        snippet = snippet.substring(0, 300);
+                    }
+                    log.warn("AI 调用被拒绝：url={} status={} keyHead={} body={}",
+                            u, r.getStatus(), key.length() > 8 ? key.substring(0, 8) + "..." : "(空/过短)", snippet);
                 }
                 if (r != null && (r.getStatus() == 401 || r.getStatus() == 403)) {
                     throw new BusinessException("API Key 无效或无权限");

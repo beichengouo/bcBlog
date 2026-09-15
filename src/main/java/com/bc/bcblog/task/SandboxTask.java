@@ -1,12 +1,16 @@
 package com.bc.bcblog.task;
 
 import com.bc.bcblog.service.SandboxService;
+import com.bc.bcblog.service.ConfigService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.time.LocalDate;
+import java.time.LocalTime;
+import java.time.format.DateTimeFormatter;
 
 /**
  * 沙盒自动行动任务。
@@ -21,9 +25,18 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class SandboxTask {
 
     private final SandboxService sandboxService;
+    private final ConfigService configService;
 
     /** 防止上一次还没跑完（AI 调用较慢）时重复触发 */
     private final AtomicBoolean running = new AtomicBoolean(false);
+    /** 记忆总结同样防止重入 */
+    private final AtomicBoolean summarizing = new AtomicBoolean(false);
+    /** 纪闻自动生成防止重入 */
+    private final AtomicBoolean newsGenerating = new AtomicBoolean(false);
+    /** 记录最近一次总结的日期，保证每天只跑一次 */
+    private volatile String lastMemoryDate = "";
+    /** 记录最近一次自动生成纪闻的日期 */
+    private volatile String lastNewsDate = "";
 
     @Scheduled(cron = "0 */5 * * * ?")
     public void run() {
@@ -36,6 +49,60 @@ public class SandboxTask {
             log.warn("沙盒自动行动任务执行异常：{}", e.getMessage());
         } finally {
             running.set(false);
+        }
+    }
+
+    /**
+     * 每日记忆总结：每分钟检查一次，到达后台配置的时间（默认 23:50）时为当天有行动的角色生成记忆。
+     * 记忆用于后续几天的活动，让角色的日志不必长期堆积。
+     */
+    @Scheduled(cron = "0 * * * * ?")
+    public void memory() {
+        if (!"1".equals(configService.getConfigValue("sandbox_memory_enabled", "1"))) {
+            return;
+        }
+        String configured = configService.getConfigValue("sandbox_memory_time", "23:50");
+        String now = LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm"));
+        String today = LocalDate.now().toString();
+        if (!now.equals(configured) || today.equals(lastMemoryDate)) {
+            return;
+        }
+        if (!summarizing.compareAndSet(false, true)) {
+            return;
+        }
+        try {
+            sandboxService.summarizeDaily();
+            lastMemoryDate = today;
+            log.info("沙盒每日记忆总结完成（{}）", today);
+        } catch (Exception e) {
+            log.warn("沙盒每日记忆总结异常：{}", e.getMessage());
+        } finally {
+            summarizing.set(false);
+        }
+    }
+
+    /**
+     * 旅人纪闻自动生成：每分钟检查一次，到达后台配置的时间（默认 07:00）且当天还没生成过时执行一次。
+     */
+    @Scheduled(cron = "0 * * * * ?")
+    public void news() {
+        if (!"1".equals(configService.getConfigValue("sandbox_news_auto_enabled", "1"))) {
+            return;
+        }
+        String configured = configService.getConfigValue("sandbox_news_auto_time", "07:00");
+        String now = LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm"));
+        String today = LocalDate.now().toString();
+        if (!now.equals(configured) || today.equals(lastNewsDate)) {
+            return;
+        }
+        if (!newsGenerating.compareAndSet(false, true)) {
+            return;
+        }
+        try {
+            sandboxService.autoGenerateNews();
+            lastNewsDate = today;
+        } finally {
+            newsGenerating.set(false);
         }
     }
 }

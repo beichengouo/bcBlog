@@ -75,38 +75,34 @@
         <img v-if="world.mapImage" :src="world.mapImage" class="map-img" alt="地图背景" />
         <div v-else class="map-placeholder">还没有上传地图背景图，可以先用下方表格维护地点坐标</div>
 
-        <!-- 多个地点挤在同一个坐标时的锚点 -->
+        <!-- 已保存的地点：一块可拖动、可缩放的区域 -->
         <div
-          v-for="anchor in locationAnchors"
-          :key="'lanchor-' + anchor.x + '-' + anchor.y"
-          class="map-anchor"
-          :style="{ left: anchor.x + '%', top: anchor.y + '%' }"
-        >
-          <span class="anchor-count">{{ anchor.size }}</span>
-        </div>
-
-        <!-- 已保存的地点 -->
-        <div
-          v-for="loc in displayLocations"
+          v-for="loc in locations"
           :key="loc.id"
-          class="map-marker"
+          class="map-area"
           :class="{ dim: editing && form.id === loc.id }"
-          :style="{ left: (draggingId === loc.id ? loc.x : loc.displayX) + '%', top: (draggingId === loc.id ? loc.y : loc.displayY) + '%' }"
-          @pointerdown="onMarkerDown($event, loc)"
+          :style="areaStyle(loc)"
+          @pointerdown="onAreaDown($event, loc)"
         >
-          <span class="pin"><LocationIcon :icon="loc.icon" :size="13" /></span>
-          <span class="marker-name">{{ loc.name }}</span>
+          <span class="area-label">
+            <LocationIcon :icon="loc.icon" :size="13" />
+            <span>{{ loc.name }}</span>
+          </span>
+          <span class="area-size">{{ loc.width }}×{{ loc.height }}</span>
+          <span class="area-handle" title="拖动调整区域大小" @pointerdown.stop="onResizeDown($event, loc)"></span>
         </div>
 
-        <!-- 正在编辑/新增的地点预览：确认前先看看落点对不对 -->
+        <!-- 正在编辑/新增的地点预览 -->
         <div
           v-if="editing"
-          class="map-marker preview"
-          :style="{ left: form.x + '%', top: form.y + '%' }"
-          @pointerdown="onMarkerDown($event, form)"
+          class="map-area preview"
+          :style="areaStyle(formRect)"
+          @pointerdown="onPreviewDown($event)"
         >
-          <span class="pin"><LocationIcon :icon="form.icon" :size="13" /></span>
-          <span class="marker-name">{{ form.name || '新地点' }}</span>
+          <span class="area-label">
+            <LocationIcon :icon="form.icon" :size="13" />
+            <span>{{ form.name || '新地点' }}</span>
+          </span>
           <span class="preview-badge">{{ form.id ? '预览' : '新增' }}</span>
         </div>
       </div>
@@ -127,11 +123,15 @@
             <el-form-item label="名称">
               <el-input v-model="form.name" placeholder="如：晨雾森林" maxlength="100" />
             </el-form-item>
-            <el-form-item label="坐标">
+            <el-form-item label="区域范围">
               <el-input-number v-model="form.x" :min="0" :max="100" controls-position="right" />
               <span class="range-sep">,</span>
               <el-input-number v-model="form.y" :min="0" :max="100" controls-position="right" />
-              <span class="tip">x 横向、y 纵向（0~100 的地图百分比）</span>
+              <span class="range-sep">→</span>
+              <el-input-number v-model="form.x2" :min="0" :max="100" controls-position="right" />
+              <span class="range-sep">,</span>
+              <el-input-number v-model="form.y2" :min="0" :max="100" controls-position="right" />
+              <span class="tip">左上角 → 右下角（0~100 的地图百分比）；这块范围整体算同一个地方</span>
             </el-form-item>
             <el-form-item label="描述">
               <el-input
@@ -193,8 +193,10 @@
           </template>
         </el-table-column>
         <el-table-column prop="name" label="地点名称" min-width="140" />
-        <el-table-column label="坐标" width="120">
-          <template #default="{ row }">x={{ row.x }} , y={{ row.y }}</template>
+        <el-table-column label="区域范围" width="200">
+          <template #default="{ row }">
+            ({{ row.x }}, {{ row.y }}) → ({{ (row.x || 0) + (row.width || 0) }}, {{ (row.y || 0) + (row.height || 0) }})
+          </template>
         </el-table-column>
         <el-table-column prop="description" label="地点描述（会作为 AI 参考）" min-width="220" show-overflow-tooltip />
         <el-table-column prop="sortOrder" label="排序" width="70" />
@@ -233,7 +235,20 @@
           <el-input v-model="settings.nightStart" style="width: 90px" placeholder="02:00" />
           <span class="range-sep">~</span>
           <el-input v-model="settings.nightEnd" style="width: 90px" placeholder="07:00" />
-          <span class="tip">该时段内不调用 AI，跨零点也支持</span>
+          <span class="tip">
+            该时段内不调用 AI，跨零点也支持；<strong>两个时间相同表示不启用</strong>
+            （默认已关闭：角色会自己安排睡觉，由 AI 决定间隔即可）
+          </span>
+        </el-form-item>
+        <el-form-item label="AI 决定间隔">
+          <el-switch v-model="settings.aiIntervalEnabled" active-value="1" inactive-value="0" />
+          <span class="tip">开启后角色每次行动时由 AI 自己决定下次隔多久（例如睡一觉就是几小时），关闭则用下方随机区间</span>
+        </el-form-item>
+        <el-form-item label="AI 间隔上下限">
+          <el-input v-model="settings.aiIntervalMin" style="width: 90px" />
+          <span class="range-sep">~</span>
+          <el-input v-model="settings.aiIntervalMax" style="width: 90px" />
+          <span class="tip">分钟。AI 给的间隔会被夹在这个范围内；角色可在自己的编辑里单独覆盖</span>
         </el-form-item>
         <el-form-item label="每日自动行动上限">
           <el-input v-model="settings.dailyLimit" style="width: 90px" />
@@ -265,6 +280,25 @@
             能减少格式/数值错误，但 token 消耗翻倍，建议角色互动频繁时再开
           </span>
         </el-form-item>
+        <el-form-item label="每日记忆总结">
+          <el-switch v-model="settings.memoryEnabled" active-value="1" inactive-value="0" />
+          <span class="tip">每天到点把角色当天的行动总结成一段长期记忆，后续几天的活动会参考它，日志就不必长期堆积</span>
+        </el-form-item>
+        <el-form-item label="记忆总结时间">
+          <el-input v-model="settings.memoryTime" style="width: 90px" placeholder="23:50" />
+          <span class="tip">服务器时间 HH:mm，建议放在夜间静默开始之前</span>
+        </el-form-item>
+        <el-form-item label="提示词携带记忆">
+          <el-input v-model="settings.memoryPromptDays" style="width: 90px" />
+          <span class="tip">天。每次行动时把最近几天的记忆写进提示词</span>
+        </el-form-item>
+        <el-form-item label="总结后删当天日志">
+          <el-switch v-model="settings.memoryDeleteActs" active-value="1" inactive-value="0" />
+          <span class="tip">
+            默认关闭：开启后前台当天的行动时间线会看不到内容（不推荐）。
+            控制日志体积建议用「系统设置 → 数据清理」里的沙盒行动日志保留天数
+          </span>
+        </el-form-item>
         <el-form-item label="旅人低语消耗积分">
           <el-input v-model="settings.whisperPoints" style="width: 90px" />
           <span class="tip">前台登录用户留言一次扣除的积分，0 表示免费，管理员不扣</span>
@@ -282,7 +316,6 @@ import { ref, reactive, computed, onMounted, onBeforeUnmount } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import LocationIcon from '@/components/sandbox/LocationIcon.vue'
 import { sandboxIcons } from '@/config/sandboxIcons'
-import { layoutMarkers, overlapAnchors } from '@/utils/sandboxMap'
 import {
   sandboxWorld,
   saveSandboxWorld,
@@ -309,7 +342,14 @@ const settings = reactive({
   batchWindowMinutes: '5',
   chainMaxDepth: '1',
   chainLimitPerRound: '3',
-  reactionCooldownMinutes: '15'
+  reactionCooldownMinutes: '15',
+  memoryEnabled: '1',
+  memoryTime: '23:50',
+  memoryPromptDays: '5',
+  memoryDeleteActs: '0',
+  aiIntervalEnabled: '1',
+  aiIntervalMin: '15',
+  aiIntervalMax: '720'
 })
 
 const loading = ref(false)
@@ -318,18 +358,86 @@ const savingWorld = ref(false)
 const savingSetting = ref(false)
 const editing = ref(false)
 const mapRef = ref(null)
-const form = reactive({ id: null, name: '', icon: 'pin', x: 50, y: 50, description: '', sortOrder: 0 })
+/** 地点表单：x,y 是左上角，x2,y2 是右下角（保存时换算成区域宽高） */
+const form = reactive({
+  id: null,
+  name: '',
+  icon: 'pin',
+  x: 44,
+  y: 46,
+  x2: 56,
+  y2: 53,
+  description: '',
+  sortOrder: 0
+})
 
 const isCustomIcon = computed(() => /^https?:\/\//i.test(form.icon || '') || (form.icon || '').startsWith('/'))
 
-/** 同坐标的地点自动错开，拖动时用真实坐标 */
-const displayLocations = computed(() => layoutMarkers(locations.value, 5))
-const locationAnchors = computed(() => overlapAnchors(displayLocations.value))
+/** 表单里的区域（左上角 + 宽高） */
+const formRect = computed(() => normalizeRect(form.x, form.y, form.x2, form.y2))
 const draggingId = ref(null)
 
-let dragging = null
-let movedDuringDrag = false
+let drag = null
+let moved = false
 let suppressMapClick = false
+
+function clampPct(value) {
+  return Math.min(100, Math.max(0, Number(value) || 0))
+}
+
+/** 由两组角点得到规范化的矩形 */
+function normalizeRect(x1, y1, x2, y2) {
+  const left = Math.min(clampPct(x1), clampPct(x2))
+  const top = Math.min(clampPct(y1), clampPct(y2))
+  return {
+    left,
+    top,
+    width: Math.max(0, Math.abs(clampPct(x2) - clampPct(x1))),
+    height: Math.max(0, Math.abs(clampPct(y2) - clampPct(y1)))
+  }
+}
+
+/** 区域的显示样式（最小尺寸保证还有点击和缩放的余地） */
+function areaStyle(rect) {
+  if (!rect) return {}
+  return {
+    left: rect.left + '%',
+    top: rect.top + '%',
+    width: Math.max(3, rect.width) + '%',
+    height: Math.max(2, rect.height) + '%'
+  }
+}
+
+function rectOf(target) {
+  if (target === form) {
+    return { ...formRect.value }
+  }
+  return {
+    left: target.x == null ? 50 : target.x,
+    top: target.y == null ? 50 : target.y,
+    width: target.width == null ? 0 : target.width,
+    height: target.height == null ? 0 : target.height
+  }
+}
+
+/** 把矩形写回目标（已保存的地点直接改实体字段，预览则改表单） */
+function applyRect(target, rect) {
+  const left = clampPct(rect.left)
+  const top = clampPct(rect.top)
+  const width = Math.max(0, Math.min(100 - left, rect.width))
+  const height = Math.max(0, Math.min(100 - top, rect.height))
+  if (target === form) {
+    form.x = left
+    form.y = top
+    form.x2 = left + width
+    form.y2 = top + height
+  } else {
+    target.x = Math.round(left)
+    target.y = Math.round(top)
+    target.width = Math.round(width)
+    target.height = Math.round(height)
+  }
+}
 
 async function loadAll() {
   loading.value = true
@@ -399,29 +507,39 @@ async function onSaveSettings() {
 
 function percentFromEvent(event) {
   const rect = mapRef.value.getBoundingClientRect()
-  const x = Math.round(((event.clientX - rect.left) / rect.width) * 100)
-  const y = Math.round(((event.clientY - rect.top) / rect.height) * 100)
+  const x = ((event.clientX - rect.left) / rect.width) * 100
+  const y = ((event.clientY - rect.top) / rect.height) * 100
   return { x: Math.min(100, Math.max(0, x)), y: Math.min(100, Math.max(0, y)) }
 }
 
 function onMapClick(event) {
-  if (suppressMapClick || dragging) return
+  if (suppressMapClick || drag) return
   const point = percentFromEvent(event)
-  // 已有未保存的表单时，点击地图只更新它的坐标，避免误新建
+  // 已有未保存的表单时，点击地图把区域整体挪过去，避免误新建
   if (editing.value) {
-    form.x = point.x
-    form.y = point.y
+    const rect = formRect.value
+    applyRect(form, {
+      left: point.x - rect.width / 2,
+      top: point.y - rect.height / 2,
+      width: rect.width,
+      height: rect.height
+    })
     return
   }
   openAdd(point.x, point.y)
 }
 
-function openAdd(x = 50, y = 50) {
+/** 新增地点：以点击位置为中心，给一块默认区域 */
+function openAdd(cx = 50, cy = 50) {
   form.id = null
   form.name = ''
   form.icon = 'pin'
-  form.x = x
-  form.y = y
+  const left = clampPct(cx - 6)
+  const top = clampPct(cy - 3.5)
+  form.x = left
+  form.y = top
+  form.x2 = Math.min(100, left + 12)
+  form.y2 = Math.min(100, top + 7)
   form.description = ''
   form.sortOrder = locations.value.length
   editing.value = true
@@ -431,8 +549,12 @@ function openEdit(row) {
   form.id = row.id
   form.name = row.name
   form.icon = row.icon || 'pin'
-  form.x = row.x
-  form.y = row.y
+  const left = row.x == null ? 44 : row.x
+  const top = row.y == null ? 46 : row.y
+  form.x = left
+  form.y = top
+  form.x2 = left + (row.width == null ? 0 : row.width)
+  form.y2 = top + (row.height == null ? 0 : row.height)
   form.description = row.description || ''
   form.sortOrder = row.sortOrder || 0
   editing.value = true
@@ -440,7 +562,7 @@ function openEdit(row) {
 
 function cancelEdit() {
   editing.value = false
-  dragging = null
+  drag = null
 }
 
 async function onSaveLocation() {
@@ -448,9 +570,24 @@ async function onSaveLocation() {
     ElMessage.warning('请输入地点名称')
     return
   }
+  const rect = formRect.value
+  if (rect.width < 1 && rect.height < 1) {
+    ElMessage.warning('区域范围太小了，请拖动地图上的虚线框调整一下')
+    return
+  }
   saving.value = true
   try {
-    await saveSandboxLocation({ ...form })
+    await saveSandboxLocation({
+      id: form.id,
+      name: form.name,
+      icon: form.icon,
+      description: form.description,
+      sortOrder: form.sortOrder,
+      x: Math.round(rect.left),
+      y: Math.round(rect.top),
+      width: Math.round(rect.width),
+      height: Math.round(rect.height)
+    })
     ElMessage.success('地点已保存')
     editing.value = false
     await loadLocations()
@@ -469,45 +606,68 @@ async function onDeleteLocation(row) {
   await loadLocations()
 }
 
-// 拖动地图上的标记即可修改坐标；正在编辑时拖动的是预览标记
-function onMarkerDown(event, target) {
+// 拖动地图上的区域即可移动/缩放；正在编辑时拖动的是预览区域
+function startDrag(event, target, mode) {
   event.preventDefault()
   event.stopPropagation()
-  dragging = target
+  drag = { target, mode, start: percentFromEvent(event), rect: rectOf(target) }
   draggingId.value = target && target.id != null ? target.id : null
-  movedDuringDrag = false
+  moved = false
   window.addEventListener('pointermove', onPointerMove)
   window.addEventListener('pointerup', onPointerUp)
 }
 
+function onAreaDown(event, loc) {
+  startDrag(event, loc, 'move')
+}
+
+function onResizeDown(event, loc) {
+  startDrag(event, loc, 'resize')
+}
+
+function onPreviewDown(event) {
+  startDrag(event, form, 'move')
+}
+
 function onPointerMove(event) {
-  if (!dragging) return
+  if (!drag) return
   const point = percentFromEvent(event)
-  dragging.x = point.x
-  dragging.y = point.y
-  movedDuringDrag = true
+  const dx = point.x - drag.start.x
+  const dy = point.y - drag.start.y
+  if (Math.abs(dx) > 0.4 || Math.abs(dy) > 0.4) {
+    moved = true
+  }
+  if (drag.mode === 'move') {
+    applyRect(drag.target, { ...drag.rect, left: drag.rect.left + dx, top: drag.rect.top + dy })
+  } else {
+    applyRect(drag.target, {
+      ...drag.rect,
+      width: Math.max(2, drag.rect.width + dx),
+      height: Math.max(1.5, drag.rect.height + dy)
+    })
+  }
 }
 
 async function onPointerUp() {
   window.removeEventListener('pointermove', onPointerMove)
   window.removeEventListener('pointerup', onPointerUp)
-  const target = dragging
-  dragging = null
+  const state = drag
+  drag = null
   draggingId.value = null
   suppressMapClick = true
   setTimeout(() => {
     suppressMapClick = false
   }, 200)
-  if (!target) return
-  // 预览标记只改表单，保存时一起提交
-  if (target === form) return
-  if (!movedDuringDrag) {
-    openEdit(target)
+  if (!state) return
+  // 预览区域只改表单，保存时一起提交
+  if (state.target === form) return
+  if (!moved) {
+    openEdit(state.target)
     return
   }
   try {
-    await saveSandboxLocation({ ...target })
-    ElMessage.success('坐标已更新')
+    await saveSandboxLocation({ ...state.target })
+    ElMessage.success('区域已更新')
   } catch (e) {
     await loadLocations()
   }
@@ -552,45 +712,60 @@ onBeforeUnmount(() => {
   color: var(--el-text-color-secondary);
   font-size: 13px;
 }
-.map-marker {
+/* 地点区域：半透明色块 + 虚线边框，可整体拖动，右下角手柄可缩放 */
+.map-area {
   position: absolute;
-  transform: translate(-50%, -50%);
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.86);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18);
-  cursor: grab;
-  white-space: nowrap;
-  font-size: 12px;
-}
-.map-marker.dim { opacity: 0.35; }
-.map-marker.preview {
-  border: 1px dashed var(--el-color-primary);
-  background: rgba(255, 255, 255, 0.95);
+  padding: 2px 4px;
+  border: 1.5px dashed var(--el-color-primary);
+  border-radius: 8px;
+  background: rgba(64, 158, 255, 0.16);
   cursor: move;
+  overflow: hidden;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.5);
+}
+.map-area:hover { background: rgba(64, 158, 255, 0.26); }
+.map-area.dim { opacity: 0.35; }
+.map-area.preview {
+  border-style: dashed;
+  background: rgba(255, 111, 159, 0.18);
+  border-color: #ff6f9f;
   z-index: 3;
 }
-.map-marker .pin { display: inline-flex; color: var(--el-color-primary); }
-.map-anchor {
-  position: absolute;
-  transform: translate(-50%, -50%);
-  z-index: 1;
-  pointer-events: none;
-}
-.map-anchor .anchor-count {
-  display: inline-block;
-  font-size: 10px;
-  line-height: 14px;
-  padding: 0 5px;
+.area-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: #2c3e50;
+  background: rgba(255, 255, 255, 0.86);
+  padding: 1px 6px;
   border-radius: 999px;
-  color: #fff;
+  white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+}
+.area-label svg { color: var(--el-color-primary); flex-shrink: 0; }
+.area-size {
+  position: absolute;
+  right: 4px;
+  bottom: 3px;
+  font-size: 10px;
+  color: #5a6b7d;
+  background: rgba(255, 255, 255, 0.75);
+  padding: 0 4px;
+  border-radius: 999px;
+}
+.area-handle {
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  width: 12px;
+  height: 12px;
+  border-radius: 4px 0 6px 0;
   background: var(--el-color-primary);
+  cursor: nwse-resize;
   opacity: 0.85;
 }
-.marker-name { color: #333; }
 .preview-badge {
   margin-left: 2px;
   padding: 0 6px;

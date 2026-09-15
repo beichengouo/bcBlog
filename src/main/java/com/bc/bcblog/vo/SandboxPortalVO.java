@@ -1,6 +1,7 @@
 package com.bc.bcblog.vo;
 
 import com.bc.bcblog.entity.SandboxLocation;
+import com.bc.bcblog.entity.SandboxNews;
 import com.bc.bcblog.entity.SandboxWorld;
 import lombok.Data;
 
@@ -18,4 +19,8 @@ public class SandboxPortalVO {
     private SandboxWorld world;
     private List<SandboxLocation> locations;
     private List<SandboxCharacterVO> characters;
+    /** 旅人纪闻栏目名称（后台可配置） */
+    private String newsTitle;
+    /** 当天纪闻 */
+    private List<SandboxNews> news;
 }

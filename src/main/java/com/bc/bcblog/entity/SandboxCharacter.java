@@ -42,6 +42,8 @@ public class SandboxCharacter {
     private Integer y;
     /** 当前位置名称 */
     private String locationName;
+    /** 当前所在的二级地点 */
+    private String subLocation;
     /** 当前状态（JSON 字符串，内容由 AI 生成） */
     private String statusJson;
     /** 金币余额：AI 日常活动赚取或消耗，前台用户也可用积分贡献 */
@@ -49,6 +51,8 @@ public class SandboxCharacter {
     /** 下次 AI 行动时间 */
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     private LocalDateTime nextRunTime;
+    /** 下次行动的原因，如「睡觉」，前台展示用 */
+    private String nextReason;
     /** 上次 AI 行动时间 */
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     private LocalDateTime lastRunTime;
@@ -56,6 +60,10 @@ public class SandboxCharacter {
     private Integer intervalMin;
     /** 行动间隔最大值（分钟） */
     private Integer intervalMax;
+    /** 该角色 AI 间隔下限（分钟），留空用全局设置 */
+    private Integer aiIntervalMin;
+    /** 该角色 AI 间隔上限（分钟），留空用全局设置 */
+    private Integer aiIntervalMax;
     /** 最后一次调用失败原因 */
     private String lastError;
     /** 是否启用：1 启用，0 停用 */

@@ -49,6 +49,7 @@ export const adminMenus = [
     icon: 'Lock',
     children: [
       { key: 'logs', path: '/admin/logs', title: '登录日志', icon: 'List' },
+      { key: 'audit', path: '/admin/audit', title: 'API 调用审计', icon: 'Monitor', superOnly: true },
       { key: 'points', path: '/admin/points', title: '积分管理', icon: 'Coin' },
       { key: 'admins', path: '/admin/admins', title: '管理员管理', icon: 'UserFilled', superOnly: true },
       { key: 'members', path: '/admin/members', title: '用户管理', icon: 'User', superOnly: true },

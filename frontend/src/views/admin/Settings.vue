@@ -103,6 +103,36 @@
         </div>
         <div class="cleanup-desc">记录积分变动明细。清理不影响积分余额，但用户中心和后台看不到更早的积分记录；如果积分以后要接商城或交易，建议保留 90 天以上。</div>
       </el-form-item>
+      <el-form-item label="沙盒行动日志保留">
+        <div class="cleanup-field">
+          <el-input-number v-model="form.cleanupSandboxActDays" :min="1" :max="3650" />
+          <span class="field-tip">天</span>
+        </div>
+        <div class="cleanup-desc">
+          沙盒角色的行动记录（sandbox_act），前台时间线、角色档案「最近行动」都读它。
+          清理后前台只能看到保留期内的行动；角色的长期记忆是单独的「每日记忆」，不受影响。建议 7～30 天。
+        </div>
+      </el-form-item>
+      <el-form-item label="沙盒记忆保留">
+        <div class="cleanup-field">
+          <el-input-number v-model="form.cleanupSandboxMemoryDays" :min="1" :max="3650" />
+          <span class="field-tip">天</span>
+        </div>
+        <div class="cleanup-desc">
+          沙盒角色的每日记忆（sandbox_memory），是角色"记得前几天发生过什么"的依据。
+          清理后角色会忘掉更早的事，但不会影响当前状态、金币、好感度与背包。建议 30～180 天。
+        </div>
+      </el-form-item>
+      <el-form-item label="API 调用审计保留">
+        <div class="cleanup-field">
+          <el-input-number v-model="form.cleanupAdminApiLogDays" :min="1" :max="3650" />
+          <span class="field-tip">天</span>
+        </div>
+        <div class="cleanup-desc">
+          记录谁在什么时候调用了会消耗额度或涉及密钥的功能（admin_api_log）。
+          清理只是删掉历史记录，不影响功能使用。建议 3～30 天。
+        </div>
+      </el-form-item>
       <el-form-item>
         <el-button type="warning" plain :loading="cleaning" @click="onCleanup">立即清理一次</el-button>
       </el-form-item>
@@ -144,7 +174,10 @@ const form = reactive({
   cleanupLoginLogDays: 7,
   cleanupVisitStatDays: 30,
   cleanupSignLogDays: 30,
-  cleanupPointLogDays: 30
+  cleanupPointLogDays: 30,
+  cleanupSandboxActDays: 7,
+  cleanupSandboxMemoryDays: 30,
+  cleanupAdminApiLogDays: 3
 })
 
 async function load() {
@@ -169,6 +202,9 @@ async function load() {
   form.cleanupVisitStatDays = data.cleanupVisitStatDays || 30
   form.cleanupSignLogDays = data.cleanupSignLogDays || 30
   form.cleanupPointLogDays = data.cleanupPointLogDays || 30
+  form.cleanupSandboxActDays = data.cleanupSandboxActDays || 7
+  form.cleanupSandboxMemoryDays = data.cleanupSandboxMemoryDays || 30
+  form.cleanupAdminApiLogDays = data.cleanupAdminApiLogDays || 3
 }
 
 async function onSave() {

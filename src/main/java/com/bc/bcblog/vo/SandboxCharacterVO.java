@@ -2,6 +2,8 @@ package com.bc.bcblog.vo;
 
 import com.bc.bcblog.entity.SandboxAct;
 import com.bc.bcblog.entity.SandboxCoinLog;
+import com.bc.bcblog.entity.SandboxItem;
+import com.bc.bcblog.entity.SandboxMemory;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import lombok.Data;
 
@@ -20,6 +22,8 @@ public class SandboxCharacterVO {
     private Integer x;
     private Integer y;
     private String locationName;
+    /** 当前所在的二级地点 */
+    private String subLocation;
     /** 当前状态（AI 生成的键值对，如 体力/魔力/心情） */
     private Map<String, Object> status;
     /** 金币余额 */
@@ -28,6 +32,10 @@ public class SandboxCharacterVO {
     private List<SandboxCoinLog> recentCoins;
     /** 与其他角色的好感度 */
     private List<SandboxRelationVO> relations;
+    /** 背包物品 */
+    private List<SandboxItem> items;
+    /** 最近的每日记忆（前台可展示「回忆」） */
+    private List<SandboxMemory> recentMemories;
     /** 最近几条行动，前台档案面板展示 */
     private List<SandboxAct> recentActs;
     /** 下次自动行动时间（前台展示倒计时用） */
@@ -36,6 +44,8 @@ public class SandboxCharacterVO {
     /** 上次行动时间 */
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     private LocalDateTime lastRunTime;
+    /** 下次行动原因，如「睡觉」 */
+    private String nextReason;
     /** 是否正在启用自动行动 */
     private Integer enabled;
 }

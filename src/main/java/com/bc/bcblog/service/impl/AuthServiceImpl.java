@@ -12,6 +12,8 @@ import com.bc.bcblog.entity.SysUser;
 import com.bc.bcblog.mapper.SysLoginLogMapper;
 import com.bc.bcblog.mapper.SysUserMapper;
 import com.bc.bcblog.service.AuthService;
+import com.bc.bcblog.service.ConfigService;
+import com.bc.bcblog.service.LoginSecurityService;
 import com.bc.bcblog.vo.CaptchaVO;
 import com.bc.bcblog.vo.LoginResultVO;
 import com.bc.bcblog.vo.UserInfoVO;
@@ -36,6 +38,8 @@ public class AuthServiceImpl implements AuthService {
 
     private final SysUserMapper sysUserMapper;
     private final SysLoginLogMapper sysLoginLogMapper;
+    private final LoginSecurityService loginSecurityService;
+    private final ConfigService configService;
 
     private final ConcurrentHashMap<String, CaptchaItem> captchaMap = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Integer> failCountMap = new ConcurrentHashMap<>();
@@ -81,6 +85,7 @@ public class AuthServiceImpl implements AuthService {
         if (user == null || !BCrypt.checkpw(dto.getPassword(), user.getPassword())) {
             recordFail(dto.getUsername());
             saveLoginLog(dto.getUsername(), ip, request.getHeader("User-Agent"), 0, "账号或密码错误");
+            loginSecurityService.afterLoginFail(user, ip, request.getHeader("User-Agent"), "账号或密码错误");
             throw new BusinessException("账号或密码错误");
         }
         if (user.getStatus() != null && user.getStatus() == 0) {
@@ -95,7 +100,28 @@ public class AuthServiceImpl implements AuthService {
         failCountMap.remove(dto.getUsername());
         lockMap.remove(dto.getUsername());
         StpUtil.login(user.getId());
+        // 单点登录：踢掉同账号的其它后台会话（前台普通用户会话不受影响）
+        if ("1".equals(configService.getConfigValue("admin_single_login", "1"))) {
+            try {
+                String current = StpUtil.getTokenValue();
+                StpUtil.getTokenSession().set("adminScope", Boolean.TRUE);
+                StpUtil.getTokenSession().set("loginTime", LocalDateTime.now().toString());
+                StpUtil.getTokenSession().set("device", request.getHeader("User-Agent"));
+                for (String token : StpUtil.getTokenValueListByLoginId(user.getId())) {
+                    if (token.equals(current)) {
+                        continue;
+                    }
+                    // 只踢同一账号的其它「后台会话」，前台普通用户会话不受影响
+                    if (Boolean.TRUE.equals(StpUtil.getTokenSessionByToken(token).get("adminScope"))) {
+                        StpUtil.kickoutByTokenValue(token);
+                    }
+                }
+            } catch (Exception ignored) {
+                // 单点登录失败不影响本次登录
+            }
+        }
         saveLoginLog(dto.getUsername(), ip, request.getHeader("User-Agent"), 1, "登录成功");
+        loginSecurityService.afterLoginSuccess(user, ip, request.getHeader("User-Agent"));
 
         LoginResultVO result = new LoginResultVO();
         result.setToken(StpUtil.getTokenValue());

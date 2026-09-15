@@ -8,6 +8,13 @@
     </template>
 
     <el-table :data="list" v-loading="loading">
+      <el-table-column label="归属" width="100">
+        <template #default="{ row }">
+          <el-tag size="small" :type="row.ownerId ? 'primary' : 'warning'">
+            {{ row.ownerId ? '我的' : '系统' }}
+          </el-tag>
+        </template>
+      </el-table-column>
       <el-table-column prop="id" label="ID" width="70" />
       <el-table-column prop="name" label="名称" min-width="120" />
       <el-table-column prop="baseUrl" label="接口地址" min-width="220" show-overflow-tooltip />

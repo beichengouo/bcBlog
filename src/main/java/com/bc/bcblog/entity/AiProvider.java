@@ -18,6 +18,8 @@ public class AiProvider {
     private String baseUrl;
     private String apiKey;
     private Integer isDefault;
+    /** 归属管理员 ID；null 表示系统服务商（超管维护，定时任务使用） */
+    private Long ownerId;
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     private LocalDateTime createTime;
 }

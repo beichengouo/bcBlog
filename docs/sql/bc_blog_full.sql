@@ -251,12 +251,14 @@ CREATE TABLE `sandbox_act` (
   `world_id` bigint NOT NULL DEFAULT '1' COMMENT '所属世界',
   `character_id` bigint NOT NULL COMMENT '角色ID',
   `location_name` varchar(100) DEFAULT NULL COMMENT '这一步所处地点',
+  `sub_location` varchar(100) DEFAULT NULL COMMENT '二级地点，AI 自行创作，如「东侧集市」',
   `x` int DEFAULT NULL COMMENT '这一步的横向坐标',
   `y` int DEFAULT NULL COMMENT '这一步的纵向坐标',
   `actions` varchar(1000) DEFAULT NULL COMMENT '做了什么（多条用换行分隔）',
   `inner_voice` varchar(1000) DEFAULT NULL COMMENT '心声',
   `companions` varchar(200) DEFAULT NULL COMMENT '这一步互动的其他角色，逗号分隔',
   `favor_change` varchar(200) DEFAULT NULL COMMENT '这一步的好感度变化，如「零 +3」',
+  `item_change` varchar(300) DEFAULT NULL COMMENT '这一步的物品变化，如「获得 干粮 +1」',
   `status_json` varchar(1000) DEFAULT NULL COMMENT '这一步结束后的状态',
   `coin_change` int NOT NULL DEFAULT '0' COMMENT '本次金币变化，正为赚取、负为消耗',
   `summary` varchar(300) DEFAULT NULL COMMENT '一句话概括',
@@ -268,7 +270,7 @@ CREATE TABLE `sandbox_act` (
   PRIMARY KEY (`id`),
   KEY `idx_character_time` (`character_id`,`create_time`),
   KEY `idx_create_time` (`create_time`)
-) ENGINE=InnoDB AUTO_INCREMENT=18 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='沙盒行动记录';
+) ENGINE=InnoDB AUTO_INCREMENT=42 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='沙盒行动记录';
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -291,6 +293,7 @@ CREATE TABLE `sandbox_character` (
   `x` int NOT NULL DEFAULT '50' COMMENT '当前横向坐标百分比',
   `y` int NOT NULL DEFAULT '50' COMMENT '当前纵向坐标百分比',
   `location_name` varchar(100) DEFAULT NULL COMMENT '当前位置名称',
+  `sub_location` varchar(100) DEFAULT NULL COMMENT '当前所在的二级地点',
   `status_json` varchar(1000) DEFAULT NULL COMMENT '当前状态（JSON，内容由 AI 生成）',
   `coins` int NOT NULL DEFAULT '0' COMMENT '金币余额',
   `next_run_time` datetime DEFAULT NULL COMMENT '下次 AI 行动时间',
@@ -326,7 +329,7 @@ CREATE TABLE `sandbox_coin_log` (
   PRIMARY KEY (`id`),
   KEY `idx_character` (`character_id`),
   KEY `idx_create_time` (`create_time`)
-) ENGINE=InnoDB AUTO_INCREMENT=7 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='沙盒金币流水';
+) ENGINE=InnoDB AUTO_INCREMENT=14 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='沙盒金币流水';
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -350,6 +353,28 @@ CREATE TABLE `sandbox_interaction` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
+-- Table structure for table `sandbox_item`
+--
+
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `sandbox_item` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `world_id` bigint NOT NULL DEFAULT '1' COMMENT '所属世界',
+  `character_id` bigint NOT NULL COMMENT '角色ID',
+  `name` varchar(100) NOT NULL COMMENT '物品名称',
+  `quantity` int NOT NULL DEFAULT '1' COMMENT '数量',
+  `rarity` tinyint NOT NULL DEFAULT '1' COMMENT '品质：1 普通 / 2 精良 / 3 稀有 / 4 史诗 / 5 传说',
+  `icon` varchar(500) DEFAULT NULL COMMENT '物品图标图片地址，为空时前台按物品名自动匹配图标',
+  `description` varchar(300) DEFAULT NULL COMMENT '物品说明（管理员可补充）',
+  `create_time` datetime DEFAULT CURRENT_TIMESTAMP,
+  `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_char_item` (`character_id`,`name`)
+) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='沙盒角色背包';
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
 -- Table structure for table `sandbox_location`
 --
 
@@ -368,6 +393,28 @@ CREATE TABLE `sandbox_location` (
   PRIMARY KEY (`id`),
   KEY `idx_world` (`world_id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=12 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='沙盒地图地点';
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `sandbox_memory`
+--
+
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `sandbox_memory` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `world_id` bigint NOT NULL DEFAULT '1' COMMENT '所属世界',
+  `character_id` bigint NOT NULL COMMENT '角色ID',
+  `memory_date` date NOT NULL COMMENT '记忆对应的日期',
+  `summary` text COMMENT '当天的记忆总结',
+  `act_count` int NOT NULL DEFAULT '0' COMMENT '当天行动条数',
+  `from_ai` tinyint NOT NULL DEFAULT '1' COMMENT '是否由 AI 总结：1 是，0 为兜底拼接',
+  `create_time` datetime DEFAULT CURRENT_TIMESTAMP,
+  `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_char_date` (`character_id`,`memory_date`),
+  KEY `idx_memory_date` (`memory_date`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='沙盒角色每日记忆';
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -443,7 +490,7 @@ CREATE TABLE `sys_config` (
   `remark` varchar(200) DEFAULT NULL COMMENT '备注',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_key` (`config_key`)
-) ENGINE=InnoDB AUTO_INCREMENT=56 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='系统配置表';
+) ENGINE=InnoDB AUTO_INCREMENT=62 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='系统配置表';
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -543,7 +590,7 @@ CREATE TABLE `sys_login_log` (
   `create_time` datetime DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   KEY `idx_username` (`username`)
-) ENGINE=InnoDB AUTO_INCREMENT=45 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='登录日志表';
+) ENGINE=InnoDB AUTO_INCREMENT=48 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='登录日志表';
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -626,7 +673,7 @@ CREATE TABLE `sys_user` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_username` (`username`),
   UNIQUE KEY `uk_email` (`email`)
-) ENGINE=InnoDB AUTO_INCREMENT=13 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='管理员表';
+) ENGINE=InnoDB AUTO_INCREMENT=15 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='管理员表';
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -641,7 +688,7 @@ CREATE TABLE `sys_visit_stat` (
   `pv` bigint NOT NULL DEFAULT '0' COMMENT '褰撴棩璁块棶閲',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_stat_date` (`stat_date`)
-) ENGINE=InnoDB AUTO_INCREMENT=127 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='姣忔棩璁块棶閲忕粺璁';
+) ENGINE=InnoDB AUTO_INCREMENT=141 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='姣忔棩璁块棶閲忕粺璁';
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
 
@@ -653,4 +700,4 @@ CREATE TABLE `sys_visit_stat` (
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2026-09-15 13:43:27
+-- Dump completed on 2026-09-15 19:46:18

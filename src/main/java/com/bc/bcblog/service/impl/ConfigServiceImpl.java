@@ -1,6 +1,7 @@
 package com.bc.bcblog.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.bc.bcblog.component.SecretCipher;
 import com.bc.bcblog.entity.SysConfig;
 import com.bc.bcblog.mapper.SysConfigMapper;
 import com.bc.bcblog.common.BusinessException;
@@ -58,8 +59,14 @@ public class ConfigServiceImpl implements ConfigService {
     private static final String KEY_CLEANUP_VISIT_DAYS = "cleanup_visit_stat_days";
     private static final String KEY_CLEANUP_SIGN_DAYS = "cleanup_sign_log_days";
     private static final String KEY_CLEANUP_POINT_DAYS = "cleanup_point_log_days";
+    private static final String KEY_CLEANUP_SANDBOX_ACT_DAYS = "cleanup_sandbox_act_days";
+    private static final String KEY_CLEANUP_SANDBOX_MEMORY_DAYS = "cleanup_sandbox_memory_days";
+    private static final String KEY_CLEANUP_SANDBOX_NEWS_DAYS = "cleanup_sandbox_news_days";
+    private static final String KEY_CLEANUP_ADMIN_API_LOG_DAYS = "cleanup_admin_api_log_days";
 
     private final SysConfigMapper configMapper;
+    /** 密钥加解密（密钥类配置加密存储） */
+    private final SecretCipher secretCipher;
 
     @Value("${bcblog.upload-dir:./uploads}")
     private String uploadDir;
@@ -91,6 +98,10 @@ public class ConfigServiceImpl implements ConfigService {
         vo.setCleanupVisitStatDays(parseInt(map.get(KEY_CLEANUP_VISIT_DAYS), 30));
         vo.setCleanupSignLogDays(parseInt(map.get(KEY_CLEANUP_SIGN_DAYS), 30));
         vo.setCleanupPointLogDays(parseInt(map.get(KEY_CLEANUP_POINT_DAYS), 30));
+        vo.setCleanupSandboxActDays(parseInt(map.get(KEY_CLEANUP_SANDBOX_ACT_DAYS), 7));
+        vo.setCleanupSandboxMemoryDays(parseInt(map.get(KEY_CLEANUP_SANDBOX_MEMORY_DAYS), 30));
+        vo.setCleanupSandboxNewsDays(parseInt(map.get(KEY_CLEANUP_SANDBOX_NEWS_DAYS), 1));
+        vo.setCleanupAdminApiLogDays(parseInt(map.get(KEY_CLEANUP_ADMIN_API_LOG_DAYS), 3));
         return vo;
     }
 
@@ -153,6 +164,18 @@ public class ConfigServiceImpl implements ConfigService {
         }
         if (vo.getCleanupPointLogDays() != null) {
             upsert(KEY_CLEANUP_POINT_DAYS, String.valueOf(vo.getCleanupPointLogDays()));
+        }
+        if (vo.getCleanupSandboxActDays() != null) {
+            upsert(KEY_CLEANUP_SANDBOX_ACT_DAYS, String.valueOf(vo.getCleanupSandboxActDays()));
+        }
+        if (vo.getCleanupSandboxMemoryDays() != null) {
+            upsert(KEY_CLEANUP_SANDBOX_MEMORY_DAYS, String.valueOf(vo.getCleanupSandboxMemoryDays()));
+        }
+        if (vo.getCleanupSandboxNewsDays() != null) {
+            upsert(KEY_CLEANUP_SANDBOX_NEWS_DAYS, String.valueOf(vo.getCleanupSandboxNewsDays()));
+        }
+        if (vo.getCleanupAdminApiLogDays() != null) {
+            upsert(KEY_CLEANUP_ADMIN_API_LOG_DAYS, String.valueOf(vo.getCleanupAdminApiLogDays()));
         }
     }
 
@@ -295,6 +318,10 @@ public class ConfigServiceImpl implements ConfigService {
     @Override
     public String getConfigValue(String key, String defaultValue) {
         String value = loadMap().get(key);
+        // 密钥类配置解密后再返回给业务代码使用
+        if (SecretCipher.isSecretConfigKey(key) && value != null && !value.isEmpty()) {
+            value = secretCipher.decrypt(value);
+        }
         return value == null || value.trim().isEmpty() ? defaultValue : value;
     }
 
@@ -327,6 +354,13 @@ public class ConfigServiceImpl implements ConfigService {
 
     /** 不存在则插入，存在则更新 */
     private void upsert(String key, String value) {
+        // 密钥类配置：加密后存储；提交空值或掩码时表示保持原值不变
+        if (SecretCipher.isSecretConfigKey(key)) {
+            if (secretCipher.isUnchanged(value)) {
+                return;
+            }
+            value = secretCipher.encrypt(value);
+        }
         SysConfig existing = configMapper.selectOne(new LambdaQueryWrapper<SysConfig>()
                 .eq(SysConfig::getConfigKey, key));
         if (existing == null) {

@@ -1,5 +1,5 @@
 import axios from 'axios'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 
 const request = axios.create({
   baseURL: '/api',
@@ -66,6 +66,10 @@ request.interceptors.response.use(
         }
       }
     } else {
+      // 428：敏感操作需要安全密码二次验证（验证成功后自动重试原请求）
+      if (res.code === 428) {
+        return handleSecurityVerify(response.config)
+      }
       ElMessage.error(res.msg || '请求失败')
     }
     return Promise.reject(new Error(res.msg || '请求失败'))
@@ -77,3 +81,22 @@ request.interceptors.response.use(
 )
 
 export default request
+
+// 敏感操作需要安全密码：弹窗输入 → 校验通过后自动重试原请求
+async function handleSecurityVerify(config) {
+  try {
+    const { value } = await ElMessageBox.prompt(
+      '该操作需要验证安全密码（未设置过安全密码时请输入登录密码）',
+      '安全验证',
+      { confirmButtonText: '验证', cancelButtonText: '取消', inputType: 'password', inputPlaceholder: '请输入安全密码' }
+    )
+    await request.post('/admin/security/verify', { password: value })
+    ElMessage.success('验证通过，本次登录内不再重复验证')
+    return await request(config)
+  } catch (e) {
+    if (e !== 'cancel' && e !== 'close') {
+      ElMessage.error(e.message || '验证未通过')
+    }
+    return Promise.reject(new Error('已取消安全验证'))
+  }
+}

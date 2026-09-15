@@ -4,6 +4,7 @@ import com.bc.bcblog.common.BusinessException;
 import com.bc.bcblog.common.Result;
 import com.bc.bcblog.entity.EmailTemplate;
 import com.bc.bcblog.service.EmailService;
+import com.bc.bcblog.component.SecretCipher;
 import com.bc.bcblog.vo.EmailConfigVO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -25,10 +26,16 @@ import java.util.Map;
 public class AdminEmailController {
 
     private final EmailService emailService;
+    private final SecretCipher secretCipher;
 
     @GetMapping("/config")
     public Result<EmailConfigVO> config() {
-        return Result.ok(emailService.getConfig());
+        EmailConfigVO vo = emailService.getConfig();
+        // 授权码只回显掩码，避免明文泄露
+        if (vo != null) {
+            vo.setAuthCode(secretCipher.mask(vo.getAuthCode()));
+        }
+        return Result.ok(vo);
     }
 
     @PostMapping("/config")

@@ -27,4 +27,13 @@ public interface AiProviderService {
 
     /** 服务商未显式指定时的默认服务商，没有配置任何服务商时返回 null */
     AiProvider defaultProvider();
+
+    /** 手动调用（管理员点击触发）：解析应当使用的服务商，没有可用服务商时抛业务异常 */
+    AiProvider resolveManualProvider(Long preferredId);
+
+    /** 定时任务调用：只允许使用系统服务商（归属为空），否则回落到系统默认 */
+    AiProvider resolveSystemProvider(Long preferredId);
+
+    /** 直接用一个已解析好的服务商发起对话（内部会解密密钥并写审计日志） */
+    String chat(AiProvider provider, String model, String systemPrompt, String userPrompt, Double temperature);
 }

@@ -43,5 +43,8 @@ dist/
 ### Uploads ###
 uploads/
 
+### 密钥主密钥文件（绝不提交） ###
+bcblog-secret.key
+
 ### Maven shade ###
 dependency-reduced-pom.xml

@@ -11,39 +11,64 @@
         <p>管理员还没有上传地图背景</p>
         <p class="sub">可以在后台「站点管理 → 沙盒世界」上传地图并添加地点</p>
       </div>
-      <div v-else class="map-stage">
+      <div v-else class="map-stage" @click="activeLocationId = null">
         <img class="map-bg" :src="world.mapImage" alt="地图" />
+        <!-- 旅人纪闻：当天世界上发生的大事 -->
+        <div v-if="newsTitle && news.length" class="news-card" :class="{ collapsed: newsCollapsed }" @click.stop>
+          <div class="news-head" @click="newsCollapsed = !newsCollapsed">
+            <span class="news-name">{{ newsTitle }}</span>
+            <span class="news-date">{{ todayText }}</span>
+            <span class="news-toggle">{{ newsCollapsed ? '展开' : '收起' }}</span>
+          </div>
+          <div v-show="!newsCollapsed" class="news-list">
+            <button
+              v-for="item in news"
+              :key="'news-' + item.id"
+              type="button"
+              class="news-item"
+              :title="item.content || item.title"
+              @click="focusNews(item)"
+            >
+              <span class="news-level" :class="'lv-' + (item.level || 1)"></span>
+              <span class="news-text">{{ item.title }}</span>
+              <span v-if="item.locationName" class="news-place">{{ item.locationName }}</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- 地点区域：默认只显示地名与图标，不显示角色头像 -->
         <div
           v-for="loc in locations"
-          :key="'loc-' + loc.id"
-          class="loc"
-          :style="{ left: loc.x + '%', top: loc.y + '%' }"
+          :key="'area-' + loc.id"
+          class="area"
+          :class="{ on: activeLocationId === loc.id, flash: flashLocationId === loc.id }"
+          :style="areaStyle(loc)"
           :title="loc.description || loc.name"
+          @click.stop="toggleLocation(loc)"
         >
-          <span class="loc-icon"><LocationIcon :icon="loc.icon" :size="16" /></span>
-          <span class="loc-name">{{ loc.name }}</span>
+          <span class="area-label">
+            <LocationIcon :icon="loc.icon" :size="15" />
+            <span class="area-name">{{ loc.name }}</span>
+          </span>
+          <span v-if="charactersIn(loc).length" class="area-count">{{ charactersIn(loc).length }}</span>
         </div>
-        <!-- 多个角色挤在同一个坐标时，标记会自动错开，这里在真实落点画一个锚点 -->
-        <div
-          v-for="anchor in anchors"
-          :key="'anchor-' + anchor.x + '-' + anchor.y"
-          class="anchor"
-          :style="{ left: anchor.x + '%', top: anchor.y + '%' }"
-        >
-          <span class="anchor-dot"></span>
-          <span class="anchor-count">{{ anchor.size }}</span>
-        </div>
-        <div
-          v-for="c in displayCharacters"
-          :key="'actor-' + c.id"
-          class="actor"
-          :class="{ active: activeId === c.id, stacked: c.groupSize > 1 }"
-          :style="{ left: c.displayX + '%', top: c.displayY + '%' }"
-          @click="selectCharacter(c)"
-        >
-          <img v-if="c.avatar" class="actor-avatar" :src="c.avatar" :alt="c.name" />
-          <span v-else class="actor-fallback">{{ (c.name || '?').slice(0, 1) }}</span>
-          <span class="actor-name">{{ c.name }}</span>
+
+        <!-- 点击地点后，该地的角色头像出现在区域下方 -->
+        <div v-if="activeLocation" class="area-actors" :style="actorsStyle" @click.stop>
+          <button
+            v-for="member in charactersIn(activeLocation)"
+            :key="'aa-' + member.id"
+            type="button"
+            class="area-actor"
+            :class="{ on: activeId === member.id }"
+            :title="`${member.name} · ${placeText(member.locationName, member.subLocation)}`"
+            @click="selectFromLocation(member)"
+          >
+            <img v-if="member.avatar" class="area-actor-img" :src="member.avatar" :alt="member.name" />
+            <span v-else class="area-actor-img fallback">{{ (member.name || '?').slice(0, 1) }}</span>
+            <span class="area-actor-name">{{ member.name }}</span>
+          </button>
+          <span v-if="!charactersIn(activeLocation).length" class="area-empty">这里暂时没有角色</span>
         </div>
 
         <button type="button" class="map-zoom-btn" @click="openMapViewer">
@@ -62,8 +87,7 @@
       :map-image="world.mapImage"
       :title="world.name"
       :locations="locations"
-      :characters="displayCharacters"
-      :anchors="anchors"
+      :characters="characters"
       :active-id="activeId"
       @select="onViewerSelect"
     />
@@ -106,7 +130,7 @@
             <div class="detail-title">
               <h2>{{ active.name }}</h2>
               <p class="title">{{ active.title || '旅行者' }}</p>
-              <p class="muted">当前位置：{{ active.locationName || '尚未行动' }}</p>
+              <p class="muted">当前位置：{{ characterPlace(active) }}</p>
               <p class="muted">下次行动：{{ nextRunText(active) }}</p>
             </div>
             <div class="status">
@@ -190,15 +214,73 @@
             </div>
           </div>
 
+          <div class="backpack">
+            <div class="backpack-head">
+              <h3>背包</h3>
+              <span class="backpack-meta">
+                {{ (active.items || []).length }} 种 · 共 {{ totalItemCount }} 件
+              </span>
+            </div>
+            <div v-if="(active.items || []).length" class="item-grid">
+              <button
+                v-for="item in active.items"
+                :key="'item-' + item.id"
+                type="button"
+                class="item-slot"
+                :class="['rarity-' + (item.rarity || 1), { on: selectedItem && selectedItem.id === item.id }]"
+                :title="item.name"
+                @click="selectedItem = item"
+              >
+                <span class="slot-icon">
+                  <img v-if="item.icon" :src="item.icon" :alt="item.name" />
+                  <template v-else>{{ emojiForItem(item.name) }}</template>
+                </span>
+                <span class="slot-name">{{ item.name }}</span>
+                <span v-if="(item.quantity || 1) > 1" class="slot-qty">{{ item.quantity }}</span>
+              </button>
+            </div>
+            <div v-else class="backpack-empty">背包空空的，等它出门捡点什么吧</div>
+
+            <div
+              v-if="selectedItem"
+              class="item-detail"
+              :class="'rarity-' + (selectedItem.rarity || 1)"
+            >
+              <span class="detail-item-icon">
+                <img v-if="selectedItem.icon" :src="selectedItem.icon" :alt="selectedItem.name" />
+                <template v-else>{{ emojiForItem(selectedItem.name) }}</template>
+              </span>
+              <div class="detail-main">
+                <div class="detail-name">
+                  {{ selectedItem.name }}
+                  <span class="rarity-tag">{{ rarityMeta(selectedItem.rarity).name }}</span>
+                </div>
+                <div class="detail-qty">数量：{{ selectedItem.quantity || 1 }}</div>
+                <div class="detail-desc">
+                  {{ selectedItem.description || '还没有关于这件物品的说明。' }}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div v-if="(active.recentMemories || []).length" class="memories">
+            <h3>最近的记忆</h3>
+            <div v-for="memory in active.recentMemories" :key="'mem-' + memory.id" class="memory-item">
+              <div class="memory-date">{{ memory.memoryDate }}</div>
+              <div class="memory-text">{{ memory.summary }}</div>
+            </div>
+          </div>
+
           <div class="recent">
             <h3>最近的行动</h3>
             <div v-if="!(active.recentActs || []).length" class="muted">还没有行动记录</div>
             <div v-for="act in active.recentActs || []" :key="act.id" class="act">
               <div class="act-meta">
                 <span class="time">{{ act.createTime }}</span>
-                <span class="place">{{ act.locationName || '某处' }}</span>
+                <span class="place">{{ placeText(act.locationName, act.subLocation) }}</span>
                 <span v-if="act.companions" class="companion-tag">与 {{ act.companions }} 互动</span>
                 <span v-if="act.favorChange" class="favor-tag">好感 {{ act.favorChange }}</span>
+                <span v-if="act.itemChange" class="item-tag">{{ act.itemChange }}</span>
               </div>
               <div class="act-body">{{ act.actions }}</div>
               <div v-if="act.innerVoice" class="voice">「{{ act.innerVoice }}」</div>
@@ -275,6 +357,15 @@
           >
             {{ c.name }}
           </button>
+          <el-select
+            v-model="locationFilter"
+            class="loc-filter"
+            clearable
+            placeholder="全部地点"
+            @change="loadTimeline(true)"
+          >
+            <el-option v-for="loc in locations" :key="'lf-' + loc.id" :label="loc.name" :value="loc.name" />
+          </el-select>
         </div>
       </div>
       <div v-if="!timeline.length" class="muted">还没有行动记录</div>
@@ -283,13 +374,15 @@
         <div class="timeline-content">
           <div class="timeline-title">
             <strong>{{ characterName(act.characterId) }}</strong>
-            <span class="muted">在 {{ act.locationName || '某处' }}</span>
+            <span class="muted">在 {{ placeText(act.locationName, act.subLocation) }}</span>
             <span v-if="act.coinChange" class="coin-delta inline" :class="act.coinChange > 0 ? 'plus' : 'minus'">
               {{ act.coinChange > 0 ? '+' : '' }}{{ act.coinChange }} 金币
             </span>
             <span v-if="act.companions" class="companion-tag inline">与 {{ act.companions }} 互动</span>
             <span v-if="act.favorChange" class="favor-tag inline">好感 {{ act.favorChange }}</span>
             <span v-if="act.reaction === 1" class="react-tag inline">回应</span>
+            <span v-if="act.itemChange" class="item-tag inline">{{ act.itemChange }}</span>
+            <span v-if="act.newsRef" class="news-tag inline">听闻 · {{ act.newsRef }}</span>
           </div>
           <div class="act-body">{{ act.actions }}</div>
           <div v-if="act.innerVoice" class="voice">「{{ act.innerVoice }}」</div>
@@ -301,14 +394,14 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ref, reactive, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import LocationIcon from '@/components/sandbox/LocationIcon.vue'
 import SandboxMapViewer from '@/components/sandbox/SandboxMapViewer.vue'
 import { useMemberStore } from '@/store/member'
-import { layoutMarkers, overlapAnchors } from '@/utils/sandboxMap'
+import { emojiForItem, rarityMeta } from '@/utils/sandboxItems'
 import {
   portalSandbox,
   portalSandboxActs,
@@ -329,10 +422,22 @@ const characters = ref([])
 const enabled = ref(true)
 const whisperPoints = ref(1)
 const coinRate = ref(10)
+/** 旅人纪闻（当天世界大事） */
+const news = ref([])
+const newsTitle = ref('')
+const newsCollapsed = ref(false)
+/** 被纪闻点中的地点会闪烁高亮 */
+const flashLocationId = ref(null)
 
 const activeId = ref(null)
 const mapViewerVisible = ref(false)
+/** 当前展开的地点（点地名后显示该地的角色） */
+const activeLocationId = ref(null)
+/** 背包里被选中的物品（点击格子后展示详情） */
+const selectedItem = ref(null)
 const filterId = ref(null)
+/** 时间线按一级地点筛选 */
+const locationFilter = ref('')
 const keyword = ref('')
 const collapsed = ref(false)
 
@@ -356,10 +461,115 @@ const active = computed(() => {
   return characters.value.find((c) => c.id === activeId.value) || null
 })
 const hasMore = computed(() => timeline.value.length < timelineTotal.value)
+/** 背包物品总件数 */
+const totalItemCount = computed(() => {
+  const items = (active.value && active.value.items) || []
+  return items.reduce((sum, item) => sum + (Number(item.quantity) || 1), 0)
+})
 
-/** 同坐标的角色自动错开，避免叠在一起只看到一个 */
-const displayCharacters = computed(() => layoutMarkers(characters.value, 5))
-const anchors = computed(() => overlapAnchors(displayCharacters.value))
+// 切换角色时清掉上一件选中的物品
+watch(activeId, () => {
+  selectedItem.value = null
+})
+
+/** 当前展开的地点（同一时间只展开一个） */
+const activeLocation = computed(() => locations.value.find((loc) => loc.id === activeLocationId.value) || null)
+
+/** 地点区域：x,y 为左上角，width/height 为宽高（0 表示单点） */
+function areaRect(location) {
+  const left = Number(location.x == null ? 50 : location.x)
+  const top = Number(location.y == null ? 50 : location.y)
+  return {
+    left,
+    top,
+    width: Math.max(0, Number(location.width || 0)),
+    height: Math.max(0, Number(location.height || 0))
+  }
+}
+
+/** 区域显示样式（单点也留一点最小尺寸，方便点击） */
+function areaStyle(location) {
+  const rect = areaRect(location)
+  return {
+    left: rect.left + '%',
+    top: rect.top + '%',
+    width: Math.max(3, rect.width) + '%',
+    height: Math.max(2.2, rect.height) + '%'
+  }
+}
+
+function inArea(location, x, y) {
+  const rect = areaRect(location)
+  if (rect.width <= 0 || rect.height <= 0) {
+    return Math.abs(rect.left - x) <= 2 && Math.abs(rect.top - y) <= 2
+  }
+  return x >= rect.left && x <= rect.left + rect.width && y >= rect.top && y <= rect.top + rect.height
+}
+
+/** 角色属于哪个地点：先按角色记录的地点名匹配，再用坐标落在哪个区域里兜底 */
+function locationOf(character) {
+  const byName = locations.value.find((loc) => loc.name === character.locationName)
+  if (byName) {
+    return byName
+  }
+  const x = Number(character.x == null ? 50 : character.x)
+  const y = Number(character.y == null ? 50 : character.y)
+  return locations.value.find((loc) => inArea(loc, x, y)) || null
+}
+
+function charactersIn(location) {
+  if (!location) {
+    return []
+  }
+  return characters.value.filter((character) => {
+    const hit = locationOf(character)
+    return hit && hit.id === location.id
+  })
+}
+
+function toggleLocation(location) {
+  activeLocationId.value = activeLocationId.value === location.id ? null : location.id
+}
+
+/** 点纪闻条目：如果事件发生在某个已知地点，就把那个地点展开 */
+function focusNews(item) {
+  const location = locations.value.find((loc) => loc.name === item.locationName)
+  if (location) {
+    activeLocationId.value = location.id
+    // 闪烁高亮一下事件发生地，便于一眼找到
+    flashLocationId.value = location.id
+    setTimeout(() => {
+      if (flashLocationId.value === location.id) {
+        flashLocationId.value = null
+      }
+    }, 1700)
+  }
+}
+
+/** 今天日期（纪闻卡片右上角） */
+const todayText = computed(() => {
+  const now = new Date()
+  return `${now.getMonth() + 1}月${now.getDate()}日`
+})
+
+async function selectFromLocation(character) {
+  await selectCharacter(character)
+}
+
+/** 角色头像行的位置：默认贴在区域下方，靠下时改到区域上方 */
+const actorsStyle = computed(() => {
+  const location = activeLocation.value
+  if (!location) {
+    return {}
+  }
+  const rect = areaRect(location)
+  const below = rect.top + rect.height < 68
+  return {
+    left: Math.min(72, Math.max(0, rect.left - 2)) + '%',
+    top: (below ? rect.top + Math.max(rect.height, 2.2) : rect.top) + '%',
+    transform: below ? 'translateY(8px)' : 'translateY(calc(-100% - 8px))'
+  }
+})
 
 /** 角色搜索：匹配名字、称号、当前位置、外貌 */
 const filteredCharacters = computed(() => {
@@ -382,6 +592,22 @@ function characterName(id) {
   return hit ? hit.name : `角色#${id}`
 }
 
+/** 地点显示：一级地点 · 二级地点 */
+function placeText(locationName, subLocation) {
+  if (!locationName && !subLocation) {
+    return '某处'
+  }
+  return subLocation ? `${locationName || '某处'} · ${subLocation}` : locationName
+}
+
+/** 角色当前位置（都没有时显示「尚未行动」） */
+function characterPlace(character) {
+  if (!character) return '尚未行动'
+  if (!character.locationName && !character.subLocation) return '尚未行动'
+  return placeText(character.locationName, character.subLocation)
+}
+
+
 async function load() {
   const data = await portalSandbox()
   Object.assign(world, data.world || {})
@@ -390,6 +616,8 @@ async function load() {
   enabled.value = !!data.enabled
   whisperPoints.value = data.whisperPoints == null ? 1 : data.whisperPoints
   coinRate.value = data.coinRate == null ? 10 : data.coinRate
+  news.value = data.news || []
+  newsTitle.value = data.newsTitle || ''
   if (characters.value.length) {
     await selectCharacter(characters.value[0])
   }
@@ -442,6 +670,7 @@ async function loadTimeline(reset = false) {
   }
   const data = await portalSandboxActs({
     characterId: filterId.value || undefined,
+    locationName: locationFilter.value || undefined,
     page: timelinePage.value,
     size: pageSize
   })
@@ -490,6 +719,8 @@ async function refreshCharacters() {
   enabled.value = !!data.enabled
   whisperPoints.value = data.whisperPoints == null ? 1 : data.whisperPoints
   coinRate.value = data.coinRate == null ? 10 : data.coinRate
+  news.value = data.news || []
+  newsTitle.value = data.newsTitle || ''
 }
 
 function coinTypeText(type) {
@@ -528,10 +759,15 @@ function nextRunText(character) {
   if (!next) return '待安排'
   const hhmm = String(character.nextRunTime).slice(11, 16)
   const minutes = Math.round((next.getTime() - now.value) / 60000)
-  if (minutes <= 0) return `即将行动（${hhmm}）`
-  if (minutes < 60) return `约 ${minutes} 分钟后（${hhmm}）`
+  // 带上 AI 给出的原因，例如「正在睡觉，约 6 小时后（07:00）」
+  const reason = character.nextReason ? `正在${character.nextReason}，` : ''
+  if (minutes <= 0) return `${reason}即将行动（${hhmm}）`
+  if (minutes < 60) return `${reason}约 ${minutes} 分钟后（${hhmm}）`
   const hours = Math.floor(minutes / 60)
-  return `约 ${hours} 小时 ${minutes % 60} 分钟后（${hhmm}）`
+  const rest = minutes % 60
+  return rest
+    ? `${reason}约 ${hours} 小时 ${rest} 分钟后（${hhmm}）`
+    : `${reason}约 ${hours} 小时后（${hhmm}）`
 }
 
 async function onContribute() {
@@ -561,6 +797,8 @@ async function onContribute() {
 }
 
 onMounted(async () => {
+  // 手机上默认收起纪闻卡片，避免挡住地图
+  newsCollapsed.value = window.innerWidth < 720
   clockTimer = setInterval(() => {
     now.value = Date.now()
   }, 30000)
@@ -632,98 +870,168 @@ onBeforeUnmount(() => {
 }
 .map-empty .sub { font-size: 12px; opacity: 0.8; }
 
-.loc {
+/* 地点区域：半透明色块 + 虚线边框，默认只显示图标与地名 */
+/* 旅人纪闻：地图左上角的悬浮卡片 */
+.news-card {
   position: absolute;
-  transform: translate(-50%, -50%);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 3px;
-  pointer-events: none;
-}
-.loc-icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 26px;
-  height: 26px;
-  border-radius: 50% 50% 50% 6px;
+  left: 12px;
+  top: 12px;
+  z-index: 5;
+  width: 230px;
+  max-width: 46%;
+  padding: 8px 10px;
+  border-radius: 14px;
+  background: rgba(0, 0, 0, 0.46);
+  backdrop-filter: blur(7px);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.28);
   color: #fff;
-  background: rgba(0, 0, 0, 0.42);
-  border: 1px solid rgba(255, 255, 255, 0.7);
-  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.25);
 }
-.loc-name {
-  font-size: 11px;
-  padding: 1px 7px;
-  border-radius: 999px;
-  color: #fff;
-  background: rgba(0, 0, 0, 0.36);
-  white-space: nowrap;
-}
-
-.actor {
-  position: absolute;
-  transform: translate(-50%, -50%);
+.news-head {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 4px;
+  gap: 8px;
   cursor: pointer;
-  /* 位置变化时平滑移动，而不是瞬间跳过去 */
-  transition: left 1.1s ease, top 1.1s ease;
-  z-index: 2;
+  user-select: none;
 }
-.actor:hover { transform: translate(-50%, -50%) scale(1.06); }
-.actor.stacked .actor-avatar,
-.actor.stacked .actor-fallback { border-color: var(--accent); }
-.anchor {
-  position: absolute;
-  transform: translate(-50%, -50%);
+.news-name {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 1px;
+}
+.news-date { font-size: 11px; opacity: 0.7; }
+.news-toggle { margin-left: auto; font-size: 11px; opacity: 0.75; }
+.news-list {
+  margin-top: 6px;
+  max-height: 160px;
+  overflow-y: auto;
   display: flex;
-  align-items: center;
-  gap: 2px;
-  pointer-events: none;
-  z-index: 1;
+  flex-direction: column;
+  gap: 6px;
 }
-.anchor-dot {
+.news-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: #fff;
+  text-align: left;
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.news-item:hover .news-text { color: var(--accent); }
+.news-level {
+  flex-shrink: 0;
   width: 7px;
   height: 7px;
+  margin-top: 6px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.85);
-  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.28);
+  background: rgba(255, 255, 255, 0.55);
 }
-.anchor-count {
+.news-level.lv-2 { background: #f2b23e; box-shadow: 0 0 8px rgba(242, 178, 62, 0.8); }
+.news-level.lv-3 { background: #ff6f6f; box-shadow: 0 0 9px rgba(255, 111, 111, 0.9); }
+.news-text { flex: 1; }
+.news-place {
+  flex-shrink: 0;
   font-size: 10px;
   padding: 0 5px;
   border-radius: 999px;
-  color: #fff;
-  background: rgba(0, 0, 0, 0.5);
+  background: rgba(255, 255, 255, 0.16);
+  white-space: nowrap;
 }
-.actor.active .actor-avatar,
-.actor.active .actor-fallback { box-shadow: 0 0 0 3px var(--accent), 0 8px 22px rgba(0, 0, 0, 0.3); }
-.actor-avatar, .actor-fallback {
-  width: 52px;
-  height: 52px;
+.news-card.collapsed { width: auto; }
+
+.area {
+  position: absolute;
+  padding: 2px 4px;
+  border: 1.5px dashed rgba(255, 255, 255, 0.75);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.16);
+  cursor: pointer;
+  overflow: hidden;
+  transition: background 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
+}
+.area:hover { background: rgba(255, 255, 255, 0.26); }
+.area.on {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.35), 0 8px 24px rgba(0, 0, 0, 0.25);
+}
+.area-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.42);
+  white-space: nowrap;
+  overflow: hidden;
+}
+.area-name { overflow: hidden; text-overflow: ellipsis; }
+.area-count {
+  position: absolute;
+  right: 4px;
+  bottom: 3px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  font-size: 11px;
+  line-height: 18px;
+  text-align: center;
+  color: #fff;
+  background: linear-gradient(120deg, var(--accent), var(--accent-2));
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+}
+
+/* 点击地点后展开的角色头像行 */
+.area-actors {
+  position: absolute;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  max-width: 72%;
+  padding: 6px 8px;
+  border-radius: 14px;
+  background: rgba(0, 0, 0, 0.42);
+  backdrop-filter: blur(6px);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.28);
+}
+.area-actor {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+}
+.area-actor-img {
+  width: 42px;
+  height: 42px;
   border-radius: 50%;
   object-fit: cover;
+  border: 2px solid rgba(255, 255, 255, 0.9);
+  background: var(--card-solid);
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--card-solid);
+  font-size: 17px;
   color: var(--text-strong);
-  font-size: 20px;
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.25);
-  border: 2px solid rgba(255, 255, 255, 0.85);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
-.actor-name {
-  font-size: 12px;
-  padding: 1px 9px;
-  border-radius: 999px;
-  color: #fff;
-  background: rgba(0, 0, 0, 0.45);
-  white-space: nowrap;
-}
+.area-actor:hover .area-actor-img { transform: translateY(-2px); }
+.area-actor.on .area-actor-img { box-shadow: 0 0 0 3px var(--accent); }
+.area-actor-name { font-size: 11px; color: #fff; white-space: nowrap; }
+.area-empty { font-size: 12px; color: rgba(255, 255, 255, 0.75); }
 .map-zoom-btn {
   position: absolute;
   right: 12px;
@@ -907,6 +1215,169 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 .react-tag.inline { margin-left: 8px; }
+.item-tag {
+  padding: 1px 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  color: #4f9d8f;
+  background: rgba(79, 157, 143, 0.16);
+  border: 1px solid rgba(79, 157, 143, 0.38);
+  white-space: nowrap;
+}
+.item-tag.inline { margin-left: 8px; }
+.news-tag {
+  padding: 1px 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  color: #c98a2a;
+  background: rgba(233, 186, 80, 0.16);
+  border: 1px solid rgba(233, 186, 80, 0.4);
+  white-space: nowrap;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: inline-block;
+  vertical-align: bottom;
+}
+.news-tag.inline { margin-left: 8px; }
+.area.flash {
+  border-color: #ff6f9f;
+  animation: areaFlash 0.8s ease-in-out 2;
+}
+@keyframes areaFlash {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 111, 159, 0); }
+  50% { box-shadow: 0 0 0 7px rgba(255, 111, 159, 0.55); }
+}
+/* 背包：二次元游戏风格的物品格子 */
+.backpack { margin-top: 18px; }
+.backpack h3, .memories h3 { margin: 0 0 10px; font-size: 15px; color: var(--text-strong); }
+.backpack-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.backpack-head h3 { margin-bottom: 10px; }
+.backpack-meta { font-size: 12px; color: var(--text-muted); }
+.item-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(78px, 1fr));
+  gap: 10px;
+}
+.item-slot {
+  position: relative;
+  aspect-ratio: 1 / 1.12;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 6px 4px;
+  border-radius: 14px;
+  border: 1.5px solid var(--border);
+  background: var(--glass-bg);
+  color: var(--text-strong);
+  cursor: pointer;
+  overflow: hidden;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+}
+.item-slot::before {
+  /* 斜向高光，模仿游戏道具格的质感 */
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(140deg, rgba(255, 255, 255, 0.22), transparent 55%);
+  pointer-events: none;
+}
+.item-slot:hover { transform: translateY(-3px); }
+.item-slot.on { transform: translateY(-3px); }
+.slot-icon {
+  font-size: 26px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+}
+.slot-icon img { width: 34px; height: 34px; object-fit: contain; }
+.slot-name {
+  max-width: 100%;
+  font-size: 11px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.slot-qty {
+  position: absolute;
+  right: 5px;
+  bottom: 5px;
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  font-size: 11px;
+  line-height: 16px;
+  text-align: center;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.55);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+}
+.backpack-empty {
+  padding: 18px;
+  border-radius: var(--radius-sm);
+  border: 1px dashed var(--border);
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.item-detail {
+  display: flex;
+  gap: 14px;
+  margin-top: 12px;
+  padding: 14px 16px;
+  border-radius: var(--radius-sm);
+  border: 1.5px solid var(--border);
+  background: var(--glass-bg);
+}
+.detail-item-icon {
+  font-size: 34px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  flex-shrink: 0;
+}
+.detail-item-icon img { width: 44px; height: 44px; object-fit: contain; }
+.detail-main { flex: 1; min-width: 0; }
+.detail-name { font-size: 15px; color: var(--text-strong); display: flex; align-items: center; gap: 8px; }
+.rarity-tag {
+  font-size: 11px;
+  padding: 1px 8px;
+  border-radius: 999px;
+}
+.detail-qty { margin-top: 4px; font-size: 12px; color: var(--text-muted); }
+.detail-desc { margin-top: 6px; font-size: 13px; color: var(--text); line-height: 1.8; }
+
+/* 品质配色（1 普通 → 5 传说） */
+.rarity-1 { border-color: rgba(185, 179, 201, 0.45); background: rgba(185, 179, 201, 0.14); }
+.rarity-1 .rarity-tag { color: #9c95ae; background: rgba(185, 179, 201, 0.22); }
+.rarity-2 { border-color: rgba(99, 192, 122, 0.55); background: rgba(99, 192, 122, 0.15); box-shadow: 0 4px 14px rgba(99, 192, 122, 0.16); }
+.rarity-2 .rarity-tag { color: #63c07a; background: rgba(99, 192, 122, 0.22); }
+.rarity-3 { border-color: rgba(91, 155, 213, 0.6); background: rgba(91, 155, 213, 0.16); box-shadow: 0 4px 16px rgba(91, 155, 213, 0.2); }
+.rarity-3 .rarity-tag { color: #5b9bd5; background: rgba(91, 155, 213, 0.22); }
+.rarity-4 { border-color: rgba(168, 117, 224, 0.65); background: rgba(168, 117, 224, 0.18); box-shadow: 0 4px 18px rgba(168, 117, 224, 0.24); }
+.rarity-4 .rarity-tag { color: #a875e0; background: rgba(168, 117, 224, 0.24); }
+.rarity-5 { border-color: rgba(240, 177, 60, 0.7); background: rgba(240, 177, 60, 0.2); box-shadow: 0 4px 20px rgba(240, 177, 60, 0.28); }
+.rarity-5 .rarity-tag { color: #f0b13c; background: rgba(240, 177, 60, 0.26); }
+.rarity-5 .slot-icon, .item-detail.rarity-5 .detail-item-icon { text-shadow: 0 0 12px rgba(240, 177, 60, 0.7); }
+.memories { margin-top: 18px; }
+.memory-item {
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  background: var(--glass-bg);
+  border: 1px solid var(--border);
+  margin-bottom: 10px;
+}
+.memory-date { font-size: 12px; color: var(--accent); margin-bottom: 4px; }
+.memory-text { font-size: 13.5px; color: var(--text); line-height: 1.85; white-space: pre-line; }
 .relations { margin-top: 18px; }
 .relations h3 { margin: 0 0 10px; font-size: 15px; color: var(--text-strong); }
 .relation-item {
@@ -999,6 +1470,8 @@ onBeforeUnmount(() => {
 .timeline-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; }
 .timeline-head h3 { margin: 0; font-size: 15px; color: var(--text-strong); }
 .filters { display: flex; gap: 8px; flex-wrap: wrap; }
+.loc-filter { width: 150px; }
+.loc-filter :deep(.el-select__wrapper) { border-radius: 999px; font-size: 12px; }
 .chip-btn {
   padding: 4px 12px;
   border-radius: 999px;
@@ -1022,7 +1495,9 @@ onBeforeUnmount(() => {
   .status { margin-left: 0; width: 100%; }
   .timeline-item { flex-direction: column; gap: 4px; }
   .timeline-time { width: auto; }
-  .actor-avatar, .actor-fallback { width: 40px; height: 40px; font-size: 16px; }
+  .area-label { font-size: 11px; padding: 1px 6px; }
+  .area-actors { max-width: 88%; gap: 8px; }
+  .area-actor-img { width: 36px; height: 36px; font-size: 15px; }
   .whisper-form { flex-direction: column; align-items: stretch; }
   .char-search { width: 150px; }
   .panel { padding: 16px 14px 18px; }

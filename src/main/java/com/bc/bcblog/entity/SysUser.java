@@ -16,6 +16,8 @@ public class SysUser {
     private Long id;
     private String username;
     private String password;
+    /** 安全密码(BCrypt)，用于敏感操作二次验证 */
+    private String securityPassword;
     private String nickname;
     private String avatar;
     private Integer status;

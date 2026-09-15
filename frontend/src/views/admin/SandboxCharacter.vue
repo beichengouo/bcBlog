@@ -69,15 +69,128 @@
       </el-table-column>
       <el-table-column label="操作" width="210">
         <template #default="{ row }">
-          <el-button size="small" type="primary" :loading="runningId === row.id" @click="onRun(row)">立即执行</el-button>
+          <el-button
+            size="small"
+            type="primary"
+            :loading="isRunning(row.id)"
+            :disabled="isRunning(row.id)"
+            @click="onRun(row)"
+          >
+            立即执行
+          </el-button>
+          <el-button size="small" @click="openBackpack(row)">背包</el-button>
           <el-button size="small" @click="openEdit(row)">编辑</el-button>
           <el-button size="small" type="danger" @click="onDelete(row)">删除</el-button>
         </template>
       </el-table-column>
     </el-table>
 
+    <el-dialog
+      v-model="backpackVisible"
+      :title="`背包 · ${backpackCharacter ? backpackCharacter.name : ''}`"
+      width="min(94vw, 660px)"
+    >
+      <el-table :data="backpackItems" v-loading="loadingItems" size="small">
+        <el-table-column label="图标" width="90">
+          <template #default="{ row }">
+            <el-upload
+              :action="'/api/admin/upload/image'"
+              :headers="uploadHeaders"
+              :show-file-list="false"
+              accept="image/*"
+              :on-success="(res) => onItemIconSuccess(row, res)"
+              :on-error="onUploadError"
+            >
+              <span class="item-icon-cell" :title="row.icon ? '点击更换图标' : '点击上传图标'">
+                <img v-if="row.icon" :src="row.icon" alt="" />
+                <template v-else>{{ emojiForItem(row.name) }}</template>
+              </span>
+            </el-upload>
+          </template>
+        </el-table-column>
+        <el-table-column prop="name" label="物品" min-width="130" />
+        <el-table-column label="数量" width="140">
+          <template #default="{ row }">
+            <el-input-number v-model="row.quantity" :min="1" :max="9999" size="small" @change="onUpdateItem(row)" />
+          </template>
+        </el-table-column>
+        <el-table-column label="品质" width="120">
+          <template #default="{ row }">
+            <el-select v-model="row.rarity" size="small" @change="onUpdateItem(row)">
+              <el-option v-for="r in ITEM_RARITIES" :key="r.value" :label="r.name" :value="r.value" />
+            </el-select>
+          </template>
+        </el-table-column>
+        <el-table-column prop="description" label="说明" min-width="170" show-overflow-tooltip />
+        <el-table-column label="操作" width="90">
+          <template #default="{ row }">
+            <el-button size="small" type="danger" @click="onDeleteItem(row)">删除</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      <el-empty v-if="!loadingItems && !backpackItems.length" description="背包是空的" :image-size="60" />
+
+      <div class="item-add">
+        <el-input v-model="newItem.name" placeholder="物品名称" style="width: 150px" maxlength="100" />
+        <el-input-number v-model="newItem.quantity" :min="1" :max="9999" />
+        <el-input v-model="newItem.description" placeholder="说明（可选）" style="width: 190px" maxlength="300" />
+        <el-button type="primary" :loading="savingItem" @click="onAddItem">添加物品</el-button>
+      </div>
+      <p class="tip">
+        AI 行动时会读取背包内容（提示词里已强调），并可能通过 items_change 增减物品；这里可以随时手动补充或修正。
+      </p>
+      <template #footer>
+        <el-button @click="backpackVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
+
     <el-dialog v-model="dialogVisible" :title="form.id ? '编辑角色' : '新增角色'" width="min(94vw, 680px)">
       <el-form :model="form" label-width="100px">
+        <template v-if="!form.id">
+          <el-form-item label="AI 一键创作">
+            <div class="ai-box">
+              <div class="ai-row">
+                <el-select v-model="aiProviderId" placeholder="选择服务商" style="width: 190px" @change="onAiProviderChange">
+                  <el-option v-for="p in providers" :key="'aip-' + p.id" :label="p.name" :value="p.id" />
+                </el-select>
+                <el-button :loading="aiModelLoading" @click="loadAiModels">获取模型</el-button>
+                <el-select
+                  v-model="aiModel"
+                  filterable
+                  allow-create
+                  placeholder="选择模型"
+                  style="width: 210px"
+                >
+                  <el-option v-for="m in aiModels" :key="m" :label="m" :value="m" />
+                </el-select>
+              </div>
+              <el-input
+                v-model="aiRequirement"
+                type="textarea"
+                :rows="3"
+                maxlength="300"
+                show-word-limit
+                placeholder="描述你想要的角色，例如：一个在白鸦村卖花的少女，怕生但话多，随身带着一把旧口琴"
+              />
+              <div class="ai-row">
+                <el-button type="primary" plain :loading="aiGenerating" @click="onAiGenerate">
+                  AI 生成并填充
+                </el-button>
+                <span class="tip">会按当前世界观、地图地点和已有角色生成，填充后你还可以逐项修改</span>
+              </div>
+              <div v-if="draftPlace" class="draft-place">初始地点：{{ draftPlace }}</div>
+              <div v-if="draftItems.length" class="draft-items">
+                <span class="draft-title">初始物品：</span>
+                <span v-for="(item, index) in draftItems" :key="'di-' + index" class="draft-item">
+                  {{ emojiForItem(item.name) }} {{ item.name }} ×{{ item.quantity }}
+                  <em>{{ rarityMeta(item.rarity).name }}</em>
+                  <button type="button" title="移除这件初始物品" @click="draftItems.splice(index, 1)">×</button>
+                </span>
+              </div>
+            </div>
+          </el-form-item>
+        </template>
+
         <el-form-item label="角色名">
           <el-input v-model="form.name" placeholder="如：魔女零" maxlength="100" />
         </el-form-item>
@@ -143,7 +256,13 @@
           <el-input-number v-model="form.intervalMin" :min="1" :max="1440" />
           <span class="range-sep">~</span>
           <el-input-number v-model="form.intervalMax" :min="1" :max="1440" />
-          <span class="tip">分钟，建议 45~75</span>
+          <span class="tip">分钟，建议 45~75；这是「AI 没给间隔」时使用的随机区间</span>
+        </el-form-item>
+        <el-form-item label="AI 间隔上下限">
+          <el-input-number v-model="form.aiIntervalMin" :min="1" :max="10080" controls-position="right" placeholder="全局" />
+          <span class="range-sep">~</span>
+          <el-input-number v-model="form.aiIntervalMax" :min="1" :max="10080" controls-position="right" placeholder="全局" />
+          <span class="tip">分钟。留空则用全局设置（默认 15~720）；例如给爱睡觉的角色放宽到 600，避免频繁被叫醒</span>
         </el-form-item>
         <el-form-item label="金币余额">
           <el-input-number v-model="form.coins" :min="0" :max="99999999" controls-position="right" />
@@ -179,6 +298,10 @@
         <el-form-item label="启用">
           <el-switch v-model="form.enabled" :active-value="1" :inactive-value="0" />
         </el-form-item>
+        <el-form-item v-if="!form.id" label="开局剧情">
+          <el-checkbox v-model="generateFirstAct">保存后立即生成第一条行动</el-checkbox>
+          <span class="tip">会调用一次 AI，生成角色的第一个故事并写入行动记录；不勾选则只创建角色</span>
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
@@ -196,9 +319,14 @@ import {
   saveSandboxCharacter,
   deleteSandboxCharacter,
   runSandboxCharacter,
-  runAllSandboxCharacters
+  runAllSandboxCharacters,
+  sandboxItems,
+  saveSandboxItem,
+  deleteSandboxItem,
+  generateSandboxCharacter
 } from '@/api/sandbox'
 import { aiProviderList, aiProviderModels } from '@/api/ai'
+import { emojiForItem, ITEM_RARITIES, rarityMeta } from '@/utils/sandboxItems'
 
 const uploadHeaders = { Authorization: localStorage.getItem('token') || '' }
 
@@ -208,8 +336,26 @@ const models = ref([])
 const loading = ref(false)
 const saving = ref(false)
 const modelLoading = ref(false)
-const runningId = ref(null)
+/** 正在执行中的角色 ID 集合：允许多个角色同时执行，各自独立转圈 */
+const runningIds = ref([])
 const runningAll = ref(false)
+const backpackVisible = ref(false)
+const backpackCharacter = ref(null)
+const backpackItems = ref([])
+const loadingItems = ref(false)
+const savingItem = ref(false)
+const newItem = reactive({ name: '', quantity: 1, description: '' })
+/** AI 一键创作相关状态 */
+const aiProviderId = ref(null)
+const aiModel = ref('')
+const aiModels = ref([])
+const aiModelLoading = ref(false)
+const aiRequirement = ref('')
+const aiGenerating = ref(false)
+const draftItems = ref([])
+const draftPlace = ref('')
+/** 是否在保存后立即生成第一条行动 */
+const generateFirstAct = ref(true)
 const dialogVisible = ref(false)
 const temperature = ref(0.9)
 /** 标准状态项，对应 AI 提示词里的固定字段 */
@@ -232,6 +378,8 @@ const form = reactive({
   coins: 0,
   intervalMin: 45,
   intervalMax: 75,
+  aiIntervalMin: null,
+  aiIntervalMax: null,
   enabled: 1
 })
 
@@ -325,6 +473,8 @@ function openAdd() {
   form.coins = 0
   form.intervalMin = 45
   form.intervalMax = 75
+  form.aiIntervalMin = null
+  form.aiIntervalMax = null
   form.enabled = 1
   statusForm.体力 = 100
   statusForm.魔力 = 100
@@ -332,6 +482,14 @@ function openAdd() {
   statusForm.心情 = '平静'
   extraStatus.value = []
   models.value = []
+  // AI 一键创作的初始状态：默认沿用角色表单当前选择的服务商
+  aiProviderId.value = form.providerId || (providers.value.length ? providers.value[0].id : null)
+  aiModel.value = ''
+  aiModels.value = []
+  aiRequirement.value = ''
+  draftItems.value = []
+  draftPlace.value = ''
+  generateFirstAct.value = true
   dialogVisible.value = true
 }
 
@@ -351,6 +509,8 @@ function openEdit(row) {
     coins: row.coins == null ? 0 : row.coins,
     intervalMin: row.intervalMin || 45,
     intervalMax: row.intervalMax || 75,
+    aiIntervalMin: row.aiIntervalMin == null ? null : row.aiIntervalMin,
+    aiIntervalMax: row.aiIntervalMax == null ? null : row.aiIntervalMax,
     enabled: row.enabled == null ? 1 : row.enabled
   })
   const status = parseStatus(row.statusJson)
@@ -364,6 +524,88 @@ function openEdit(row) {
   temperature.value = Number(row.temperature || 0.9)
   models.value = form.model ? [form.model] : []
   dialogVisible.value = true
+}
+
+function onAiProviderChange() {
+  aiModels.value = []
+  aiModel.value = ''
+}
+
+async function loadAiModels() {
+  if (!aiProviderId.value) {
+    ElMessage.warning('请先选择 AI 服务商')
+    return
+  }
+  aiModelLoading.value = true
+  try {
+    aiModels.value = await aiProviderModels(aiProviderId.value)
+    if (!aiModels.value.length) {
+      ElMessage.warning('没有获取到模型，可手动输入模型名')
+    }
+  } finally {
+    aiModelLoading.value = false
+  }
+}
+
+async function onAiGenerate() {
+  if (!aiRequirement.value.trim()) {
+    ElMessage.warning('请先描述你想要的角色')
+    return
+  }
+  if (!aiProviderId.value || !aiModel.value) {
+    ElMessage.warning('请先选择 AI 服务商和模型')
+    return
+  }
+  aiGenerating.value = true
+  try {
+    const draft = await generateSandboxCharacter({
+      providerId: aiProviderId.value,
+      model: aiModel.value,
+      requirement: aiRequirement.value.trim()
+    })
+    applyDraft(draft)
+    ElMessage.success('已生成，请检查后保存')
+  } finally {
+    aiGenerating.value = false
+  }
+}
+
+/** 把 AI 草稿填进新增角色表单 */
+function applyDraft(draft) {
+  if (!draft) return
+  if (draft.name) {
+    form.name = draft.name
+  }
+  form.title = draft.title || form.title
+  form.appearance = draft.appearance || form.appearance
+  form.persona = draft.persona || form.persona
+  form.providerId = aiProviderId.value
+  form.model = aiModel.value
+  if (draft.x != null) {
+    form.x = draft.x
+  }
+  if (draft.y != null) {
+    form.y = draft.y
+  }
+  if (draft.coins != null) {
+    form.coins = draft.coins
+  }
+  form.locationName = draft.locationName || ''
+  form.subLocation = draft.subLocation || ''
+  draftPlace.value = draft.locationName
+    ? draft.subLocation
+      ? `${draft.locationName} · ${draft.subLocation}`
+      : draft.locationName
+    : ''
+  const status = draft.status || {}
+  statusForm.体力 = numOr(status['体力'], 100)
+  statusForm.魔力 = numOr(status['魔力'], 100)
+  statusForm.饥饿度 = numOr(status['饥饿度'], 20)
+  statusForm.心情 = status['心情'] == null ? '平静' : String(status['心情'])
+  extraStatus.value = Object.keys(status)
+    .filter((key) => !STANDARD_STATUS_KEYS.includes(key))
+    .map((key) => ({ key, value: String(status[key]) }))
+  draftItems.value = draft.items || []
 }
 
 function fillSample() {
@@ -410,10 +652,41 @@ async function onSave() {
     ElMessage.warning('请输入角色名')
     return
   }
+  const isNew = !form.id
   saving.value = true
   try {
-    await saveSandboxCharacter({ ...form, temperature: temperature.value, statusJson: buildStatusJson() })
-    ElMessage.success('角色已保存')
+    const saved = await saveSandboxCharacter({
+      ...form,
+      temperature: temperature.value,
+      statusJson: buildStatusJson()
+    })
+    let firstActSummary = ''
+    if (isNew && saved && saved.id) {
+      // 1) AI 生成的初始物品一起放进背包
+      for (const item of draftItems.value) {
+        try {
+          await saveSandboxItem({
+            characterId: saved.id,
+            name: item.name,
+            quantity: item.quantity,
+            rarity: item.rarity,
+            description: item.description
+          })
+        } catch (e) {
+          ElMessage.warning(`初始物品「${item.name}」添加失败，可在背包里手动补上`)
+        }
+      }
+      // 2) 按需生成第一条行动（开局剧情）
+      if (generateFirstAct.value) {
+        try {
+          const act = await runSandboxCharacter(saved.id)
+          firstActSummary = act.summary || act.actions || ''
+        } catch (e) {
+          ElMessage.warning('角色已创建，但第一条行动生成失败，可在列表里点「立即执行」重试')
+        }
+      }
+    }
+    ElMessage.success(firstActSummary ? `角色已创建，第一条行动：${firstActSummary}` : '角色已保存')
     dialogVisible.value = false
     await load()
   } finally {
@@ -429,14 +702,25 @@ async function onToggleEnabled(row, val) {
 }
 
 async function onRun(row) {
-  runningId.value = row.id
+  // 同一个角色正在执行时忽略重复点击
+  if (runningIds.value.includes(row.id)) {
+    return
+  }
+  runningIds.value = [...runningIds.value, row.id]
   try {
     const act = await runSandboxCharacter(row.id)
     ElMessage.success(`执行成功：${act.summary || act.actions || '已生成新的行动'}`)
     await load()
+  } catch (e) {
+    // 失败信息由请求拦截器统一提示，这里只保证按钮状态恢复
   } finally {
-    runningId.value = null
+    runningIds.value = runningIds.value.filter((id) => id !== row.id)
   }
+}
+
+/** 某个角色的「立即执行」是否正在运行 */
+function isRunning(id) {
+  return runningIds.value.includes(id)
 }
 
 /** 一键让所有启用角色各行动一次：多角色可以互相遇见、互动 */
@@ -476,6 +760,84 @@ async function onDelete(row) {
   await load()
 }
 
+async function openBackpack(row) {
+  backpackCharacter.value = row
+  backpackVisible.value = true
+  newItem.name = ''
+  newItem.quantity = 1
+  newItem.description = ''
+  await loadItems()
+}
+
+async function loadItems() {
+  if (!backpackCharacter.value) return
+  loadingItems.value = true
+  try {
+    backpackItems.value = await sandboxItems(backpackCharacter.value.id)
+  } finally {
+    loadingItems.value = false
+  }
+}
+
+async function onAddItem() {
+  if (!newItem.name.trim()) {
+    ElMessage.warning('请输入物品名称')
+    return
+  }
+  savingItem.value = true
+  try {
+    await saveSandboxItem({
+      characterId: backpackCharacter.value.id,
+      name: newItem.name.trim(),
+      quantity: newItem.quantity,
+      description: newItem.description
+    })
+    ElMessage.success('已添加')
+    newItem.name = ''
+    newItem.quantity = 1
+    newItem.description = ''
+    await loadItems()
+  } finally {
+    savingItem.value = false
+  }
+}
+
+async function onUpdateItem(row) {
+  await saveSandboxItem({
+    characterId: row.characterId,
+    name: row.name,
+    quantity: row.quantity,
+    rarity: row.rarity,
+    icon: row.icon,
+    description: row.description
+  })
+  ElMessage.success('已更新')
+}
+
+async function onItemIconSuccess(row, res) {
+  if (res && res.code === 200) {
+    await saveSandboxItem({
+      characterId: row.characterId,
+      name: row.name,
+      quantity: row.quantity,
+      rarity: row.rarity,
+      icon: res.data,
+      description: row.description
+    })
+    ElMessage.success('图标已更新')
+    await loadItems()
+  } else {
+    ElMessage.error((res && res.msg) || '上传失败')
+  }
+}
+
+async function onDeleteItem(row) {
+  await ElMessageBox.confirm(`确定把「${row.name}」从背包里删掉吗？`, '提示', { type: 'warning' })
+  await deleteSandboxItem(row.id)
+  ElMessage.success('已删除')
+  await loadItems()
+}
+
 onMounted(async () => {
   await loadProviders()
   await load()
@@ -500,4 +862,49 @@ onMounted(async () => {
 .status-editor { width: 100%; }
 .status-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; flex-wrap: wrap; }
 .status-label { width: 48px; font-size: 13px; color: var(--el-text-color-regular); }
+.item-add { display: flex; align-items: center; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
+.item-icon-cell {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  border: 1px dashed var(--el-border-color);
+  font-size: 18px;
+  cursor: pointer;
+}
+.item-icon-cell img { width: 28px; height: 28px; object-fit: contain; }
+.ai-box {
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px dashed var(--el-color-primary-light-5);
+  background: var(--el-color-primary-light-9);
+}
+.ai-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.ai-row:last-child { margin-bottom: 0; }
+.draft-place { margin-top: 6px; font-size: 13px; color: var(--el-color-primary); }
+.draft-items { margin-top: 6px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; }
+.draft-title { color: var(--el-text-color-regular); }
+.draft-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: #fff;
+  border: 1px solid var(--el-border-color);
+}
+.draft-item em { font-style: normal; font-size: 12px; color: var(--el-text-color-secondary); }
+.draft-item button {
+  border: none;
+  background: transparent;
+  color: var(--el-text-color-secondary);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 2px;
+}
+.draft-item button:hover { color: var(--el-color-danger); }
 </style>
