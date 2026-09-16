@@ -202,4 +202,21 @@ public interface SandboxService {
 
     /** 今日集市统计：卖出件数 / 回收积分 */
     Map<String, Object> shopStats(Long worldId);
+
+    // ---------------- 存档 ----------------
+
+    /** 导出存档：返回 zip 字节流（world.json + 引用到的图片） */
+    byte[] exportWorld(Long worldId, boolean includeRawResponse);
+
+    /** 清空世界进度：删除该世界的全部记录，并把角色状态与位置恢复默认（世界设定、地点、角色卡保留） */
+    Map<String, Object> resetWorld(Long worldId);
+
+    /**
+     * 导入存档。
+     * @param file          上传的存档（zip 或 world.json）
+     * @param targetWorldId 覆盖模式下的目标世界；新建模式传 null
+     * @param overwrite     true = 覆盖指定世界（先清空再写入），false = 导入成一个新世界
+     */
+    Map<String, Object> importWorld(org.springframework.web.multipart.MultipartFile file,
+                                    Long targetWorldId, boolean overwrite);
 }

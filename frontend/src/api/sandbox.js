@@ -27,6 +27,30 @@ export function setSandboxWorldVisible(id, visible) {
   return request.put(`/admin/sandbox/world/${id}/visible`, null, { params: { visible } })
 }
 
+// 导出存档（zip：world.json + 图片）
+export function exportSandboxWorld(id, includeRawResponse) {
+  return request.get(`/admin/sandbox/world/${id}/export`, {
+    params: { includeRawResponse: includeRawResponse ? 'true' : 'false' },
+    responseType: 'blob',
+    timeout: 300000
+  })
+}
+
+// 清空世界进度（保留世界设定、地点与角色卡）
+export function resetSandboxWorld(id) {
+  return request.post(`/admin/sandbox/world/${id}/reset`)
+}
+
+// 导入存档（overwrite=false 新建世界；true 覆盖 targetWorldId 指定世界）
+export function importSandboxWorld(file, targetWorldId, overwrite) {
+  const fd = new FormData()
+  fd.append('file', file)
+  return request.post('/admin/sandbox/world/import', fd, {
+    params: { targetWorldId: targetWorldId || undefined, overwrite: overwrite ? 'true' : 'false' },
+    timeout: 600000
+  })
+}
+
 export function saveSandboxWorld(data) {
   return request.post('/admin/sandbox/world', data)
 }

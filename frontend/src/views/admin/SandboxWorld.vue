@@ -30,6 +30,17 @@
         </el-select>
         <el-button type="primary" plain @click="onCreateWorld">新建世界</el-button>
         <el-button type="danger" plain :disabled="!selectedWorldId" @click="onDeleteWorld">删除世界</el-button>
+        <el-button :disabled="!selectedWorldId" :loading="exporting" @click="onExportWorld">导出存档</el-button>
+        <el-button type="warning" plain :disabled="!selectedWorldId" @click="onResetWorld">清空世界</el-button>
+        <el-upload
+          class="import-upload"
+          :show-file-list="false"
+          accept=".zip,.json"
+          :auto-upload="false"
+          :on-change="onImportFileChange"
+        >
+          <el-button :loading="importing">导入存档</el-button>
+        </el-upload>
         <el-divider direction="vertical" />
         <span class="world-label">是否运行</span>
         <el-switch :model-value="currentWorld.enabled === 1" @change="onToggleWorldEnabled" />
@@ -472,6 +483,9 @@ import {
   deleteSandboxWorld,
   setSandboxWorldEnabled,
   setSandboxWorldVisible,
+  exportSandboxWorld,
+  resetSandboxWorld,
+  importSandboxWorld,
   sandboxLocations,
   saveSandboxLocation,
   deleteSandboxLocation,
@@ -488,6 +502,8 @@ const world = reactive({
 const worlds = ref([])
 const { currentWorldId, setCurrentWorld } = useSandboxWorld()
 const selectedWorldId = ref(null)
+const exporting = ref(false)
+const importing = ref(false)
 const currentWorld = computed(() => worlds.value.find((item) => item.id === selectedWorldId.value) || {})
 const locations = ref([])
 const settings = reactive({
@@ -715,6 +731,128 @@ async function onCreateWorld() {
 }
 
 /** 删除世界：连同它的角色、地点、行动等数据一起删掉（不可恢复） */
+/** 导出存档：下载 zip（world.json + 图片） */
+/**
+ * 导入存档：先让管理员选"新建世界"还是"覆盖当前世界"，再上传文件。
+ * 文件名后缀支持 .zip（含图片）与 .json（只有数据）。
+ */
+async function onImportFileChange(uploadFile) {
+  const file = uploadFile && uploadFile.raw
+  if (!file) return
+  let mode = 'new'
+  try {
+    const res = await ElMessageBox.confirm(
+      '导入方式：点「新建世界」会另起一个世界（名字加「（导入）」），现有数据完全不动；'
+        + '点「覆盖当前世界」会先清空当前选中世界的进度再写入（不可恢复）。',
+      '导入存档',
+      {
+        distinguishCancelAndClose: true,
+        confirmButtonText: '新建世界',
+        cancelButtonText: '覆盖当前世界',
+        type: 'warning'
+      }
+    ).then(() => 'new').catch((action) => {
+      if (action === 'cancel') return 'overwrite'
+      throw new Error('cancel')
+    })
+    mode = res
+  } catch (e) {
+    return
+  }
+  if (mode === 'overwrite') {
+    if (!selectedWorldId.value) {
+      ElMessage.warning('请先选择一个要覆盖的世界')
+      return
+    }
+    const target = currentWorld.value
+    const name = target.name || ('世界 ' + target.id)
+    try {
+      const { value } = await ElMessageBox.prompt(
+        `覆盖会先清空「${name}」的全部进度（行动、记忆、背包、好感度等），再写入存档。请输入世界名确认：`,
+        '覆盖确认',
+        { confirmButtonText: '确认覆盖', cancelButtonText: '取消', inputPattern: /^.+$/, inputErrorMessage: '请输入世界名' }
+      )
+      if ((value || '').trim() !== name) {
+        ElMessage.warning('输入的世界名不一致，已取消')
+        return
+      }
+    } catch (e) {
+      return
+    }
+  }
+  importing.value = true
+  try {
+    const report = await importSandboxWorld(file, mode === 'overwrite' ? selectedWorldId.value : null, mode === 'overwrite')
+    const lines = [
+      `${report.mode || ''}`,
+      `世界：${report.worldName || ''}`,
+      `地点新增 ${report.locations || 0} 个、角色新增 ${report.characters || 0} 个`,
+      `行动 ${report.acts || 0} 条、记忆 ${report.memories || 0} 条、背包 ${report.items || 0} 件、关系 ${report.relations || 0} 条`,
+      `低语 ${report.whispers || 0} 条、礼物 ${report.gifts || 0} 条、金币流水 ${report.coinLogs || 0} 条、纪闻 ${report.news || 0} 条、集市 ${report.shopItems || 0} 件`
+    ]
+    if ((report.warnings || []).length) {
+      lines.push('')
+      lines.push('注意：')
+      lines.push(...report.warnings)
+    }
+    await ElMessageBox.alert(lines.join('<br/>'), '导入完成', { dangerouslyUseHTMLString: true })
+    await loadAll()
+  } finally {
+    importing.value = false
+  }
+}
+
+async function onExportWorld() {
+  if (!selectedWorldId.value) return
+  exporting.value = true
+  try {
+    const blob = await exportSandboxWorld(selectedWorldId.value, false)
+    const url = window.URL.createObjectURL(new Blob([blob]))
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `sandbox-world-${selectedWorldId.value}-${new Date().toISOString().slice(0, 10)}.zip`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    window.URL.revokeObjectURL(url)
+    ElMessage.success('存档已导出（含图片；如需附带 AI 原始输出请用接口参数）')
+  } finally {
+    exporting.value = false
+  }
+}
+
+/** 清空世界：删除全部记录并把角色恢复默认（要求输入世界名确认） */
+async function onResetWorld() {
+  const target = currentWorld.value
+  if (!target || !target.id) return
+  const name = target.name || ('世界 ' + target.id)
+  let input = ''
+  try {
+    const res = await ElMessageBox.prompt(
+      `清空后「${name}」的所有行动记录、记忆、背包、好感度、旅人低语、礼物、金币流水、纪闻与集市都会删除，`
+        + '角色位置与状态恢复默认（世界设定、地图地点、角色卡保留）。此操作不可恢复，建议先导出存档。'
+        + `\n\n请输入世界名「${name}」以确认：`,
+      '清空世界',
+      { confirmButtonText: '确认清空', cancelButtonText: '取消', inputPattern: /^.+$/, inputErrorMessage: '请输入世界名' }
+    )
+    input = (res.value || '').trim()
+  } catch (e) {
+    return
+  }
+  if (input !== name) {
+    ElMessage.warning('输入的世界名不一致，已取消')
+    return
+  }
+  const stats = await resetSandboxWorld(target.id)
+  ElMessage.success(
+    `已清空：行动 ${stats.acts || 0} 条、记忆 ${stats.memories || 0} 条、背包 ${stats.items || 0} 件、`
+      + `关系 ${stats.relations || 0} 条、低语 ${stats.whispers || 0} 条、礼物 ${stats.gifts || 0} 条、`
+      + `纪闻 ${stats.news || 0} 条、集市 ${stats.shopItems || 0} 件；角色 ${stats.characters || 0} 个已恢复默认（下次行动 ${stats.nextRunTime || ''}）`
+  )
+  cancelEdit()
+  await loadAll()
+}
+
 async function onDeleteWorld() {
   const target = currentWorld.value
   if (!target || !target.id) {

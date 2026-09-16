@@ -61,6 +61,18 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.beans.factory.annotation.Value;
+import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.InputStream;
+import java.util.HashMap;
+import java.util.zip.ZipInputStream;
+import org.springframework.web.multipart.MultipartFile;
+import java.nio.charset.StandardCharsets;
+import java.time.format.DateTimeFormatter;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -88,6 +100,12 @@ import java.util.concurrent.atomic.AtomicInteger;
 @Service
 @RequiredArgsConstructor
 public class SandboxServiceImpl implements SandboxService {
+
+    /** 上传目录（导出存档时要读取图片文件） */
+    @Value("${bcblog.upload-dir:./uploads}")
+    private String uploadDir;
+    /** 存档里的时间格式（带秒，便于导入时精确还原） */
+    private static final DateTimeFormatter SAVE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     /** 拼提示词时携带的最近行动条数，控制 token 消耗 */
     private static final int PROMPT_ACT_LIMIT = 12;
@@ -138,6 +156,7 @@ public class SandboxServiceImpl implements SandboxService {
     private final SandboxShopItemMapper shopItemMapper;
     private final SandboxShopOrderMapper shopOrderMapper;
     private final SandboxGiftMapper giftMapper;
+    private final com.bc.bcblog.mapper.AiProviderMapper aiProviderMapper;
     private final SandboxLocationMapper locationMapper;
     private final SandboxCharacterMapper characterMapper;
     private final SandboxActMapper actMapper;
@@ -4072,6 +4091,863 @@ public class SandboxServiceImpl implements SandboxService {
     }
 
     /** 解析 AI 返回的 JSON 数组（允许被 Markdown 代码块包裹） */
+    // ============================== 存档：导出 / 清空 ==============================
+
+    /** 角色清空后的默认状态 */
+    private static final String RESET_STATUS_JSON = "{\"体力\":100,\"魔力\":100,\"饥饿度\":0,\"心情\":\"平静\"}";
+
+    @Override
+    public byte[] exportWorld(Long worldId, boolean includeRawResponse) {
+        Long wid = worldId(worldId);
+        SandboxWorld world = world(wid);
+        if (world.getId() == null) {
+            throw new BusinessException("世界不存在");
+        }
+        List<SandboxLocation> locations = locations(wid);
+        List<SandboxCharacter> characters = characters(wid);
+        JSONObject root = new JSONObject();
+        root.set("format", "bcblog-sandbox-save");
+        root.set("version", 1);
+        root.set("exportedAt", LocalDateTime.now().format(DATE_TIME_FORMATTER));
+        root.set("includeRawResponse", includeRawResponse);
+
+        JSONObject worldJson = new JSONObject();
+        worldJson.set("name", world.getName());
+        worldJson.set("description", world.getDescription());
+        worldJson.set("mapImage", world.getMapImage());
+        worldJson.set("worldPrompt", world.getWorldPrompt());
+        worldJson.set("enabled", world.getEnabled());
+        worldJson.set("portalVisible", world.getPortalVisible());
+        root.set("world", worldJson);
+
+        JSONArray locationArray = new JSONArray();
+        for (SandboxLocation item : locations) {
+            JSONObject o = new JSONObject();
+            o.set("name", item.getName());
+            o.set("icon", item.getIcon());
+            o.set("x", item.getX());
+            o.set("y", item.getY());
+            o.set("width", item.getWidth());
+            o.set("height", item.getHeight());
+            o.set("polygon", item.getPolygon());
+            o.set("description", item.getDescription());
+            o.set("sortOrder", item.getSortOrder());
+            locationArray.add(o);
+        }
+        root.set("locations", locationArray);
+
+        JSONArray characterArray = new JSONArray();
+        for (SandboxCharacter c : characters) {
+            JSONObject o = new JSONObject();
+            o.set("name", c.getName());
+            o.set("title", c.getTitle());
+            o.set("avatar", c.getAvatar());
+            o.set("appearance", c.getAppearance());
+            o.set("persona", c.getPersona());
+            o.set("providerName", providerNameOf(c.getProviderId()));
+            o.set("model", c.getModel());
+            o.set("temperature", c.getTemperature());
+            o.set("intervalMin", c.getIntervalMin());
+            o.set("intervalMax", c.getIntervalMax());
+            o.set("aiIntervalMin", c.getAiIntervalMin());
+            o.set("aiIntervalMax", c.getAiIntervalMax());
+            o.set("enabled", c.getEnabled());
+            o.set("x", c.getX());
+            o.set("y", c.getY());
+            o.set("locationName", c.getLocationName());
+            o.set("subLocation", c.getSubLocation());
+            o.set("statusJson", c.getStatusJson());
+            o.set("coins", c.getCoins());
+            o.set("combatPower", c.getCombatPower());
+            characterArray.add(o);
+        }
+        root.set("characters", characterArray);
+
+        JSONArray actArray = new JSONArray();
+        for (SandboxAct act : actMapper.selectList(new LambdaQueryWrapper<SandboxAct>()
+                .eq(SandboxAct::getWorldId, wid).orderByAsc(SandboxAct::getId))) {
+            JSONObject o = new JSONObject();
+            o.set("characterName", characterNameOf(characters, act.getCharacterId()));
+            o.set("createTime", act.getCreateTime() == null ? null : act.getCreateTime().format(SAVE_TIME_FORMATTER));
+            o.set("locationName", act.getLocationName());
+            o.set("subLocation", act.getSubLocation());
+            o.set("x", act.getX());
+            o.set("y", act.getY());
+            o.set("actions", act.getActions());
+            o.set("innerVoice", act.getInnerVoice());
+            o.set("summary", act.getSummary());
+            o.set("statusJson", act.getStatusJson());
+            o.set("coinChange", act.getCoinChange());
+            o.set("combatChange", act.getCombatChange());
+            o.set("favorChange", act.getFavorChange());
+            o.set("itemChange", act.getItemChange());
+            o.set("companions", act.getCompanions());
+            o.set("newsRef", act.getNewsRef());
+            o.set("manual", act.getManual());
+            o.set("reaction", act.getReaction());
+            o.set("fromAi", act.getFromAi());
+            if (includeRawResponse) {
+                o.set("rawResponse", act.getRawResponse());
+            }
+            actArray.add(o);
+        }
+        root.set("acts", actArray);
+
+        JSONArray memoryArray = new JSONArray();
+        for (SandboxMemory m : memoryMapper.selectList(new LambdaQueryWrapper<SandboxMemory>()
+                .eq(SandboxMemory::getWorldId, wid).orderByAsc(SandboxMemory::getId))) {
+            JSONObject o = new JSONObject();
+            o.set("characterName", characterNameOf(characters, m.getCharacterId()));
+            o.set("memoryDate", m.getMemoryDate() == null ? null : m.getMemoryDate().toString());
+            o.set("summary", m.getSummary());
+            o.set("fromAi", m.getFromAi());
+            memoryArray.add(o);
+        }
+        root.set("memories", memoryArray);
+
+        JSONArray itemArray = new JSONArray();
+        for (SandboxItem it : itemMapper.selectList(new LambdaQueryWrapper<SandboxItem>()
+                .eq(SandboxItem::getWorldId, wid).orderByAsc(SandboxItem::getId))) {
+            JSONObject o = new JSONObject();
+            o.set("characterName", characterNameOf(characters, it.getCharacterId()));
+            o.set("name", it.getName());
+            o.set("quantity", it.getQuantity());
+            o.set("rarity", it.getRarity());
+            o.set("icon", it.getIcon());
+            o.set("description", it.getDescription());
+            itemArray.add(o);
+        }
+        root.set("items", itemArray);
+
+        JSONArray relationArray = new JSONArray();
+        for (SandboxRelation r : relationMapper.selectList(new LambdaQueryWrapper<SandboxRelation>()
+                .eq(SandboxRelation::getWorldId, wid).orderByAsc(SandboxRelation::getId))) {
+            JSONObject o = new JSONObject();
+            o.set("characterName", characterNameOf(characters, r.getCharacterId()));
+            o.set("targetName", characterNameOf(characters, r.getTargetId()));
+            o.set("favor", r.getFavor());
+            o.set("remark", r.getRemark());
+            o.set("lastChange", r.getLastChange());
+            relationArray.add(o);
+        }
+        root.set("relations", relationArray);
+
+        JSONArray whisperArray = new JSONArray();
+        for (SandboxInteraction w : interactionMapper.selectList(new LambdaQueryWrapper<SandboxInteraction>()
+                .eq(SandboxInteraction::getWorldId, wid).orderByAsc(SandboxInteraction::getId))) {
+            JSONObject o = new JSONObject();
+            o.set("characterName", characterNameOf(characters, w.getCharacterId()));
+            o.set("userName", w.getUserName());
+            o.set("userAvatar", w.getUserAvatar());
+            o.set("content", w.getContent());
+            o.set("pointsCost", w.getPointsCost());
+            o.set("createTime", w.getCreateTime() == null ? null : w.getCreateTime().format(SAVE_TIME_FORMATTER));
+            whisperArray.add(o);
+        }
+        root.set("whispers", whisperArray);
+
+        JSONArray giftArray = new JSONArray();
+        for (SandboxGift g : giftMapper.selectList(new LambdaQueryWrapper<SandboxGift>()
+                .eq(SandboxGift::getWorldId, wid).orderByAsc(SandboxGift::getId))) {
+            JSONObject o = new JSONObject();
+            o.set("characterName", characterNameOf(characters, g.getCharacterId()));
+            o.set("itemName", g.getItemName());
+            o.set("itemDescription", g.getItemDescription());
+            o.set("quantity", g.getQuantity());
+            o.set("pointsCost", g.getPointsCost());
+            o.set("createTime", g.getCreateTime() == null ? null : g.getCreateTime().format(SAVE_TIME_FORMATTER));
+            giftArray.add(o);
+        }
+        root.set("gifts", giftArray);
+
+        JSONArray coinArray = new JSONArray();
+        for (SandboxCoinLog log : coinLogMapper.selectList(new LambdaQueryWrapper<SandboxCoinLog>()
+                .eq(SandboxCoinLog::getWorldId, wid).orderByAsc(SandboxCoinLog::getId))) {
+            JSONObject o = new JSONObject();
+            o.set("characterName", characterNameOf(characters, log.getCharacterId()));
+            o.set("userName", log.getUserName());
+            o.set("type", log.getType());
+            o.set("coins", log.getCoins());
+            o.set("pointsCost", log.getPointsCost());
+            o.set("balance", log.getBalance());
+            o.set("remark", log.getRemark());
+            o.set("createTime", log.getCreateTime() == null ? null : log.getCreateTime().format(SAVE_TIME_FORMATTER));
+            coinArray.add(o);
+        }
+        root.set("coinLogs", coinArray);
+
+        JSONArray newsArray = new JSONArray();
+        for (SandboxNews n : newsMapper.selectList(new LambdaQueryWrapper<SandboxNews>()
+                .eq(SandboxNews::getWorldId, wid).orderByAsc(SandboxNews::getId))) {
+            JSONObject o = new JSONObject();
+            o.set("title", n.getTitle());
+            o.set("content", n.getContent());
+            o.set("locationName", n.getLocationName());
+            o.set("x", n.getX());
+            o.set("y", n.getY());
+            o.set("level", n.getLevel());
+            o.set("source", n.getSource());
+            o.set("newsDate", n.getNewsDate() == null ? null : n.getNewsDate().toString());
+            o.set("pinned", n.getPinned());
+            o.set("enabled", n.getEnabled());
+            newsArray.add(o);
+        }
+        root.set("news", newsArray);
+
+        JSONArray shopArray = new JSONArray();
+        for (SandboxShopItem s : shopItemMapper.selectList(new LambdaQueryWrapper<SandboxShopItem>()
+                .eq(SandboxShopItem::getWorldId, wid).orderByAsc(SandboxShopItem::getId))) {
+            JSONObject o = new JSONObject();
+            o.set("name", s.getName());
+            o.set("description", s.getDescription());
+            o.set("icon", s.getIcon());
+            o.set("rarity", s.getRarity());
+            o.set("price", s.getPrice());
+            o.set("originalPrice", s.getOriginalPrice());
+            o.set("stock", s.getStock());
+            o.set("totalStock", s.getTotalStock());
+            o.set("source", s.getSource());
+            o.set("pinned", s.getPinned());
+            o.set("enabled", s.getEnabled());
+            o.set("batchTime", s.getBatchTime() == null ? null : s.getBatchTime().format(SAVE_TIME_FORMATTER));
+            shopArray.add(o);
+        }
+        root.set("shopItems", shopArray);
+
+        // 打包 zip：world.json + 引用到的图片（地图、立绘、图标）
+        List<String> images = new ArrayList<>();
+        collectUploadPath(images, world.getMapImage());
+        for (SandboxCharacter c : characters) {
+            collectUploadPath(images, c.getAvatar());
+        }
+        for (SandboxLocation l : locations) {
+            collectUploadPath(images, l.getIcon());
+        }
+        for (Object element : itemArray) {
+            collectUploadPath(images, ((JSONObject) element).getStr("icon"));
+        }
+        for (Object element : shopArray) {
+            collectUploadPath(images, ((JSONObject) element).getStr("icon"));
+        }
+        try (ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+             ZipOutputStream zip = new ZipOutputStream(buffer, StandardCharsets.UTF_8)) {
+            zip.putNextEntry(new ZipEntry("world.json"));
+            zip.write(root.toStringPretty().getBytes(StandardCharsets.UTF_8));
+            zip.closeEntry();
+            for (String path : images) {
+                File file = new File(uploadDir, path);
+                if (!file.exists() || !file.isFile()) {
+                    log.warn("导出存档：图片文件不存在，已跳过 {}", path);
+                    continue;
+                }
+                zip.putNextEntry(new ZipEntry("uploads/" + path.replace('\\', '/')));
+                try (FileInputStream in = new FileInputStream(file)) {
+                    byte[] chunk = new byte[8192];
+                    int len;
+                    while ((len = in.read(chunk)) > 0) {
+                        zip.write(chunk, 0, len);
+                    }
+                }
+                zip.closeEntry();
+            }
+            zip.finish();
+            return buffer.toByteArray();
+        } catch (Exception e) {
+            throw new BusinessException("导出存档失败：" + e.getMessage());
+        }
+    }
+
+    /** 把 /uploads/xxx 这类路径收集起来（去重），用于打进 zip */
+    /**
+     * 导入存档：支持 zip（world.json + 图片）或纯 world.json。
+     * 覆盖模式会先清空目标世界的进度；新建模式会另起一个世界。
+     * 记录之间靠**名字**重新映射（地点名/角色名），AI 服务商也按名字匹配，
+     * 匹配不到就回落到系统服务商并记进导入报告，避免导完发现角色跑不动。
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public Map<String, Object> importWorld(MultipartFile file, Long targetWorldId, boolean overwrite) {
+        JSONObject root = readSaveFile(file);
+        JSONObject worldJson = root.getJSONObject("world");
+        if (worldJson == null || !notBlank(worldJson.getStr("name"))) {
+            throw new BusinessException("存档文件不完整：缺少 world 信息");
+        }
+        Map<String, Object> report = new LinkedHashMap<>();
+        List<String> warnings = new ArrayList<>();
+
+        // 1. 世界：覆盖模式改现有世界，新建模式另起一个
+        SandboxWorld world;
+        if (overwrite) {
+            requireWorld(targetWorldId);
+            resetWorld(targetWorldId);
+            world = world(targetWorldId);
+            report.put("mode", "覆盖世界 #" + targetWorldId);
+        } else {
+            world = new SandboxWorld();
+            world.setName(truncate(worldJson.getStr("name") + "（导入）", 100));
+            world.setEnabled(0);
+            world.setPortalVisible(0);
+            worldMapper.insert(world);
+            report.put("mode", "新建世界 #" + world.getId());
+        }
+        String saveName = worldJson.getStr("name");
+        SandboxWorld update = new SandboxWorld();
+        update.setId(world.getId());
+        if (overwrite) {
+            update.setName(truncate(saveName, 100));
+        }
+        update.setDescription(truncate(worldJson.getStr("description"), 500));
+        update.setMapImage(truncate(worldJson.getStr("mapImage"), 500));
+        update.setWorldPrompt(worldJson.getStr("worldPrompt"));
+        if (overwrite) {
+            update.setEnabled(worldJson.getInt("enabled") == null ? 0 : worldJson.getInt("enabled"));
+            update.setPortalVisible(worldJson.getInt("portalVisible") == null ? 0 : worldJson.getInt("portalVisible"));
+        }
+        worldMapper.updateById(update);
+        world = world(world.getId());
+        report.put("worldName", world.getName());
+
+        // 2. 地点：按名字匹配现有地点，没有就新建
+        Map<String, SandboxLocation> locationMap = new HashMap<>();
+        for (SandboxLocation existing : locations(world.getId())) {
+            locationMap.put(existing.getName(), existing);
+        }
+        int newLocations = 0;
+        JSONArray locationArray = root.getJSONArray("locations");
+        if (locationArray != null) {
+            for (Object element : locationArray) {
+                JSONObject o = toObject(element);
+                if (o == null || !notBlank(o.getStr("name"))) {
+                    continue;
+                }
+                String name = truncate(o.getStr("name"), 90);
+                if (locationMap.containsKey(name)) {
+                    continue;
+                }
+                SandboxLocation location = new SandboxLocation();
+                location.setWorldId(world.getId());
+                location.setName(name);
+                location.setIcon(truncate(o.getStr("icon"), 500));
+                location.setX(o.getInt("x"));
+                location.setY(o.getInt("y"));
+                location.setWidth(o.getInt("width"));
+                location.setHeight(o.getInt("height"));
+                location.setPolygon(o.getStr("polygon"));
+                location.setDescription(truncate(o.getStr("description"), 500));
+                location.setSortOrder(o.getInt("sortOrder") == null ? 0 : o.getInt("sortOrder"));
+                locationMapper.insert(location);
+                locationMap.put(name, location);
+                newLocations++;
+            }
+        }
+        report.put("locations", newLocations);
+
+        // 3. 角色：按名字匹配，没有就新建；AI 服务商按名字匹配
+        Map<String, SandboxCharacter> characterMap = new HashMap<>();
+        for (SandboxCharacter existing : characters(world.getId())) {
+            characterMap.put(existing.getName(), existing);
+        }
+        Map<String, Long> providerIds = providerIdsByName();
+        int newCharacters = 0;
+        JSONArray characterArray = root.getJSONArray("characters");
+        if (characterArray != null) {
+            for (Object element : characterArray) {
+                JSONObject o = toObject(element);
+                if (o == null || !notBlank(o.getStr("name"))) {
+                    continue;
+                }
+                String name = truncate(o.getStr("name"), 90);
+                SandboxCharacter character = characterMap.get(name);
+                if (character == null) {
+                    character = new SandboxCharacter();
+                    character.setWorldId(world.getId());
+                    character.setName(name);
+                    character.setCreateTime(LocalDateTime.now());
+                    newCharacters++;
+                }
+                character.setTitle(truncate(o.getStr("title"), 90));
+                character.setAvatar(truncate(o.getStr("avatar"), 500));
+                character.setAppearance(truncate(o.getStr("appearance"), 500));
+                character.setPersona(o.getStr("persona"));
+                String providerName = o.getStr("providerName");
+                if (notBlank(providerName)) {
+                    Long pid = providerIds.get(providerName.trim());
+                    if (pid != null) {
+                        character.setProviderId(pid);
+                    } else {
+                        character.setProviderId(null);
+                        warnings.add("角色「" + name + "」的服务商「" + providerName + "」在本站不存在，已改为系统服务商");
+                    }
+                }
+                character.setModel(truncate(o.getStr("model"), 90));
+                character.setTemperature(o.getBigDecimal("temperature"));
+                character.setIntervalMin(o.getInt("intervalMin"));
+                character.setIntervalMax(o.getInt("intervalMax"));
+                character.setAiIntervalMin(o.getInt("aiIntervalMin"));
+                character.setAiIntervalMax(o.getInt("aiIntervalMax"));
+                character.setEnabled(o.getInt("enabled") == null ? 1 : o.getInt("enabled"));
+                character.setX(o.getInt("x"));
+                character.setY(o.getInt("y"));
+                character.setLocationName(truncate(o.getStr("locationName"), 90));
+                character.setSubLocation(truncate(o.getStr("subLocation"), 90));
+                character.setStatusJson(truncate(o.getStr("statusJson"), 1000));
+                character.setCoins(o.getInt("coins") == null ? 0 : o.getInt("coins"));
+                character.setCombatPower(o.getInt("combatPower") == null ? COMBAT_POWER_DEFAULT : o.getInt("combatPower"));
+                // 下次行动时间不照搬存档：统一给一个间隔，避免导入后立刻全跑或永远不跑
+                character.setNextRunTime(LocalDateTime.now()
+                        .plusMinutes(Math.max(15, intConfig("sandbox_interval_max", 75))));
+                character.setNextReason(null);
+                character.setLastRunTime(null);
+                character.setLastError(null);
+                character.setFailCount(0);
+                if (character.getId() == null) {
+                    characterMapper.insert(character);
+                } else {
+                    characterMapper.updateById(character);
+                }
+                characterMap.put(name, character);
+            }
+        }
+        report.put("characters", newCharacters);
+
+        // 4. 行动记录
+        int acts = 0;
+        JSONArray actArray = root.getJSONArray("acts");
+        if (actArray != null) {
+            for (Object element : actArray) {
+                JSONObject o = toObject(element);
+                SandboxCharacter owner = o == null ? null : characterMap.get(truncate(o.getStr("characterName"), 90));
+                if (owner == null) {
+                    continue;
+                }
+                SandboxAct act = new SandboxAct();
+                act.setWorldId(world.getId());
+                act.setCharacterId(owner.getId());
+                act.setCreateTime(parseSaveTime(o.getStr("createTime")));
+                act.setLocationName(truncate(o.getStr("locationName"), 90));
+                act.setSubLocation(truncate(o.getStr("subLocation"), 90));
+                act.setX(o.getInt("x"));
+                act.setY(o.getInt("y"));
+                act.setActions(truncate(o.getStr("actions"), 1000));
+                act.setInnerVoice(truncate(o.getStr("innerVoice"), 1000));
+                act.setSummary(truncate(o.getStr("summary"), 280));
+                act.setStatusJson(truncate(o.getStr("statusJson"), 1000));
+                act.setCoinChange(o.getInt("coinChange"));
+                act.setCombatChange(o.getInt("combatChange"));
+                act.setFavorChange(truncate(o.getStr("favorChange"), 190));
+                act.setItemChange(truncate(o.getStr("itemChange"), 190));
+                act.setCompanions(truncate(o.getStr("companions"), 190));
+                act.setNewsRef(truncate(o.getStr("newsRef"), 190));
+                act.setManual(o.getInt("manual") == null ? 0 : o.getInt("manual"));
+                act.setReaction(o.getInt("reaction") == null ? 0 : o.getInt("reaction"));
+                act.setFromAi(o.getInt("fromAi") == null ? 1 : o.getInt("fromAi"));
+                act.setRawResponse(o.getStr("rawResponse"));
+                actMapper.insert(act);
+                acts++;
+            }
+        }
+        report.put("acts", acts);
+
+        // 5. 记忆
+        int memories = 0;
+        JSONArray memoryArray = root.getJSONArray("memories");
+        if (memoryArray != null) {
+            for (Object element : memoryArray) {
+                JSONObject o = toObject(element);
+                SandboxCharacter owner = o == null ? null : characterMap.get(truncate(o.getStr("characterName"), 90));
+                if (owner == null) {
+                    continue;
+                }
+                SandboxMemory memory = new SandboxMemory();
+                memory.setWorldId(world.getId());
+                memory.setCharacterId(owner.getId());
+                memory.setMemoryDate(parseSaveDate(o.getStr("memoryDate")));
+                memory.setSummary(o.getStr("summary"));
+                memory.setFromAi(o.getInt("fromAi") == null ? 1 : o.getInt("fromAi"));
+                memory.setCreateTime(LocalDateTime.now());
+                memoryMapper.insert(memory);
+                memories++;
+            }
+        }
+        report.put("memories", memories);
+
+        // 6. 背包
+        int items = 0;
+        JSONArray itemArray = root.getJSONArray("items");
+        if (itemArray != null) {
+            for (Object element : itemArray) {
+                JSONObject o = toObject(element);
+                SandboxCharacter owner = o == null ? null : characterMap.get(truncate(o.getStr("characterName"), 90));
+                if (owner == null || !notBlank(o.getStr("name"))) {
+                    continue;
+                }
+                SandboxItem item = new SandboxItem();
+                item.setWorldId(world.getId());
+                item.setCharacterId(owner.getId());
+                item.setName(truncate(o.getStr("name"), 60));
+                item.setQuantity(o.getInt("quantity") == null ? 1 : o.getInt("quantity"));
+                item.setRarity(o.getInt("rarity") == null ? 1 : o.getInt("rarity"));
+                item.setIcon(truncate(o.getStr("icon"), 500));
+                item.setDescription(truncate(o.getStr("description"), 300));
+                item.setCreateTime(LocalDateTime.now());
+                item.setUpdateTime(LocalDateTime.now());
+                itemMapper.insert(item);
+                items++;
+            }
+        }
+        report.put("items", items);
+
+        // 7. 好感度
+        int relations = 0;
+        JSONArray relationArray = root.getJSONArray("relations");
+        if (relationArray != null) {
+            for (Object element : relationArray) {
+                JSONObject o = toObject(element);
+                SandboxCharacter owner = o == null ? null : characterMap.get(truncate(o.getStr("characterName"), 90));
+                SandboxCharacter target = o == null ? null : characterMap.get(truncate(o.getStr("targetName"), 90));
+                if (owner == null || target == null) {
+                    continue;
+                }
+                SandboxRelation relation = new SandboxRelation();
+                relation.setWorldId(world.getId());
+                relation.setCharacterId(owner.getId());
+                relation.setTargetId(target.getId());
+                relation.setFavor(o.getInt("favor") == null ? 0 : o.getInt("favor"));
+                relation.setRemark(truncate(o.getStr("remark"), 190));
+                relation.setLastChange(o.getInt("lastChange"));
+                relation.setLastChangeTime(LocalDateTime.now());
+                relation.setCreateTime(LocalDateTime.now());
+                relation.setUpdateTime(LocalDateTime.now());
+                relationMapper.insert(relation);
+                relations++;
+            }
+        }
+        report.put("relations", relations);
+
+        // 8. 旅人低语 / 礼物 / 金币流水
+        int whispers = 0;
+        JSONArray whisperArray = root.getJSONArray("whispers");
+        if (whisperArray != null) {
+            for (Object element : whisperArray) {
+                JSONObject o = toObject(element);
+                SandboxCharacter owner = o == null ? null : characterMap.get(truncate(o.getStr("characterName"), 90));
+                if (owner == null) {
+                    continue;
+                }
+                SandboxInteraction w = new SandboxInteraction();
+                w.setWorldId(world.getId());
+                w.setCharacterId(owner.getId());
+                w.setUserName(truncate(o.getStr("userName"), 90));
+                w.setUserAvatar(truncate(o.getStr("userAvatar"), 500));
+                w.setContent(truncate(o.getStr("content"), 200));
+                w.setPointsCost(o.getInt("pointsCost") == null ? 0 : o.getInt("pointsCost"));
+                w.setCreateTime(parseSaveTime(o.getStr("createTime")));
+                interactionMapper.insert(w);
+                whispers++;
+            }
+        }
+        report.put("whispers", whispers);
+
+        int gifts = 0;
+        JSONArray giftArray = root.getJSONArray("gifts");
+        if (giftArray != null) {
+            for (Object element : giftArray) {
+                JSONObject o = toObject(element);
+                SandboxCharacter owner = o == null ? null : characterMap.get(truncate(o.getStr("characterName"), 90));
+                if (owner == null) {
+                    continue;
+                }
+                SandboxGift gift = new SandboxGift();
+                gift.setWorldId(world.getId());
+                gift.setCharacterId(owner.getId());
+                gift.setItemName(truncate(o.getStr("itemName"), 90));
+                gift.setItemDescription(truncate(o.getStr("itemDescription"), 300));
+                gift.setQuantity(o.getInt("quantity") == null ? 1 : o.getInt("quantity"));
+                gift.setPointsCost(o.getInt("pointsCost") == null ? 0 : o.getInt("pointsCost"));
+                gift.setCreateTime(parseSaveTime(o.getStr("createTime")));
+                giftMapper.insert(gift);
+                gifts++;
+            }
+        }
+        report.put("gifts", gifts);
+
+        int coinLogs = 0;
+        JSONArray coinArray = root.getJSONArray("coinLogs");
+        if (coinArray != null) {
+            for (Object element : coinArray) {
+                JSONObject o = toObject(element);
+                SandboxCharacter owner = o == null ? null : characterMap.get(truncate(o.getStr("characterName"), 90));
+                if (owner == null) {
+                    continue;
+                }
+                SandboxCoinLog log = new SandboxCoinLog();
+                log.setWorldId(world.getId());
+                log.setCharacterId(owner.getId());
+                log.setUserName(truncate(o.getStr("userName"), 90));
+                log.setType(truncate(o.getStr("type"), 20));
+                log.setCoins(o.getInt("coins") == null ? 0 : o.getInt("coins"));
+                log.setPointsCost(o.getInt("pointsCost") == null ? 0 : o.getInt("pointsCost"));
+                log.setBalance(o.getInt("balance") == null ? 0 : o.getInt("balance"));
+                log.setRemark(truncate(o.getStr("remark"), 190));
+                log.setCreateTime(parseSaveTime(o.getStr("createTime")));
+                coinLogMapper.insert(log);
+                coinLogs++;
+            }
+        }
+        report.put("coinLogs", coinLogs);
+
+        // 9. 纪闻与集市商品
+        int newsCount = 0;
+        JSONArray newsArray = root.getJSONArray("news");
+        if (newsArray != null) {
+            for (Object element : newsArray) {
+                JSONObject o = toObject(element);
+                if (o == null || !notBlank(o.getStr("title"))) {
+                    continue;
+                }
+                SandboxNews news = new SandboxNews();
+                news.setWorldId(world.getId());
+                news.setTitle(truncate(o.getStr("title"), 190));
+                news.setContent(truncate(o.getStr("content"), 490));
+                news.setLocationName(truncate(o.getStr("locationName"), 90));
+                news.setX(o.getInt("x"));
+                news.setY(o.getInt("y"));
+                news.setLevel(o.getInt("level") == null ? 1 : o.getInt("level"));
+                news.setSource(truncate(o.getStr("source"), 20));
+                news.setNewsDate(parseSaveDate(o.getStr("newsDate")));
+                news.setPinned(o.getInt("pinned") == null ? 0 : o.getInt("pinned"));
+                news.setEnabled(o.getInt("enabled") == null ? 1 : o.getInt("enabled"));
+                news.setCreateTime(LocalDateTime.now());
+                newsMapper.insert(news);
+                newsCount++;
+            }
+        }
+        report.put("news", newsCount);
+
+        int shopItems = 0;
+        JSONArray shopArray = root.getJSONArray("shopItems");
+        if (shopArray != null) {
+            for (Object element : shopArray) {
+                JSONObject o = toObject(element);
+                if (o == null || !notBlank(o.getStr("name"))) {
+                    continue;
+                }
+                SandboxShopItem item = new SandboxShopItem();
+                item.setWorldId(world.getId());
+                item.setName(truncate(o.getStr("name"), 60));
+                item.setDescription(truncate(o.getStr("description"), 300));
+                item.setIcon(truncate(o.getStr("icon"), 500));
+                item.setRarity(o.getInt("rarity") == null ? 1 : o.getInt("rarity"));
+                item.setPrice(o.getInt("price") == null ? 1 : o.getInt("price"));
+                item.setOriginalPrice(o.getInt("originalPrice"));
+                item.setStock(o.getInt("stock") == null ? 0 : o.getInt("stock"));
+                item.setTotalStock(o.getInt("totalStock") == null ? 1 : o.getInt("totalStock"));
+                item.setSource(truncate(o.getStr("source"), 20));
+                item.setPinned(o.getInt("pinned") == null ? 0 : o.getInt("pinned"));
+                item.setEnabled(o.getInt("enabled") == null ? 1 : o.getInt("enabled"));
+                LocalDateTime batch = parseSaveTime(o.getStr("batchTime"));
+                item.setBatchTime(batch == null ? LocalDateTime.now() : batch);
+                item.setCreateTime(LocalDateTime.now());
+                shopItemMapper.insert(item);
+                shopItems++;
+            }
+        }
+        report.put("shopItems", shopItems);
+
+        report.put("warnings", warnings);
+        log.info("沙盒存档导入完成：{}", report);
+        return report;
+    }
+
+    /** 读取存档：zip 取里面的 world.json，否则按纯 JSON 解析 */
+    private JSONObject readSaveFile(MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            throw new BusinessException("请选择要导入的存档文件");
+        }
+        try (InputStream in = file.getInputStream()) {
+            String text = null;
+            if (file.getOriginalFilename() != null && file.getOriginalFilename().toLowerCase().endsWith(".zip")) {
+                try (ZipInputStream zip = new ZipInputStream(in, StandardCharsets.UTF_8)) {
+                    ZipEntry entry;
+                    ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+                    while ((entry = zip.getNextEntry()) != null) {
+                        String name = entry.getName() == null ? "" : entry.getName().replace('\\', '/');
+                        if ("world.json".equals(name)) {
+                            byte[] chunk = new byte[8192];
+                            int len;
+                            while ((len = zip.read(chunk)) > 0) {
+                                buffer.write(chunk, 0, len);
+                            }
+                            text = new String(buffer.toByteArray(), StandardCharsets.UTF_8);
+                            break;
+                        }
+                        if (name.startsWith("uploads/") && !entry.isDirectory()) {
+                            File target = new File(uploadDir, name);
+                            File parent = target.getParentFile();
+                            if (parent != null && !parent.exists()) {
+                                parent.mkdirs();
+                            }
+                            try (java.io.FileOutputStream out = new java.io.FileOutputStream(target)) {
+                                byte[] chunk = new byte[8192];
+                                int len;
+                                while ((len = zip.read(chunk)) > 0) {
+                                    out.write(chunk, 0, len);
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                text = new String(readAll(in), StandardCharsets.UTF_8);
+            }
+            if (!notBlank(text)) {
+                throw new BusinessException("存档里没有找到 world.json");
+            }
+            JSONObject root = JSONUtil.parseObj(text);
+            if (root == null) {
+                throw new BusinessException("存档内容不是合法的 JSON");
+            }
+            return root;
+        } catch (BusinessException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new BusinessException("读取存档失败：" + e.getMessage());
+        }
+    }
+
+    private byte[] readAll(InputStream in) throws Exception {
+        ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+        byte[] chunk = new byte[8192];
+        int len;
+        while ((len = in.read(chunk)) > 0) {
+            buffer.write(chunk, 0, len);
+        }
+        return buffer.toByteArray();
+    }
+
+    /** 服务商名字 -> id（导入存档时按名字匹配，跨环境才有意义） */
+    private Map<String, Long> providerIdsByName() {
+        Map<String, Long> map = new HashMap<>();
+        for (AiProvider provider : aiProviderMapper.selectList(null)) {
+            if (notBlank(provider.getName())) {
+                map.put(provider.getName().trim(), provider.getId());
+            }
+        }
+        return map;
+    }
+
+    private JSONObject toObject(Object element) {
+        if (element instanceof JSONObject) {
+            return (JSONObject) element;
+        }
+        if (element instanceof Map) {
+            return new JSONObject((Map<?, ?>) element);
+        }
+        return null;
+    }
+
+    private LocalDateTime parseSaveTime(String text) {
+        if (!notBlank(text)) {
+            return LocalDateTime.now();
+        }
+        try {
+            return LocalDateTime.parse(text.trim(), SAVE_TIME_FORMATTER);
+        } catch (Exception e) {
+            return LocalDateTime.now();
+        }
+    }
+
+    private LocalDate parseSaveDate(String text) {
+        if (!notBlank(text)) {
+            return LocalDate.now();
+        }
+        try {
+            return LocalDate.parse(text.trim());
+        } catch (Exception e) {
+            return LocalDate.now();
+        }
+    }
+
+    private void collectUploadPath(List<String> images, String url) {
+        if (!notBlank(url) || !url.startsWith("/uploads/")) {
+            return;
+        }
+        String path = url.substring("/uploads/".length());
+        if (!images.contains(path)) {
+            images.add(path);
+        }
+    }
+
+    /** 角色使用的服务商名（导出存档用名字，跨环境导入才有意义） */
+    private String providerNameOf(Long providerId) {
+        if (providerId == null) {
+            return null;
+        }
+        AiProvider provider = aiProviderMapper.selectById(providerId);
+        return provider == null ? null : provider.getName();
+    }
+
+    /**
+     * 清空世界进度：删掉该世界的全部记录，并把角色恢复成"刚开局"的状态。
+     * 世界设定（名称/简介/地图/世界观）、地图地点、角色卡（人设/立绘/模型绑定）都保留。
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public Map<String, Object> resetWorld(Long worldId) {
+        requireWorld(worldId);
+        Map<String, Object> stats = new LinkedHashMap<>();
+        stats.put("acts", actMapper.delete(new LambdaQueryWrapper<SandboxAct>().eq(SandboxAct::getWorldId, worldId)));
+        stats.put("memories", memoryMapper.delete(new LambdaQueryWrapper<SandboxMemory>()
+                .eq(SandboxMemory::getWorldId, worldId)));
+        stats.put("items", itemMapper.delete(new LambdaQueryWrapper<SandboxItem>()
+                .eq(SandboxItem::getWorldId, worldId)));
+        stats.put("relations", relationMapper.delete(new LambdaQueryWrapper<SandboxRelation>()
+                .eq(SandboxRelation::getWorldId, worldId)));
+        stats.put("whispers", interactionMapper.delete(new LambdaQueryWrapper<SandboxInteraction>()
+                .eq(SandboxInteraction::getWorldId, worldId)));
+        stats.put("gifts", giftMapper.delete(new LambdaQueryWrapper<SandboxGift>()
+                .eq(SandboxGift::getWorldId, worldId)));
+        stats.put("coinLogs", coinLogMapper.delete(new LambdaQueryWrapper<SandboxCoinLog>()
+                .eq(SandboxCoinLog::getWorldId, worldId)));
+        stats.put("news", newsMapper.delete(new LambdaQueryWrapper<SandboxNews>()
+                .eq(SandboxNews::getWorldId, worldId)));
+        stats.put("shopOrders", shopOrderMapper.delete(new LambdaQueryWrapper<SandboxShopOrder>()
+                .eq(SandboxShopOrder::getWorldId, worldId)));
+        stats.put("shopItems", shopItemMapper.delete(new LambdaQueryWrapper<SandboxShopItem>()
+                .eq(SandboxShopItem::getWorldId, worldId)));
+
+        // 位置回到第一个地点的中心；没有地点就回地图中央
+        List<SandboxLocation> locations = locations(worldId);
+        SandboxLocation first = locations.isEmpty() ? null : locations.get(0);
+        int x = first == null ? 50 : centerX(first);
+        int y = first == null ? 50 : centerY(first);
+        // 下次行动时间：给一个间隔之后再开始，避免清空瞬间所有角色一起调用 AI
+        int delay = Math.max(15, intConfig("sandbox_interval_max", 75));
+        LocalDateTime next = LocalDateTime.now().plusMinutes(delay);
+        int count = 0;
+        for (SandboxCharacter character : characters(worldId)) {
+            characterMapper.update(null, new LambdaUpdateWrapper<SandboxCharacter>()
+                    .eq(SandboxCharacter::getId, character.getId())
+                    .set(SandboxCharacter::getX, x)
+                    .set(SandboxCharacter::getY, y)
+                    .set(SandboxCharacter::getLocationName, first == null ? null : first.getName())
+                    .set(SandboxCharacter::getSubLocation, null)
+                    .set(SandboxCharacter::getStatusJson, RESET_STATUS_JSON)
+                    .set(SandboxCharacter::getCoins, 0)
+                    .set(SandboxCharacter::getCombatPower, COMBAT_POWER_DEFAULT)
+                    .set(SandboxCharacter::getLastRunTime, null)
+                    .set(SandboxCharacter::getNextRunTime, next)
+                    .set(SandboxCharacter::getNextReason, null)
+                    .set(SandboxCharacter::getLastError, null)
+                    .set(SandboxCharacter::getFailCount, 0));
+            count++;
+        }
+        stats.put("characters", count);
+        stats.put("nextRunTime", next.format(DATE_TIME_FORMATTER));
+        log.info("沙盒世界 {} 已清空：{}", worldId, stats);
+        return stats;
+    }
+
     private JSONArray parseJsonArray(String raw) {
         if (raw == null) {
             return null;

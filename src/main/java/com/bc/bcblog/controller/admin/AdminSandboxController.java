@@ -81,6 +81,45 @@ public class AdminSandboxController {
         return Result.ok();
     }
 
+    /**
+     * 导出存档：下载一个 zip（world.json + 地图/立绘/图标等图片）。
+     * includeRawResponse=true 时连 AI 原始输出一起导出（体积会大很多）。
+     */
+    @GetMapping("/world/{id}/export")
+    public org.springframework.http.ResponseEntity<byte[]> exportWorld(
+            @PathVariable Long id,
+            @RequestParam(defaultValue = "false") boolean includeRawResponse) {
+        byte[] data = sandboxService.exportWorld(id, includeRawResponse);
+        String filename = "sandbox-world-" + id + "-" + java.time.LocalDate.now() + ".zip";
+        org.springframework.http.HttpHeaders headers = new org.springframework.http.HttpHeaders();
+        headers.setContentType(org.springframework.http.MediaType.APPLICATION_OCTET_STREAM);
+        headers.set(org.springframework.http.HttpHeaders.CONTENT_DISPOSITION,
+                "attachment; filename=\"" + filename + "\"");
+        return new org.springframework.http.ResponseEntity<>(data, headers, org.springframework.http.HttpStatus.OK);
+    }
+
+    /**
+     * 清空世界进度：删除该世界的全部记录，并把角色状态与位置恢复默认。
+     * 世界设定、地图地点、角色卡都会保留（相当于"新开一局"）。
+     */
+    @PostMapping("/world/{id}/reset")
+    public Result<Map<String, Object>> resetWorld(@PathVariable Long id) {
+        return Result.ok(sandboxService.resetWorld(id));
+    }
+
+    /**
+     * 导入存档。
+     * overwrite=false（推荐）：把存档导入成一个新世界「xxx（导入）」，不动现有数据；
+     * overwrite=true：先清空 targetWorldId 指定世界的进度，再把存档写进去（真正的"读档"）。
+     */
+    @PostMapping("/world/import")
+    public Result<Map<String, Object>> importWorld(
+            @RequestParam("file") org.springframework.web.multipart.MultipartFile file,
+            @RequestParam(required = false) Long targetWorldId,
+            @RequestParam(defaultValue = "false") boolean overwrite) {
+        return Result.ok(sandboxService.importWorld(file, targetWorldId, overwrite));
+    }
+
     // ---------------- 地点 ----------------
 
     @GetMapping("/locations")
