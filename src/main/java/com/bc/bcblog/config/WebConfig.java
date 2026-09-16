@@ -56,6 +56,10 @@ public class WebConfig implements WebMvcConfigurer {
             "/api/admin/config/gaode-ip-key/**",
             "/api/admin/config/acg-cover-token/**"
             ,"/api/admin/log/**"
+            // 破坏性操作：删世界 / 清空世界 / 导入并覆盖世界，仅超级管理员可用
+            ,"/api/admin/sandbox/world/import",
+            "/api/admin/sandbox/world/*/reset",
+            "/api/admin/sandbox/world/*"
     };
 
     /** 需要「安全密码」二次验证的敏感操作（本次登录验证过一次即可） */
@@ -73,10 +77,6 @@ public class WebConfig implements WebMvcConfigurer {
             "/api/admin/config/gaode-ip-key/**",
             "/api/admin/config/acg-cover-token/**",
             "/api/admin/system/cleanup"
-            // 破坏性操作：删世界 / 清空世界 / 导入并覆盖世界，都要先过安全密码
-            ,"/api/admin/sandbox/world/import",
-            "/api/admin/sandbox/world/*/reset",
-            "/api/admin/sandbox/world/*"
     };
 
     /**

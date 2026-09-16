@@ -29,10 +29,12 @@
           </el-option>
         </el-select>
         <el-button type="primary" plain @click="onCreateWorld">新建世界</el-button>
-        <el-button type="danger" plain :disabled="!selectedWorldId" @click="onDeleteWorld">删除世界</el-button>
+        <!-- 删除 / 清空 / 导入覆盖属于破坏性操作，只有超级管理员能看到入口 -->
+        <el-button v-if="isSuper" type="danger" plain :disabled="!selectedWorldId" @click="onDeleteWorld">删除世界</el-button>
         <el-button :disabled="!selectedWorldId" :loading="exporting" @click="onExportWorld">导出存档</el-button>
-        <el-button type="warning" plain :disabled="!selectedWorldId" @click="onResetWorld">清空世界</el-button>
+        <el-button v-if="isSuper" type="warning" plain :disabled="!selectedWorldId" @click="onResetWorld">清空世界</el-button>
         <el-upload
+          v-if="isSuper"
           class="import-upload"
           :show-file-list="false"
           accept=".zip,.json"
@@ -460,6 +462,7 @@ import LocationIcon from '@/components/sandbox/LocationIcon.vue'
 import { sandboxIcons } from '@/config/sandboxIcons'
 import { magicWandPolygon } from '@/utils/sandboxTrace'
 import { useSandboxWorld } from '@/composables/useSandboxWorld'
+import { useUserStore } from '@/store/user'
 import {
   REL_CROSS,
   containsPoint,
@@ -504,6 +507,9 @@ const { currentWorldId, setCurrentWorld } = useSandboxWorld()
 const selectedWorldId = ref(null)
 const exporting = ref(false)
 const importing = ref(false)
+/** 只有超级管理员能做删除/清空/导入覆盖这类破坏性操作（后端同样拦截） */
+const userStore = useUserStore()
+const isSuper = computed(() => ((userStore.userInfo || {}).role === 'SUPER'))
 const currentWorld = computed(() => worlds.value.find((item) => item.id === selectedWorldId.value) || {})
 const locations = ref([])
 const settings = reactive({
