@@ -18,6 +18,8 @@ public class SandboxInteraction {
     private Long id;
     /** 角色 ID */
     private Long characterId;
+    /** 所属世界（用于多世界隔离与级联清理） */
+    private Long worldId;
     /** 留言用户 ID */
     private Long userId;
     /** 用户昵称快照 */

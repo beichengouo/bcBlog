@@ -41,6 +41,7 @@ public class DataCleanupServiceImpl implements DataCleanupService {
     private final SandboxActMapper sandboxActMapper;
     private final SandboxMemoryMapper sandboxMemoryMapper;
     private final SandboxNewsMapper sandboxNewsMapper;
+    private final com.bc.bcblog.mapper.SandboxShopItemMapper sandboxShopItemMapper;
     private final AdminApiLogMapper adminApiLogMapper;
 
     @Override
@@ -79,6 +80,12 @@ public class DataCleanupServiceImpl implements DataCleanupService {
         int sandboxNewsDays = parseInt(configService.getConfigValue("cleanup_sandbox_news_days", "1"), 1);
         result.setSandboxNews(sandboxNewsMapper.delete(new LambdaQueryWrapper<SandboxNews>()
                 .lt(SandboxNews::getNewsDate, today.minusDays(sandboxNewsDays - 1L))));
+        // 旅人集市：旧批次的商品只保留几天（默认 3 天），前台本来就只展示最新一批
+        int shopDays = parseInt(configService.getConfigValue("cleanup_sandbox_shop_days", "3"), 3);
+        result.setSandboxShopItem(sandboxShopItemMapper.delete(
+                new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<com.bc.bcblog.entity.SandboxShopItem>()
+                        .lt(com.bc.bcblog.entity.SandboxShopItem::getCreateTime,
+                                today.minusDays(shopDays - 1L).atStartOfDay())));
 
         // API 调用审计：默认只保留 3 天
         int auditDays = parseInt(configService.getConfigValue("cleanup_admin_api_log_days", "3"), 3);

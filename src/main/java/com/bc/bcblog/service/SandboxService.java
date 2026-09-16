@@ -11,6 +11,8 @@ import com.bc.bcblog.entity.SandboxLocation;
 import com.bc.bcblog.entity.SandboxMemory;
 import com.bc.bcblog.entity.SandboxNews;
 import com.bc.bcblog.entity.SandboxRelation;
+import com.bc.bcblog.entity.SandboxShopItem;
+import com.bc.bcblog.entity.SandboxShopOrder;
 import com.bc.bcblog.entity.SandboxWorld;
 import com.bc.bcblog.vo.SandboxPortalVO;
 import com.bc.bcblog.vo.SandboxCharacterDraftVO;
@@ -20,18 +22,35 @@ import com.bc.bcblog.vo.SandboxRunAllVO;
 import com.bc.bcblog.vo.SandboxSettingVO;
 
 import java.util.List;
+import java.util.Map;
 
 /** 沙盒世界服务：地图、角色、AI 行动与旅人低语。 */
 public interface SandboxService {
 
     // ---------------- 世界与地图 ----------------
 
-    /** 当前世界（取第一个，没有则返回一个空的默认世界） */
-    SandboxWorld world();
+    /** 指定世界；worldId 为空时取第一个世界（没有则返回一个空的默认世界） */
+    SandboxWorld world(Long worldId);
+
+    /** 全部世界（后台世界管理用） */
+    List<SandboxWorld> worlds();
+
+    /** 前台可见的世界（portal_visible = 1，含已停止运行的，方便游客只看历史） */
+    List<SandboxWorld> visibleWorlds();
 
     void saveWorld(SandboxWorld world);
 
-    List<SandboxLocation> locations();
+    /** 删除世界：连同它的角色、地点、行动、记忆、背包、好感度、纪闻、低语、金币流水一起清掉 */
+    void deleteWorld(Long worldId);
+
+    /** 切换「是否运行」：关闭后该世界的角色不再自动行动（前台可以只看历史） */
+    void setWorldEnabled(Long worldId, Integer enabled);
+
+    /** 切换「前台是否可见」：关闭后前台世界下拉里不再出现 */
+    void setWorldVisible(Long worldId, Integer visible);
+
+    /** 某个世界的地图地点；worldId 为空时取第一个世界 */
+    List<SandboxLocation> locations(Long worldId);
 
     SandboxLocation saveLocation(SandboxLocation location);
 
@@ -45,12 +64,13 @@ public interface SandboxService {
 
     // ---------------- 角色 ----------------
 
-    List<SandboxCharacter> characters();
+    /** 某个世界的角色；worldId 为空时取第一个世界 */
+    List<SandboxCharacter> characters(Long worldId);
 
     SandboxCharacter saveCharacter(SandboxCharacter character);
 
     /** AI 一键创作角色草稿：结合当前世界观、地图地点与已有角色生成，供「新增角色」表单填充 */
-    SandboxCharacterDraftVO generateCharacter(SandboxCharacterGenerateDTO dto);
+    SandboxCharacterDraftVO generateCharacter(SandboxCharacterGenerateDTO dto, Long worldId);
 
     void deleteCharacter(Long id);
 
@@ -58,6 +78,9 @@ public interface SandboxService {
 
     /** 行动记录（可按角色、按一级地点筛选；locationName 为空表示全部） */
     PageResult<SandboxAct> acts(Long characterId, String locationName, long page, long size);
+
+    /** 行动记录：可再按世界过滤（前台/后台切换世界时用） */
+    PageResult<SandboxAct> acts(Long characterId, String locationName, Long worldId, long page, long size);
 
     void deleteAct(Long id);
 
@@ -69,6 +92,8 @@ public interface SandboxService {
 
     /** 管理员一键让全部启用角色行动一轮（不受夜间静默与每日上限限制，方便观察角色互动） */
     SandboxRunAllVO runAll();
+    /** 让某个世界里所有启用的角色立刻各行动一次 */
+    SandboxRunAllVO runAll(Long worldId);
 
     // ---------------- 旅人低语 ----------------
 
@@ -129,22 +154,52 @@ public interface SandboxService {
     // ---------------- 旅人纪闻 ----------------
 
     /** 前台当天的纪闻列表（按置顶与重要度排序） */
-    List<SandboxNews> todayNews();
+    /** 某个世界当天的旅人纪闻 */
+    List<SandboxNews> todayNews(Long worldId);
 
     /** 后台分页查询：date 为空时查当天，传 all 查全部 */
     PageResult<SandboxNews> newsPage(String date, long page, long size);
+    /** 旅人纪闻列表：可再按世界过滤 */
+    PageResult<SandboxNews> newsPage(String date, long page, long size, Long worldId);
 
     void saveNews(SandboxNews news);
 
     void deleteNews(Long id);
 
     /** 由 AI 生成若干条纪闻，返回实际新增条数 */
-    int generateNews(Integer count, Long providerId, String model);
+    int generateNews(Integer count, Long providerId, String model, Long worldId);
 
     /** 定时任务入口：按后台配置自动生成当天纪闻（失败只记日志，不抛异常） */
-    void autoGenerateNews();
+    void autoGenerateNews(Long worldId);
 
     // ---------------- 前台聚合 ----------------
 
-    SandboxPortalVO portal();
+    SandboxPortalVO portal(Long worldId);
+
+    // ---------------- 旅人集市 ----------------
+
+    /** 当前世界最新一批商品（前台用，带赠送记录；已下架的不返回） */
+    List<SandboxShopItem> shopItems(Long worldId);
+
+    /** 后台：最新一批商品（含已下架的，方便管理） */
+    List<SandboxShopItem> shopItemsForAdmin(Long worldId);
+
+    SandboxShopItem saveShopItem(SandboxShopItem item);
+
+    void deleteShopItem(Long id);
+
+    /** 立即生成一批新商品，返回新增条数 */
+    int generateShopItems(Integer count, Long providerId, String model, Long worldId);
+
+    /** 按配置的间隔自动刷新（定时任务调用），返回刷新了几个世界 */
+    int autoRefreshShop();
+
+    /** 购买并赠送给角色：扣积分、扣库存、进角色背包、写礼物与购买记录 */
+    SandboxShopOrder buyShopItem(Long itemId, Long characterId);
+
+    /** 购买记录分页 */
+    PageResult<SandboxShopOrder> shopOrders(Long worldId, long page, long size);
+
+    /** 今日集市统计：卖出件数 / 回收积分 */
+    Map<String, Object> shopStats(Long worldId);
 }

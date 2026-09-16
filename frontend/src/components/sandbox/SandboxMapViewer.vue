@@ -26,29 +26,39 @@
         <div class="viewer-inner" :style="innerStyle">
           <img class="viewer-img" :src="mapImage" alt="地图" draggable="false" />
 
+          <!-- 地点区域：套索画的多边形用 SVG 描边；单点地点画成小圆点 -->
+          <svg class="viewer-area-layer" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+            <template v-for="loc in locations" :key="'vshape-' + loc.id">
+              <polygon
+                v-if="locationPolygon(loc)"
+                :points="polygonPoints(loc)"
+                class="viewer-shape"
+                :class="{ on: activeLocationId === loc.id }"
+                @click.stop="toggleLocation(loc)"
+              />
+              <circle
+                v-else
+                :cx="Number(loc.x == null ? 50 : loc.x)"
+                :cy="Number(loc.y == null ? 50 : loc.y)"
+                r="2.4"
+                class="viewer-shape point"
+                :class="{ on: activeLocationId === loc.id }"
+                @click.stop="toggleLocation(loc)"
+              />
+            </template>
+          </svg>
+
+          <!-- 地名标签：放在区域标注点上，点击同样可以展开该地的角色 -->
           <div
             v-for="loc in locations"
             :key="'vloc-' + loc.id"
             class="viewer-loc"
-            :style="{ left: loc.x + '%', top: loc.y + '%' }"
+            :class="{ on: activeLocationId === loc.id }"
+            :style="labelStyle(loc)"
+            @click.stop="toggleLocation(loc)"
           >
             <span class="viewer-loc-icon"><LocationIcon :icon="loc.icon" :size="14" /></span>
             <span class="viewer-loc-name">{{ loc.name }}</span>
-          </div>
-
-          <!-- 地点区域：默认只显示地名，点击后才展开该地的角色 -->
-          <div
-            v-for="loc in locations"
-            :key="'varea-' + loc.id"
-            class="viewer-area"
-            :class="{ on: activeLocationId === loc.id }"
-            :style="areaStyle(loc)"
-            @click.stop="toggleLocation(loc)"
-          >
-            <span class="viewer-area-label">
-              <LocationIcon :icon="loc.icon" :size="14" />
-              <span>{{ loc.name }}</span>
-            </span>
             <span v-if="charactersIn(loc).length" class="viewer-area-count">{{ charactersIn(loc).length }}</span>
           </div>
 
@@ -84,6 +94,7 @@
 <script setup>
 import { ref, computed, watch, onBeforeUnmount } from 'vue'
 import LocationIcon from '@/components/sandbox/LocationIcon.vue'
+import { bbox, labelPoint, locationOfCharacter, polygonOf } from '@/utils/sandboxGeo'
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
@@ -168,42 +179,42 @@ function close() {
   emit('update:visible', false)
 }
 
-/** 地点区域：x,y 左上角 + width,height（0 表示单点） */
-function areaRect(location) {
-  return {
-    left: Number(location.x == null ? 50 : location.x),
-    top: Number(location.y == null ? 50 : location.y),
-    width: Math.max(0, Number(location.width || 0)),
-    height: Math.max(0, Number(location.height || 0))
-  }
+/**
+ * 区域判定与标注位置统一走公共工具（与后端 SandboxGeo 同一套算法），
+ * 保证「角色算在哪个区域」和「放大视图里显示在哪个区域」一致。
+ */
+function locationPolygon(location) {
+  return polygonOf(location)
 }
 
-function areaStyle(location) {
-  const rect = areaRect(location)
-  return {
-    left: rect.left + '%',
-    top: rect.top + '%',
-    width: Math.max(3, rect.width) + '%',
-    height: Math.max(2.2, rect.height) + '%'
-  }
+/** 多边形顶点转成 SVG points 字符串（viewBox 就是 0~100 百分比坐标系） */
+function polygonPoints(location) {
+  const polygon = polygonOf(location)
+  return polygon ? polygon.map(([x, y]) => `${x},${y}`).join(' ') : ''
 }
 
-function inArea(location, x, y) {
-  const rect = areaRect(location)
-  if (rect.width <= 0 || rect.height <= 0) {
-    return Math.abs(rect.left - x) <= 2 && Math.abs(rect.top - y) <= 2
+/** 地名标签位置：区域标注点（形心；凹多边形退回内部点） */
+function labelStyle(location) {
+  const polygon = polygonOf(location)
+  const point = polygon
+    ? labelPoint(polygon)
+    : [Number(location.x == null ? 50 : location.x), Number(location.y == null ? 50 : location.y)]
+  return { left: point[0] + '%', top: point[1] + '%' }
+}
+
+/** 区域外接矩形：用来摆放展开出来的角色头像行 */
+function locationBox(location) {
+  const polygon = polygonOf(location)
+  if (polygon) {
+    return bbox(polygon)
   }
-  return x >= rect.left && x <= rect.left + rect.width && y >= rect.top && y <= rect.top + rect.height
+  const x = Number(location.x == null ? 50 : location.x)
+  const y = Number(location.y == null ? 50 : location.y)
+  return [x - 3, y - 3, x + 3, y + 3]
 }
 
 function locationOf(character) {
-  const byName = props.locations.find((loc) => loc.name === character.locationName)
-  if (byName) {
-    return byName
-  }
-  const x = Number(character.x == null ? 50 : character.x)
-  const y = Number(character.y == null ? 50 : character.y)
-  return props.locations.find((loc) => inArea(loc, x, y)) || null
+  return locationOfCharacter(character, props.locations)
 }
 
 function charactersIn(location) {
@@ -233,11 +244,12 @@ const actorsStyle = computed(() => {
   if (!location) {
     return {}
   }
-  const rect = areaRect(location)
-  const below = rect.top + rect.height < 68
+  // 用区域外接矩形摆位置：多边形区域同样能算出合理的贴边位置
+  const box = locationBox(location)
+  const below = box[3] < 68
   return {
-    left: Math.min(70, Math.max(0, rect.left - 2)) + '%',
-    top: (below ? rect.top + Math.max(rect.height, 2.2) : rect.top) + '%',
+    left: Math.min(70, Math.max(0, box[0] - 2)) + '%',
+    top: (below ? box[3] : box[1]) + '%',
     transform: below ? 'translateY(8px)' : 'translateY(calc(-100% - 8px))'
   }
 })
@@ -470,7 +482,11 @@ onBeforeUnmount(() => {
   flex-direction: column;
   align-items: center;
   gap: 2px;
-  pointer-events: none;
+  z-index: 4;
+}
+.viewer-loc-icon, .viewer-loc-name {
+  pointer-events: auto;
+  cursor: pointer;
 }
 .viewer-loc-icon {
   display: flex;
@@ -492,35 +508,40 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 
-/* 地点区域：默认只显示地名，点开后下方浮出角色头像 */
-.viewer-area {
+/* 区域形状层：viewBox 直接就是 0~100 的百分比坐标系 */
+.viewer-area-layer {
   position: absolute;
-  padding: 2px 4px;
-  border: 1.5px dashed rgba(255, 255, 255, 0.8);
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.16);
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 3;
+  overflow: visible;
+}
+.viewer-shape {
+  fill: rgba(255, 255, 255, 0.16);
+  stroke: rgba(255, 255, 255, 0.8);
+  stroke-width: 1.5;
+  stroke-dasharray: 4 3;
+  /* 缩放到 600% 时线宽也要保持不变 */
+  vector-effect: non-scaling-stroke;
   cursor: pointer;
-  overflow: hidden;
-  transition: background 0.25s ease, border-color 0.25s ease;
+  transition: fill 0.25s ease, stroke 0.25s ease;
 }
-.viewer-area.on { border-color: #ff6f9f; background: rgba(255, 111, 159, 0.24); }
-.viewer-area-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  max-width: 100%;
-  padding: 1px 8px;
-  border-radius: 999px;
-  font-size: 12px;
-  color: #fff;
-  background: rgba(0, 0, 0, 0.45);
-  white-space: nowrap;
-  overflow: hidden;
+/* 悬停：明显加深（未悬停时保持原来的 0.16 不变），并让虚线变实、加投影 */
+.viewer-shape:hover {
+  fill: rgba(255, 255, 255, 0.46);
+  stroke-width: 2.4;
+  stroke-dasharray: none;
+  filter: drop-shadow(0 0 5px rgba(0, 0, 0, 0.35));
 }
+.viewer-shape.on {
+  fill: rgba(255, 111, 159, 0.24);
+  stroke: #ff6f9f;
+  stroke-width: 2.2;
+  stroke-dasharray: none;
+}
+.viewer-shape.point { fill: rgba(255, 255, 255, 0.42); }
 .viewer-area-count {
-  position: absolute;
-  right: 4px;
-  bottom: 3px;
   min-width: 18px;
   height: 18px;
   padding: 0 5px;
@@ -529,8 +550,8 @@ onBeforeUnmount(() => {
   line-height: 18px;
   text-align: center;
   color: #fff;
-  background: linear-gradient(120deg, #ff6f9f, #a06bd8);
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+  background: rgba(0, 0, 0, 0.36);
+  pointer-events: none;
 }
 .viewer-actors {
   position: absolute;

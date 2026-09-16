@@ -61,4 +61,31 @@ public class SandboxSettingVO {
     private String newsAutoTime;
     /** 系统级 AI 调用（定时行动 / 记忆总结）使用的模型，留空则用角色自身模型 */
     private String systemModel;
+    /** AI 调用失败后的退避起步分钟数（连续失败按 2 倍递增） */
+    private String failBackoffBaseMinutes;
+    /** AI 调用失败退避的上限分钟数 */
+    private String failBackoffMaxMinutes;
+    /** 旅人低语总开关：1 开启，0 关闭（前台隐藏入口，接口同时拦截） */
+    private String whisperEnabled;
+    // ---------------- 旅人集市 ----------------
+    /** 前台集市栏目名 */
+    private String shopTitle;
+    /** 集市总开关 */
+    private String shopEnabled;
+    /** 是否按间隔自动刷新 */
+    private String shopAutoEnabled;
+    /** 刷新间隔（小时）：24 = 每天一次，6 = 一天四次 */
+    private String shopIntervalHours;
+    /** 当天第一次刷新的时间 HH:mm */
+    private String shopAutoTime;
+    /** 每次刷新生成几件商品 */
+    private String shopPerGenerate;
+    /** 生成商品用的服务商 id */
+    private String shopProviderId;
+    /** 生成商品用的模型 */
+    private String shopModel;
+    /** 生成商品的附加要求 */
+    private String shopPromptExtra;
+    /** 同一用户对同一商品、每个角色的限购数量 */
+    private String shopLimitPerCharacter;
 }

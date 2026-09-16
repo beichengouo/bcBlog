@@ -96,7 +96,7 @@ mysql -u bcblog -p bc_blog < docs/sql/bc_blog_full.sql
 
 也可以用宝塔的 phpMyAdmin 或 Navicat 导入。
 
-> `bc_blog_full.sql` 是完整的 37 张表结构，不需要再执行 `upgrade_*.sql`。
+> `bc_blog_full.sql` 是完整的 38 张表结构，不需要再执行 `upgrade_*.sql`。
 > 已经有数据的旧库请改用 `upgrade_20260916_batch.sql` 增量升级（一份脚本涵盖 001~033 全部改动，幂等可重复执行）。
 
 ## 七、部署后端 Java 项目

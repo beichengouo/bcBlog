@@ -2,18 +2,18 @@
 
 ## 一、全新安装
 
-执行 `bc_blog_full.sql`：在 `bc_blog` 库中创建全部 **37 张表**（只含结构，不含数据）。
+执行 `bc_blog_full.sql`：在 `bc_blog` 库中创建全部 **38 张表**（只含结构，不含数据）。
 首次启动后端时，程序会自动写入默认超级管理员 `admin / Admin@123456`。
 
 ## 二、老库升级（备案完成后更新线上数据库，用这一份）
 
-只执行 **`upgrade_20260916_batch.sql`** 一份脚本即可：它已经把 `upgrade_001 ~ upgrade_033`
+只执行 **`upgrade_20260916_batch.sql`** 一份脚本即可：它已经把 `upgrade_001 ~ upgrade_037`
 的全部内容合并进去了，**不需要再单独执行其它脚本**。
 
 | | |
 | --- | --- |
 | 起点 | 上一次部署版本（Git 提交 `3f13623`，2026-09-14 上线，17 张表） |
-| 终点 | 当前版本（37 张表） |
+| 终点 | 当前版本（38 张表） |
 
 脚本特点：
 
@@ -71,6 +71,7 @@ mysql --default-character-set=utf8mb4 -uroot -p bc_blog < upgrade_20260916_batch
 | `admin_api_key` | 管理员 AI 服务商 Key（加密存储，后台只回显掩码） |
 | `admin_api_log` | API 调用审计（谁、何时、来源、成败、耗时、IP） |
 | `sys_login_ip` | 管理员登录 IP 记录（异地 / 异常时段检测用） |
+| `page_background` | 前台各页面独立背景设置（首页 / 流光忆庭 / 智库 / 沙盒世界 / 其它前台页面：壁纸与不透明度） |
 
 ### 原有表新增的字段
 
@@ -80,6 +81,7 @@ mysql --default-character-set=utf8mb4 -uroot -p bc_blog < upgrade_20260916_batch
 | `blog_comment` | `user_id` / `avatar` / `level` / `level_name` | 原生评论显示登录用户与等级 |
 | `blog_resource` | `cover` / `points` / `content` | 智库封面、所需积分、详情内容 |
 | `ai_provider` | `owner_id` | 服务商归属（为空表示系统服务商，定时任务使用） |
+| `sandbox_location` | `polygon` | 多边形区域顶点 JSON `[[x,y],...]`（百分比）；为空时按矩形区域 `x/y/width/height` 判定，老数据无需迁移 |
 
 ### 新增或调整的配置项（`sys_config`）
 
@@ -125,6 +127,10 @@ mysql --default-character-set=utf8mb4 -uroot -p bc_blog < upgrade_20260916_batch
 | `upgrade_031_admin_key_security.sql` | 管理员 Key 加密存储表、API 调用审计表与 `ai_provider.owner_id` |
 | `upgrade_032_admin_login_security.sql` | 管理员登录安全（安全密码、登录 IP 记录、异常提醒配置） |
 | `upgrade_033_sandbox_memory_prompt.sql` | 记忆故事化提示词与 `sandbox_system_model` 配置 |
+| `upgrade_034_sandbox_location_polygon.sql` | 沙盒地图地点支持多边形区域（后台手工套索 / 魔法棒自动描边） |
+| `upgrade_035_page_background.sql` | 前台各页面独立背景与不透明度（`page_background` 表） |
+| `upgrade_036_sandbox_fail_backoff.sql` | 沙盒 AI 调用失败的退避（`sandbox_character.fail_count` + 两个配置项） |
+| `upgrade_037_sandbox_multi_world.sql` | 沙盒多世界（世界「是否运行 / 前台是否可见」两个开关、低语与金币流水补 world_id、旅人低语总开关） |
 | `upgrade_20260916_batch.sql` | **以上全部合并版（推荐，只用这一份）** |
 
 > 说明：旧的 `upgrade_20260915_batch.sql` 已经把内容并入 `upgrade_20260916_batch.sql`，

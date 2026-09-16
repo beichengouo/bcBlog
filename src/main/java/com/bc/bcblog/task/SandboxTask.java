@@ -33,10 +33,33 @@ public class SandboxTask {
     private final AtomicBoolean summarizing = new AtomicBoolean(false);
     /** 纪闻自动生成防止重入 */
     private final AtomicBoolean newsGenerating = new AtomicBoolean(false);
+    /** 旅人集市刷新防止重入 */
+    private final AtomicBoolean shopRefreshing = new AtomicBoolean(false);
     /** 记录最近一次总结的日期，保证每天只跑一次 */
     private volatile String lastMemoryDate = "";
     /** 记录最近一次自动生成纪闻的日期 */
     private volatile String lastNewsDate = "";
+
+    /**
+     * 旅人集市刷新：每分钟检查一次，到点（间隔/起始时间）就自动生成新一批商品。
+     * 具体是否到期由服务层按「刷新间隔 + 起始时间」判断，这里只负责触发与防重入。
+     */
+    @Scheduled(cron = "0 * * * * ?")
+    public void shop() {
+        if (!"1".equals(configService.getConfigValue("sandbox_shop_auto_enabled", "1"))) {
+            return;
+        }
+        if (!shopRefreshing.compareAndSet(false, true)) {
+            return;
+        }
+        try {
+            sandboxService.autoRefreshShop();
+        } catch (Exception e) {
+            log.warn("旅人集市刷新任务异常：{}", e.getMessage());
+        } finally {
+            shopRefreshing.set(false);
+        }
+    }
 
     @Scheduled(cron = "0 */5 * * * ?")
     public void run() {
@@ -99,7 +122,13 @@ public class SandboxTask {
             return;
         }
         try {
-            sandboxService.autoGenerateNews();
+            // 多世界：每个「运行中」的世界各自生成当天的纪闻
+            for (com.bc.bcblog.entity.SandboxWorld world : sandboxService.worlds()) {
+                if (world.getEnabled() == null || world.getEnabled() != 1) {
+                    continue;
+                }
+                sandboxService.autoGenerateNews(world.getId());
+            }
             lastNewsDate = today;
         } finally {
             newsGenerating.set(false);

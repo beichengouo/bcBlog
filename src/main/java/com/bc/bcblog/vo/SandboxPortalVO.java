@@ -12,6 +12,8 @@ import java.util.List;
 public class SandboxPortalVO {
     /** 沙盒 AI 调用是否开启（关闭时前台只展示已有内容） */
     private boolean enabled;
+    /** 旅人低语是否开启（关闭时前台隐藏入口，接口也会拦截） */
+    private boolean whisperEnabled;
     /** 每次旅人低语消耗的积分 */
     private int whisperPoints;
     /** 1 积分可兑换的金币数量 */
@@ -23,4 +25,10 @@ public class SandboxPortalVO {
     private String newsTitle;
     /** 当天纪闻 */
     private List<SandboxNews> news;
+    /** 旅人集市栏目名（后台可改） */
+    private String shopTitle;
+    /** 集市总开关 */
+    private boolean shopEnabled;
+    /** 当前世界最新一批商品 */
+    private List<com.bc.bcblog.entity.SandboxShopItem> shopItems;
 }

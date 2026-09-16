@@ -27,6 +27,8 @@ public class SandboxWorld {
     private String worldPrompt;
     /** 是否启用：1 启用，0 停用 */
     private Integer enabled;
+    /** 前台是否可见：1 出现在前台世界下拉（可以只看历史），0 完全隐藏 */
+    private Integer portalVisible;
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     private LocalDateTime createTime;
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")

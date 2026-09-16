@@ -4,6 +4,19 @@
       <div class="toolbar">
         <span>沙盒日志</span>
         <div class="toolbar-right">
+          <el-select v-model="selectedWorldId" size="small" style="width: 150px" @change="onSwitchWorld">
+            <el-option
+              v-for="item in worlds"
+              :key="item.id"
+              :label="item.name || ('世界 ' + item.id)"
+              :value="item.id"
+            >
+              <div class="world-option">
+                <span class="world-option-name">{{ item.name || ('世界 ' + item.id) }}</span>
+                <span v-if="item.enabled !== 1" class="world-option-tag">已停止</span>
+              </div>
+            </el-option>
+          </el-select>
           <el-select v-model="characterId" clearable placeholder="全部角色" style="width: 180px" @change="reload">
             <el-option v-for="c in characters" :key="c.id" :label="c.name" :value="c.id" />
           </el-select>
@@ -471,6 +484,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   sandboxCharacters,
   sandboxLocations,
+  sandboxWorlds,
   sandboxActs,
   deleteSandboxAct,
   sandboxInteractions,
@@ -492,8 +506,13 @@ import {
   saveSandboxSettings
 } from '@/api/sandbox'
 import { aiProviderList, aiProviderModels } from '@/api/ai'
+import { useSandboxWorld } from '@/composables/useSandboxWorld'
 
 const tab = ref('acts')
+/** 当前世界（三个沙盒页面共用一个选择） */
+const worlds = ref([])
+const { currentWorldId, setCurrentWorld } = useSandboxWorld()
+const selectedWorldId = ref(null)
 const characters = ref([])
 const characterId = ref(null)
 const locations = ref([])
@@ -568,15 +587,37 @@ const pageSize = 10
 
 async function loadCharacters() {
   try {
-    characters.value = await sandboxCharacters()
+    characters.value = await sandboxCharacters(selectedWorldId.value)
   } catch (e) {
     characters.value = []
   }
   try {
-    locations.value = await sandboxLocations()
+    locations.value = await sandboxLocations(selectedWorldId.value)
   } catch (e) {
     locations.value = []
   }
+}
+
+/** 切换世界：清掉角色/地点筛选后重新加载（与其它两个沙盒页面共用选择） */
+async function onSwitchWorld(id) {
+  setCurrentWorld(id)
+  characterId.value = null
+  locationFilter.value = ''
+  await loadCharacters()
+  await loadActs()
+}
+
+/** 首次进入：定位到当前世界 */
+async function initWorld() {
+  worlds.value = (await sandboxWorlds()) || []
+  if (!worlds.value.length) {
+    selectedWorldId.value = null
+    return
+  }
+  const stored = currentWorldId.value
+  const exists = worlds.value.some((item) => item.id === stored)
+  setCurrentWorld(exists ? stored : worlds.value[0].id)
+  selectedWorldId.value = currentWorldId.value
 }
 
 function characterName(id) {
@@ -590,6 +631,7 @@ async function loadActs() {
     const data = await sandboxActs({
       characterId: characterId.value || undefined,
       locationName: locationFilter.value || undefined,
+      worldId: selectedWorldId.value || undefined,
       page: actPage.value,
       size: pageSize
     })
@@ -634,7 +676,12 @@ function reload() {
 async function loadNews() {
   loadingNews.value = true
   try {
-    const data = await sandboxNewsList({ date: newsDate.value || undefined, page: newsPage.value, size: pageSize })
+    const data = await sandboxNewsList({
+      date: newsDate.value || undefined,
+      worldId: selectedWorldId.value || undefined,
+      page: newsPage.value,
+      size: pageSize
+    })
     newsList.value = data.list || []
     newsTotal.value = data.total || 0
   } finally {
@@ -732,7 +779,7 @@ async function onGenerateNews() {
   }
   generatingNews.value = true
   try {
-    const count = await generateSandboxNews({})
+    const count = await generateSandboxNews({ worldId: selectedWorldId.value || undefined })
     ElMessage.success(`已生成 ${count} 条事件`)
     await loadNews()
   } finally {
@@ -1015,6 +1062,7 @@ async function onDeleteWhisper(row) {
 }
 
 onMounted(async () => {
+  await initWorld()
   await loadCharacters()
   await loadActs()
   await loadNewsSetting()
@@ -1035,4 +1083,14 @@ onMounted(async () => {
 .react-tag { margin-left: 4px; }
 .favor-cell :deep(.el-progress) { margin-bottom: 4px; }
 .favor-value { font-size: 12px; color: var(--el-text-color-regular); }
+.world-option { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.world-option-name { overflow: hidden; text-overflow: ellipsis; }
+.world-option-tag {
+  flex-shrink: 0;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 11px;
+  color: var(--el-color-warning);
+  background: rgba(230, 162, 60, 0.14);
+}
 </style>

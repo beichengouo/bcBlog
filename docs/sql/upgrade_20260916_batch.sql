@@ -1528,6 +1528,232 @@ INSERT IGNORE INTO `sys_config` (`config_key`, `config_value`, `remark`) VALUES
 SELECT config_key, config_value FROM `sys_config` WHERE config_key = 'sandbox_system_model';
 
 
+-- ----------------------------------------------------------------------------
+-- 来源：docs/sql/upgrade_034_sandbox_location_polygon.sql
+-- ----------------------------------------------------------------------------
+-- 沙盒地图地点：支持多边形区域（后台手工套索 / 魔法棒自动描边）
+--   polygon 存 JSON 顶点数组 [[x,y],...]（0~100 百分比）；为空时继续按矩形区域判定，
+--   所以老数据不需要迁移、行为完全不变。
+
+DROP PROCEDURE IF EXISTS `bcblog_add_col`;
+DELIMITER //
+CREATE PROCEDURE `bcblog_add_col`(IN p_table VARCHAR(64), IN p_col VARCHAR(64), IN p_def TEXT)
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS
+                   WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = p_table AND COLUMN_NAME = p_col) THEN
+        SET @ddl = CONCAT('ALTER TABLE `', p_table, '` ADD COLUMN `', p_col, '` ', p_def);
+        PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+    END IF;
+END //
+DELIMITER ;
+
+CALL bcblog_add_col('sandbox_location', 'polygon',
+    'text DEFAULT NULL COMMENT ''多边形区域顶点 JSON [[x,y],...]（百分比），为空表示按矩形区域判定'' AFTER `height`');
+
+DROP PROCEDURE IF EXISTS `bcblog_add_col`;
+
+
+-- ----------------------------------------------------------------------------
+-- 来源：docs/sql/upgrade_035_page_background.sql
+-- ----------------------------------------------------------------------------
+-- 前台各页面独立背景（首页 / 流光忆庭 / 智库 / 沙盒世界 / 其它前台页面）：
+--   mode 有 follow（跟随前台默认壁纸）/ none（不用壁纸）/ custom（用指定壁纸）三种，
+--   opacity 控制壁纸不透明度；壁纸库仍然是共用的 background 表。
+
+CREATE TABLE IF NOT EXISTS `page_background` (
+    `page_key` varchar(32) NOT NULL COMMENT '页面标识：home / photos / resources / sandbox / portal',
+    `mode` varchar(10) NOT NULL DEFAULT 'follow' COMMENT 'follow=跟随前台默认壁纸，none=不使用壁纸，custom=使用 background_id',
+    `background_id` bigint DEFAULT NULL COMMENT 'mode=custom 时使用的壁纸 id',
+    `opacity` decimal(3,2) NOT NULL DEFAULT 1.00 COMMENT '壁纸不透明度 0.10~1.00',
+    `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`page_key`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='前台各页面独立背景设置';
+
+
+-- ----------------------------------------------------------------------------
+-- 来源：docs/sql/upgrade_036_sandbox_fail_backoff.sql
+-- ----------------------------------------------------------------------------
+-- 沙盒 AI 调用失败后的退避：失败时把角色的 next_run_time 往后推，避免一直处于
+-- 「逾期」状态被每 5 分钟重试一次（失败不产生行动记录，也就绕过了每日上限）。
+
+DROP PROCEDURE IF EXISTS `bcblog_add_col`;
+DELIMITER //
+CREATE PROCEDURE `bcblog_add_col`(IN p_table VARCHAR(64), IN p_col VARCHAR(64), IN p_def TEXT)
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS
+                   WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = p_table AND COLUMN_NAME = p_col) THEN
+        SET @ddl = CONCAT('ALTER TABLE `', p_table, '` ADD COLUMN `', p_col, '` ', p_def);
+        PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+    END IF;
+END //
+DELIMITER ;
+
+CALL bcblog_add_col('sandbox_character', 'fail_count',
+    'int NOT NULL DEFAULT 0 COMMENT ''连续失败次数：AI 调用连续失败时累加，成功后清零'' AFTER `last_error`');
+
+DROP PROCEDURE IF EXISTS `bcblog_add_col`;
+
+INSERT IGNORE INTO `sys_config` (`config_key`, `config_value`, `remark`) VALUES
+    ('sandbox_fail_backoff_base_minutes', '15', '沙盒 AI 调用失败后的退避起步分钟数（连续失败按 2 倍递增）'),
+    ('sandbox_fail_backoff_max_minutes', '120', '沙盒 AI 调用失败退避的上限分钟数');
+
+
+-- ----------------------------------------------------------------------------
+-- 来源：docs/sql/upgrade_037_sandbox_multi_world.sql
+-- ----------------------------------------------------------------------------
+-- 沙盒多世界：世界两个独立开关（是否运行 / 前台是否可见）、
+-- 低语与金币流水补世界归属、旅人低语总开关。
+
+DROP PROCEDURE IF EXISTS `bcblog_add_col`;
+DROP PROCEDURE IF EXISTS `bcblog_add_idx`;
+DELIMITER //
+CREATE PROCEDURE `bcblog_add_col`(IN p_table VARCHAR(64), IN p_col VARCHAR(64), IN p_def TEXT)
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS
+                   WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = p_table AND COLUMN_NAME = p_col) THEN
+        SET @ddl = CONCAT('ALTER TABLE `', p_table, '` ADD COLUMN `', p_col, '` ', p_def);
+        PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+    END IF;
+END //
+
+CREATE PROCEDURE `bcblog_add_idx`(IN p_table VARCHAR(64), IN p_idx VARCHAR(64), IN p_def TEXT)
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.STATISTICS
+                   WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = p_table AND INDEX_NAME = p_idx) THEN
+        SET @ddl = CONCAT('ALTER TABLE `', p_table, '` ADD ', p_def);
+        PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+    END IF;
+END //
+DELIMITER ;
+
+CALL bcblog_add_col('sandbox_world', 'portal_visible',
+    'tinyint NOT NULL DEFAULT 1 COMMENT ''前台是否可见：1 出现在前台世界下拉（可只看历史），0 完全隐藏'' AFTER `enabled`');
+CALL bcblog_add_col('sandbox_interaction', 'world_id',
+    'bigint DEFAULT NULL COMMENT ''所属世界'' AFTER `character_id`');
+CALL bcblog_add_col('sandbox_coin_log', 'world_id',
+    'bigint DEFAULT NULL COMMENT ''所属世界'' AFTER `character_id`');
+
+UPDATE `sandbox_interaction`
+SET `world_id` = (SELECT `id` FROM `sandbox_world` ORDER BY `id` LIMIT 1)
+WHERE `world_id` IS NULL AND EXISTS (SELECT 1 FROM `sandbox_world`);
+
+UPDATE `sandbox_coin_log`
+SET `world_id` = (SELECT `id` FROM `sandbox_world` ORDER BY `id` LIMIT 1)
+WHERE `world_id` IS NULL AND EXISTS (SELECT 1 FROM `sandbox_world`);
+
+CALL bcblog_add_idx('sandbox_interaction', 'idx_world', 'KEY `idx_world` (`world_id`)');
+CALL bcblog_add_idx('sandbox_coin_log', 'idx_world', 'KEY `idx_world` (`world_id`)');
+
+INSERT IGNORE INTO `sys_config` (`config_key`, `config_value`, `remark`) VALUES
+    ('sandbox_whisper_enabled', '1', '旅人低语总开关：1 开启（前台可给角色留言），0 关闭（前台隐藏入口，接口同时拦截，历史数据保留）');
+
+DROP PROCEDURE IF EXISTS `bcblog_add_col`;
+DROP PROCEDURE IF EXISTS `bcblog_add_idx`;
+
+
+-- ----------------------------------------------------------------------------
+-- 来源：docs/sql/upgrade_038_sandbox_combat_power.sql
+-- ----------------------------------------------------------------------------
+-- 沙盒角色新增「战斗力」：角色默认 10，AI 行动时会返回 combat_change（默认 0），
+-- 只有真正影响实力的事情才变化，幅度 ±5 以内，前台只在变化时展示。
+
+DROP PROCEDURE IF EXISTS `bcblog_add_col`;
+DELIMITER //
+CREATE PROCEDURE `bcblog_add_col`(IN p_table VARCHAR(64), IN p_col VARCHAR(64), IN p_def TEXT)
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS
+                   WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = p_table AND COLUMN_NAME = p_col) THEN
+        SET @ddl = CONCAT('ALTER TABLE `', p_table, '` ADD COLUMN `', p_col, '` ', p_def);
+        PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+    END IF;
+END //
+DELIMITER ;
+
+CALL bcblog_add_col('sandbox_character', 'combat_power',
+    'int NOT NULL DEFAULT 10 COMMENT ''战斗力：综合实力（战斗技巧、魔力、装备），默认 10'' AFTER `coins`');
+CALL bcblog_add_col('sandbox_act', 'combat_change',
+    'int NOT NULL DEFAULT 0 COMMENT ''这一步战斗力的变化，0 表示没变'' AFTER `coin_change`');
+
+DROP PROCEDURE IF EXISTS `bcblog_add_col`;
+
+UPDATE `sandbox_character` SET `combat_power` = 10 WHERE `combat_power` IS NULL OR `combat_power` < 1;
+
+
+-- ----------------------------------------------------------------------------
+-- 来源：docs/sql/upgrade_039_sandbox_shop.sql
+-- ----------------------------------------------------------------------------
+-- 沙盒旅人集市：AI 定时刷新商品 + 用积分购买后直接赠送给角色（进角色背包）。
+
+CREATE TABLE IF NOT EXISTS `sandbox_shop_item` (
+    `id` bigint NOT NULL AUTO_INCREMENT,
+    `world_id` bigint NOT NULL DEFAULT 1 COMMENT '所属世界',
+    `batch_time` datetime NOT NULL COMMENT '所属批次（刷新时间）：前台只展示最新一批',
+    `name` varchar(100) NOT NULL COMMENT '商品名',
+    `description` varchar(300) DEFAULT NULL COMMENT '描述（含一句来源小故事）',
+    `icon` varchar(500) DEFAULT NULL COMMENT '自定义图标；为空时按名字匹配 emoji',
+    `rarity` tinyint NOT NULL DEFAULT 1 COMMENT '品质 1 普通 ~ 5 传说',
+    `price` int NOT NULL DEFAULT 1 COMMENT '现价（积分）',
+    `original_price` int DEFAULT NULL COMMENT '原价（打折时显示划线价）',
+    `stock` int NOT NULL DEFAULT 1 COMMENT '剩余库存',
+    `total_stock` int NOT NULL DEFAULT 1 COMMENT '本批总量',
+    `source` varchar(20) NOT NULL DEFAULT 'ai' COMMENT 'ai / admin',
+    `pinned` tinyint NOT NULL DEFAULT 0 COMMENT '管理员置顶',
+    `enabled` tinyint NOT NULL DEFAULT 1 COMMENT '是否上架',
+    `create_time` datetime DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `idx_world_batch` (`world_id`, `batch_time`),
+    KEY `idx_world_enabled` (`world_id`, `enabled`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='沙盒旅人集市商品';
+
+CREATE TABLE IF NOT EXISTS `sandbox_shop_order` (
+    `id` bigint NOT NULL AUTO_INCREMENT,
+    `world_id` bigint NOT NULL DEFAULT 1 COMMENT '所属世界',
+    `item_id` bigint NOT NULL COMMENT '商品 id',
+    `item_name` varchar(100) NOT NULL COMMENT '商品名（快照）',
+    `user_id` bigint DEFAULT NULL COMMENT '购买者（前台可见，角色提示词里绝不出现）',
+    `user_name` varchar(100) DEFAULT NULL COMMENT '购买者昵称快照',
+    `character_id` bigint NOT NULL COMMENT '收礼角色',
+    `character_name` varchar(100) DEFAULT NULL COMMENT '收礼角色名快照',
+    `quantity` int NOT NULL DEFAULT 1 COMMENT '数量',
+    `points_cost` int NOT NULL DEFAULT 0 COMMENT '消耗积分（管理员为 0）',
+    `create_time` datetime DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `idx_world_time` (`world_id`, `create_time`),
+    KEY `idx_item` (`item_id`),
+    KEY `idx_character` (`character_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='沙盒旅人集市购买记录';
+
+CREATE TABLE IF NOT EXISTS `sandbox_gift` (
+    `id` bigint NOT NULL AUTO_INCREMENT,
+    `world_id` bigint NOT NULL DEFAULT 1 COMMENT '所属世界',
+    `character_id` bigint NOT NULL COMMENT '收礼角色',
+    `item_name` varchar(100) NOT NULL COMMENT '礼物名',
+    `item_description` varchar(300) DEFAULT NULL COMMENT '礼物描述',
+    `quantity` int NOT NULL DEFAULT 1 COMMENT '数量',
+    `points_cost` int NOT NULL DEFAULT 0 COMMENT '消耗积分',
+    `create_time` datetime DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `idx_character_time` (`character_id`, `create_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='沙盒异世界礼物（写进角色提示词）';
+
+INSERT IGNORE INTO `sys_config` (`config_key`, `config_value`, `remark`) VALUES
+    ('sandbox_shop_title', '旅人集市', '前台集市栏目名'),
+    ('sandbox_shop_enabled', '1', '旅人集市总开关：1 开启，0 前台隐藏'),
+    ('sandbox_shop_auto_enabled', '1', '是否按间隔自动刷新商品'),
+    ('sandbox_shop_interval_hours', '24', '刷新间隔（小时）：24 = 每天一次，6 = 一天四次'),
+    ('sandbox_shop_auto_time', '08:00', '当天第一次刷新的时间 HH:mm（从这一天开始按间隔排）'),
+    ('sandbox_shop_per_generate', '3', '每次刷新生成几件商品（1~10）'),
+    ('sandbox_shop_provider_id', '', '生成商品使用的 AI 服务商 id（留空用系统服务商）'),
+    ('sandbox_shop_model', '', '生成商品使用的模型（留空用系统服务商默认模型）'),
+    ('sandbox_shop_prompt_extra', '', '生成商品的附加要求（会追加到提示词）'),
+    ('sandbox_shop_limit_per_character', '1', '同一用户对同一商品、每个角色的限购数量'),
+    ('cleanup_sandbox_shop_days', '3', 'sandbox_shop_item 商品数据保留天数（旧批次商品会被清理）');
+
+-- 沙盒提示词预算守护（upgrade_040）
+INSERT IGNORE INTO `sys_config` (`config_key`, `config_value`, `remark`) VALUES
+    ('sandbox_prompt_char_limit', '9000', '沙盒行动提示词的字符上限：超过后自动精简（去掉他角色动静与今日要闻、最近行动取 6 条）');
+
+
 -- ============================================================================
 -- 收尾 1. 清理临时存储过程
 -- ============================================================================
@@ -1537,7 +1763,7 @@ DROP PROCEDURE IF EXISTS `bcblog_drop_idx`;
 
 
 -- ============================================================================
--- 收尾 2. 升级结果自检：正常情况下应返回全部 37 张表
+-- 收尾 2. 升级结果自检：正常情况下应返回全部 38 张表
 --          （脚本只做新增，不会清空任何业务数据）
 -- ============================================================================
 SELECT TABLE_NAME AS '已就绪的表', TABLE_COMMENT AS '说明'
@@ -1548,7 +1774,7 @@ WHERE TABLE_SCHEMA = DATABASE()
                      'blog_tag','live2d_model','music_fallback','music_playlist','sandbox_act',
                      'sandbox_character','sandbox_coin_log','sandbox_interaction','sandbox_item',
                      'sandbox_location','sandbox_memory','sandbox_news','sandbox_relation','sandbox_world',
-                     'site_announcement','sys_config','sys_email_template','sys_emoji','sys_invite_code',
+                     'page_background','site_announcement','sys_config','sys_email_template','sys_emoji','sys_invite_code',
                      'sys_level','sys_login_ip','sys_login_log','sys_point_log','sys_resource_unlock',
                      'sys_sign_log','sys_user','sys_visit_stat')
 ORDER BY TABLE_NAME;

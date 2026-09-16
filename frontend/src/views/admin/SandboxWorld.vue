@@ -18,6 +18,28 @@
         title="先上传地图背景图，再在地图预览上点击任意位置添加地点；地点坐标按百分比保存，以后换地图尺寸也不会错位。"
       />
 
+      <!-- 多世界：切换 / 新建 / 删除 / 两个开关（是否运行、前台是否可见） -->
+      <div class="world-bar">
+        <span class="world-label">当前世界</span>
+        <el-select v-model="selectedWorldId" style="width: 220px" @change="onSwitchWorld">
+          <el-option v-for="item in worlds" :key="item.id" :label="item.name || ('世界 ' + item.id)" :value="item.id">
+            <span>{{ item.name || ('世界 ' + item.id) }}</span>
+            <span class="world-tag">{{ item.enabled === 1 ? '运行中' : '已停止' }}</span>
+            <span class="world-tag">{{ item.portalVisible === 1 ? '前台可见' : '前台隐藏' }}</span>
+          </el-option>
+        </el-select>
+        <el-button type="primary" plain @click="onCreateWorld">新建世界</el-button>
+        <el-button type="danger" plain :disabled="!selectedWorldId" @click="onDeleteWorld">删除世界</el-button>
+        <el-divider direction="vertical" />
+        <span class="world-label">是否运行</span>
+        <el-switch :model-value="currentWorld.enabled === 1" @change="onToggleWorldEnabled" />
+        <span class="tip">关闭后这个世界不再自动行动（角色与历史都保留）</span>
+        <el-divider direction="vertical" />
+        <span class="world-label">前台可见</span>
+        <el-switch :model-value="currentWorld.portalVisible === 1" @change="onToggleWorldVisible" />
+        <span class="tip">关闭后前台世界下拉里不再出现；开着但停跑时，前台只看历史</span>
+      </div>
+
       <el-form :model="world" label-width="100px" class="world-form">
         <el-form-item label="世界名称">
           <el-input v-model="world.name" placeholder="如：艾尔登之境" maxlength="100" />
@@ -66,52 +88,109 @@
         <div class="toolbar">
           <span>地图与地点</span>
           <div class="toolbar-right">
-            <span class="tip">共 {{ locations.length }} 个地点；可拖动标记直接改坐标，点击地图空白处可新增</span>
+            <span class="tip">
+              共 {{ locations.length }} 个地点；区域已覆盖地图 {{ coverage.toFixed(1) }}%；
+              点击地图空白处可新增地点，拖动区域可整体移动
+            </span>
           </div>
         </div>
       </template>
 
-      <div ref="mapRef" class="map-preview" @click="onMapClick">
+      <div
+        ref="mapRef"
+        class="map-preview"
+        :class="{ drawing: editing }"
+        @click="onMapClick"
+        @pointermove="onMapHover"
+        @pointerleave="onMapLeave"
+      >
         <img v-if="world.mapImage" :src="world.mapImage" class="map-img" alt="地图背景" />
         <div v-else class="map-placeholder">还没有上传地图背景图，可以先用下方表格维护地点坐标</div>
 
-        <!-- 已保存的地点：一块可拖动、可缩放的区域 -->
-        <div
-          v-for="loc in locations"
-          :key="loc.id"
-          class="map-area"
-          :class="{ dim: editing && form.id === loc.id }"
-          :style="areaStyle(loc)"
-          @pointerdown="onAreaDown($event, loc)"
-        >
-          <span class="area-label">
-            <LocationIcon :icon="loc.icon" :size="13" />
-            <span>{{ loc.name }}</span>
-          </span>
-          <span class="area-size">{{ loc.width }}×{{ loc.height }}</span>
-          <span class="area-handle" title="拖动调整区域大小" @pointerdown.stop="onResizeDown($event, loc)"></span>
-        </div>
+        <!-- 区域形状层：viewBox 就是 0~100 的百分比坐标系 -->
+        <svg class="edit-layer" viewBox="0 0 100 100" preserveAspectRatio="none">
+          <!-- 冲突高亮：与其它区域交叉重叠的部分标红 -->
+          <rect
+            v-for="(cell, index) in conflictCells"
+            :key="'cf-' + index"
+            :x="cell[0]"
+            :y="cell[1]"
+            :width="cell[2]"
+            :height="cell[3]"
+            class="conflict-cell"
+          />
 
-        <!-- 正在编辑/新增的地点预览 -->
-        <div
-          v-if="editing"
-          class="map-area preview"
-          :style="areaStyle(formRect)"
-          @pointerdown="onPreviewDown($event)"
+          <!-- 已保存的地点：拖动可整体移动（正在编辑的那个淡化显示） -->
+          <template v-for="loc in locations" :key="'loc-' + loc.id">
+            <polygon
+              v-if="polygonOf(loc)"
+              :points="pointsOf(polygonOf(loc))"
+              class="loc-shape"
+              :class="{ dim: editing && form.id === loc.id }"
+              @pointerdown.stop="onSavedDown($event, loc)"
+            />
+            <circle
+              v-else
+              :cx="Number(loc.x == null ? 50 : loc.x)"
+              :cy="Number(loc.y == null ? 50 : loc.y)"
+              r="2.2"
+              class="loc-shape point"
+              :class="{ dim: editing && form.id === loc.id }"
+              @pointerdown.stop="onSavedDown($event, loc)"
+            />
+          </template>
+
+          <!-- 正在描边的区域 -->
+          <polygon
+            v-if="workingPolygon.length >= 3"
+            :points="pointsOf(workingPolygon)"
+            class="working-poly"
+            :class="{ bad: !!conflict }"
+          />
+          <polyline
+            v-else-if="workingPolygon.length === 2"
+            :points="pointsOf(workingPolygon)"
+            class="working-line"
+          />
+          <line
+            v-if="rubberBand"
+            :x1="rubberBand.from[0]"
+            :y1="rubberBand.from[1]"
+            :x2="rubberBand.to[0]"
+            :y2="rubberBand.to[1]"
+            class="rubber-line"
+          />
+          <circle
+            v-for="(point, index) in workingPolygon"
+            :key="'vertex-' + index"
+            :cx="point[0]"
+            :cy="point[1]"
+            r="1.2"
+            class="vertex-dot"
+            :title="'拖动调整第 ' + (index + 1) + ' 个顶点；双击结束描边'"
+            @pointerdown.stop="onVertexDown($event, index)"
+            @dblclick.stop="finishPolygon()"
+          />
+        </svg>
+
+        <!-- 地名标签 -->
+        <span
+          v-for="loc in locations"
+          :key="'label-' + loc.id"
+          class="map-label"
+          :class="{ dim: editing && form.id === loc.id }"
+          :style="labelStyle(loc)"
         >
-          <span class="area-label">
-            <LocationIcon :icon="form.icon" :size="13" />
-            <span>{{ form.name || '新地点' }}</span>
-          </span>
-          <span class="preview-badge">{{ form.id ? '预览' : '新增' }}</span>
-        </div>
+          <LocationIcon :icon="loc.icon" :size="13" />
+          <span>{{ loc.name }}</span>
+        </span>
       </div>
 
       <!-- 地点编辑表单：直接放在地图下方，不用弹窗 -->
       <div v-if="editing" class="loc-form">
         <div class="loc-form-head">
           <strong>{{ form.id ? '编辑地点' : '新增地点' }}</strong>
-          <span class="tip">地图上的虚线标记就是它的落点，可以直接拖动调整</span>
+          <span class="tip">地图上的彩色轮廓就是它的区域，可以拖动整体移动、拖顶点微调</span>
           <div class="loc-form-actions">
             <el-button size="small" @click="cancelEdit">取消</el-button>
             <el-button size="small" type="primary" :loading="saving" @click="onSaveLocation">保存地点</el-button>
@@ -123,15 +202,40 @@
             <el-form-item label="名称">
               <el-input v-model="form.name" placeholder="如：晨雾森林" maxlength="100" />
             </el-form-item>
-            <el-form-item label="区域范围">
+            <el-form-item label="区域形状">
+              <el-radio-group v-model="drawingMode" size="small">
+                <el-radio-button label="polygon">描边区域</el-radio-button>
+                <el-radio-button label="point">单点地点</el-radio-button>
+              </el-radio-group>
+            </el-form-item>
+            <el-form-item v-if="drawingMode === 'polygon'" label="描边">
+              <div class="draw-tools">
+                <span class="vertex-count">当前 {{ workingPolygon.length }} 个顶点</span>
+                <el-button size="small" :disabled="!workingPolygon.length" @click="undoVertex">撤销上一个点</el-button>
+                <el-button size="small" :disabled="!workingPolygon.length" @click="clearPolygon">清空重画</el-button>
+                <el-button size="small" :type="magicMode ? 'primary' : 'default'" @click="magicMode = !magicMode">
+                  魔法棒{{ magicMode ? '（已开启）' : '' }}
+                </el-button>
+                <el-button size="small" :disabled="workingPolygon.length < 3" @click="finishPolygon">完成描边</el-button>
+                <el-checkbox v-model="snapEnabled">顶点吸附</el-checkbox>
+              </div>
+              <div class="tip draw-tip">
+                在地图上逐点点击描边，双击某个顶点或点「完成描边」收尾；
+                开启「魔法棒」后点一下地图上颜色均匀的区域，会自动描出轮廓草稿（再手动拖顶点微调）；
+                开启「顶点吸附」后顶点会自动贴到相邻区域的边或顶点上，方便画出既贴边又不重叠的相邻区域
+              </div>
+            </el-form-item>
+            <el-form-item v-else label="坐标">
               <el-input-number v-model="form.x" :min="0" :max="100" controls-position="right" />
               <span class="range-sep">,</span>
               <el-input-number v-model="form.y" :min="0" :max="100" controls-position="right" />
-              <span class="range-sep">→</span>
-              <el-input-number v-model="form.x2" :min="0" :max="100" controls-position="right" />
-              <span class="range-sep">,</span>
-              <el-input-number v-model="form.y2" :min="0" :max="100" controls-position="right" />
-              <span class="tip">左上角 → 右下角（0~100 的地图百分比）；这块范围整体算同一个地方</span>
+              <span class="tip">单点地点（0~100 的地图百分比），适合传送门这类没有范围的去处</span>
+            </el-form-item>
+            <el-form-item v-if="conflict" label="重叠检查">
+              <span class="conflict-text">
+                与「{{ conflict.name }}」重叠了它面积的 {{ conflict.percent.toFixed(0) }}%（地图上标红的部分）；
+                区域之间不能交叉重叠，可以贴着画，或者改成包含关系（比如国家里放城市）
+              </span>
             </el-form-item>
             <el-form-item label="描述">
               <el-input
@@ -193,9 +297,10 @@
           </template>
         </el-table-column>
         <el-table-column prop="name" label="地点名称" min-width="140" />
-        <el-table-column label="区域范围" width="200">
+        <el-table-column label="区域范围" width="220">
           <template #default="{ row }">
-            ({{ row.x }}, {{ row.y }}) → ({{ (row.x || 0) + (row.width || 0) }}, {{ (row.y || 0) + (row.height || 0) }})
+            <span v-if="polygonOf(row)">多边形 · {{ polygonOf(row).length }} 个顶点</span>
+            <span v-else>单点 ({{ row.x }}, {{ row.y }})</span>
           </template>
         </el-table-column>
         <el-table-column prop="description" label="地点描述（会作为 AI 参考）" min-width="220" show-overflow-tooltip />
@@ -254,6 +359,15 @@
           <el-input v-model="settings.dailyLimit" style="width: 90px" />
           <span class="tip">每个角色每天的自动调用次数上限，填 0 表示不限制</span>
         </el-form-item>
+        <el-form-item label="失败退避">
+          <el-input v-model="settings.failBackoffBaseMinutes" style="width: 90px" />
+          <span class="range-sep">~</span>
+          <el-input v-model="settings.failBackoffMaxMinutes" style="width: 90px" />
+          <span class="tip">
+            分钟。AI 调用失败时把角色的下次行动时间往后推（连续失败按 2 倍递增，最多到上限），
+            避免模型挂掉后每 5 分钟重试一次白烧额度；成功一次即清零，管理员「立即执行一次」不受影响
+          </span>
+        </el-form-item>
         <el-form-item label="同轮行动时间窗">
           <el-input v-model="settings.batchWindowMinutes" style="width: 90px" />
           <span class="tip">分钟内到期的角色会合并成同一轮一起行动，方便互相遇见；填 0 表示只跑已到期的角色</span>
@@ -310,6 +424,12 @@
             控制日志体积建议用「系统设置 → 数据清理」里的沙盒行动日志保留天数
           </span>
         </el-form-item>
+        <el-form-item label="旅人低语">
+          <el-switch v-model="settings.whisperEnabled" active-value="1" inactive-value="0" />
+          <span class="tip">
+            关闭后前台不再显示留言入口（整块隐藏），接口也会拦截；历史低语与已消耗的积分都保留，后台仍可查看
+          </span>
+        </el-form-item>
         <el-form-item label="旅人低语消耗积分">
           <el-input v-model="settings.whisperPoints" style="width: 90px" />
           <span class="tip">前台登录用户留言一次扣除的积分，0 表示免费，管理员不扣</span>
@@ -327,9 +447,31 @@ import { ref, reactive, computed, onMounted, onBeforeUnmount } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import LocationIcon from '@/components/sandbox/LocationIcon.vue'
 import { sandboxIcons } from '@/config/sandboxIcons'
+import { magicWandPolygon } from '@/utils/sandboxTrace'
+import { useSandboxWorld } from '@/composables/useSandboxWorld'
+import {
+  REL_CROSS,
+  containsPoint,
+  coveragePercent,
+  labelPoint,
+  normalizePolygon,
+  overlapAllowed,
+  overlapCells,
+  overlapRatio,
+  parsePolygon,
+  polygonOf,
+  polygonToJson,
+  relation,
+  selfIntersects,
+  snapPoint
+} from '@/utils/sandboxGeo'
 import {
   sandboxWorld,
   saveSandboxWorld,
+  sandboxWorlds,
+  deleteSandboxWorld,
+  setSandboxWorldEnabled,
+  setSandboxWorldVisible,
   sandboxLocations,
   saveSandboxLocation,
   deleteSandboxLocation,
@@ -339,7 +481,14 @@ import {
 
 const uploadHeaders = { Authorization: localStorage.getItem('token') || '' }
 
-const world = reactive({ id: null, name: '', description: '', mapImage: '', worldPrompt: '', enabled: 1 })
+const world = reactive({
+  id: null, name: '', description: '', mapImage: '', worldPrompt: '', enabled: 1, portalVisible: 1
+})
+/** 全部世界与当前选中的世界（三个沙盒页面共用同一个选择） */
+const worlds = ref([])
+const { currentWorldId, setCurrentWorld } = useSandboxWorld()
+const selectedWorldId = ref(null)
+const currentWorld = computed(() => worlds.value.find((item) => item.id === selectedWorldId.value) || {})
 const locations = ref([])
 const settings = reactive({
   enabled: '0',
@@ -361,7 +510,10 @@ const settings = reactive({
   aiIntervalEnabled: '1',
   aiIntervalMin: '15',
   aiIntervalMax: '720',
-  systemModel: ''
+  systemModel: '',
+  failBackoffBaseMinutes: '15',
+  failBackoffMaxMinutes: '120',
+  whisperEnabled: '1'
 })
 
 const loading = ref(false)
@@ -370,24 +522,35 @@ const savingWorld = ref(false)
 const savingSetting = ref(false)
 const editing = ref(false)
 const mapRef = ref(null)
-/** 地点表单：x,y 是左上角，x2,y2 是右下角（保存时换算成区域宽高） */
+/** 地点表单：x,y 是区域标注点（单点地点就是它的坐标），区域形状走 workingPolygon */
 const form = reactive({
   id: null,
   name: '',
   icon: 'pin',
   x: 44,
   y: 46,
-  x2: 56,
-  y2: 53,
   description: '',
   sortOrder: 0
 })
 
 const isCustomIcon = computed(() => /^https?:\/\//i.test(form.icon || '') || (form.icon || '').startsWith('/'))
 
-/** 表单里的区域（左上角 + 宽高） */
-const formRect = computed(() => normalizeRect(form.x, form.y, form.x2, form.y2))
-const draggingId = ref(null)
+/** 描边模式：polygon = 套索/魔法棒画区域，point = 单点地点（传送门这类） */
+const drawingMode = ref('polygon')
+/** 顶点吸附：拖点/加点时自动贴到已有区域的顶点或边上，方便画出无缝不重叠的相邻区域 */
+const snapEnabled = ref(true)
+/** 魔法棒模式：点击地图按颜色自动描出轮廓草稿 */
+const magicMode = ref(false)
+/** 正在描边的顶点（还没保存） */
+const workingPolygon = ref([])
+/** 与其它区域的重叠冲突：{ name, percent } */
+const conflict = ref(null)
+/** 冲突高亮的格子 */
+const conflictCells = ref([])
+/** 区域覆盖率（所有地点合起来覆盖地图的百分比） */
+const coverage = ref(0)
+/** 鼠标位置，用于描边时的橡皮筋预览 */
+const cursorPoint = ref(null)
 
 let drag = null
 let moved = false
@@ -397,67 +560,119 @@ function clampPct(value) {
   return Math.min(100, Math.max(0, Number(value) || 0))
 }
 
-/** 由两组角点得到规范化的矩形 */
-function normalizeRect(x1, y1, x2, y2) {
-  const left = Math.min(clampPct(x1), clampPct(x2))
-  const top = Math.min(clampPct(y1), clampPct(y2))
-  return {
-    left,
-    top,
-    width: Math.max(0, Math.abs(clampPct(x2) - clampPct(x1))),
-    height: Math.max(0, Math.abs(clampPct(y2) - clampPct(y1)))
-  }
+/** 多边形顶点转 SVG points 字符串（viewBox 就是 0~100 的百分比坐标系） */
+function pointsOf(polygon) {
+  return (polygon || []).map(([x, y]) => `${x},${y}`).join(' ')
 }
 
-/** 区域的显示样式（最小尺寸保证还有点击和缩放的余地） */
-function areaStyle(rect) {
-  if (!rect) return {}
-  return {
-    left: rect.left + '%',
-    top: rect.top + '%',
-    width: Math.max(3, rect.width) + '%',
-    height: Math.max(2, rect.height) + '%'
-  }
+/** 地名标签位置：区域标注点（形心；凹多边形退回内部点） */
+function labelStyle(loc) {
+  const polygon = polygonOf(loc)
+  const point = polygon
+    ? labelPoint(polygon)
+    : [Number(loc.x == null ? 50 : loc.x), Number(loc.y == null ? 50 : loc.y)]
+  return { left: point[0] + '%', top: point[1] + '%' }
 }
 
-function rectOf(target) {
-  if (target === form) {
-    return { ...formRect.value }
-  }
+/** 描边时的橡皮筋：从最后一个顶点连到鼠标当前位置 */
+const rubberBand = computed(() => {
+  if (!editing.value || magicMode.value || drawingMode.value !== 'polygon') return null
+  if (!workingPolygon.value.length || !cursorPoint.value) return null
   return {
-    left: target.x == null ? 50 : target.x,
-    top: target.y == null ? 50 : target.y,
-    width: target.width == null ? 0 : target.width,
-    height: target.height == null ? 0 : target.height
+    from: workingPolygon.value[workingPolygon.value.length - 1],
+    to: [cursorPoint.value.x, cursorPoint.value.y]
   }
+})
+
+/** 顶点吸附：把点吸到相邻区域的顶点或边上（相邻区域才能既贴边又不重叠） */
+function applySnap(point) {
+  if (!snapEnabled.value) {
+    return [point.x, point.y]
+  }
+  const hit = snapPoint([point.x, point.y], locations.value, { excludeId: form.id })
+  return [hit.point[0], hit.point[1]]
 }
 
-/** 把矩形写回目标（已保存的地点直接改实体字段，预览则改表单） */
-function applyRect(target, rect) {
-  const left = clampPct(rect.left)
-  const top = clampPct(rect.top)
-  const width = Math.max(0, Math.min(100 - left, rect.width))
-  const height = Math.max(0, Math.min(100 - top, rect.height))
-  if (target === form) {
-    form.x = left
-    form.y = top
-    form.x2 = left + width
-    form.y2 = top + height
-  } else {
-    target.x = Math.round(left)
-    target.y = Math.round(top)
-    target.width = Math.round(width)
-    target.height = Math.round(height)
+/** 刷新区域覆盖率（所有地点合起来覆盖了地图多少） */
+function refreshCoverage() {
+  coverage.value = coveragePercent(locations.value)
+}
+
+let lastConflictCheck = 0
+
+/** 拖动顶点时没必要每一帧都算，稍微节流一下 */
+function recomputeConflictThrottled() {
+  const now = Date.now()
+  if (now - lastConflictCheck < 90) return
+  lastConflictCheck = now
+  recomputeConflict()
+}
+
+/**
+ * 检查正在描边的区域是否与其它地点冲突。
+ * 交叉重叠超过 1% 就标红并阻止保存；完全包含（嵌套，如国家里放城市）和轻微压边放行。
+ */
+function recomputeConflict() {
+  conflict.value = null
+  conflictCells.value = []
+  if (drawingMode.value !== 'polygon') return
+  const normalized = normalizePolygon(workingPolygon.value)
+  if (normalized.length < 3) return
+  let worst = null
+  for (const other of locations.value) {
+    if (form.id != null && other.id === form.id) continue
+    const otherPolygon = polygonOf(other)
+    if (!otherPolygon) {
+      // 对方是单点地点：它落在我画的区域里也算冲突
+      if (other.x != null && other.y != null && containsPoint(normalized, Number(other.x), Number(other.y))) {
+        worst = { name: other.name, percent: 1, other: null, polygon: normalized }
+        break
+      }
+      continue
+    }
+    if (relation(normalized, otherPolygon) !== REL_CROSS) continue
+    // 容差按区域大小自适应：小区域 10 单位²，大区域按 3% 放宽（手绘压边允许，真重叠拦下）
+    if (overlapAllowed(normalized, otherPolygon)) continue
+    const percent = overlapRatio(normalized, otherPolygon)
+    if (percent <= 0) continue
+    if (!worst || percent > worst.percent) {
+      worst = { name: other.name, percent, other: otherPolygon, polygon: normalized }
+    }
+  }
+  if (worst) {
+    conflict.value = worst
+    conflictCells.value = worst.other ? overlapCells(worst.polygon, worst.other) : []
   }
 }
 
 async function loadAll() {
   loading.value = true
   try {
-    const [w, locs, s] = await Promise.all([sandboxWorld(), sandboxLocations(), sandboxSettings()])
+    // 先取世界列表，确定当前世界（优先用上次选的那个），再加载它名下的地图与地点
+    worlds.value = (await sandboxWorlds()) || []
+    if (!worlds.value.length) {
+      // 一个世界都没有：给一个空表单，保存时会新建
+      setCurrentWorld(null)
+      selectedWorldId.value = null
+      Object.assign(world, { id: null, name: '', description: '', mapImage: '', worldPrompt: '', enabled: 1, portalVisible: 1 })
+      locations.value = []
+      Object.assign(settings, (await sandboxSettings()) || {})
+      return
+    }
+    const stored = currentWorldId.value
+    const exists = worlds.value.some((item) => item.id === stored)
+    setCurrentWorld(exists ? stored : worlds.value[0].id)
+    selectedWorldId.value = currentWorldId.value
+
+    const [w, locs, s] = await Promise.all([
+      sandboxWorld(selectedWorldId.value),
+      sandboxLocations(selectedWorldId.value),
+      sandboxSettings()
+    ])
     Object.assign(world, w || {})
     if (!world.name) world.name = ''
     locations.value = locs || []
+    refreshCoverage()
     Object.assign(settings, s || {})
   } finally {
     loading.value = false
@@ -465,7 +680,76 @@ async function loadAll() {
 }
 
 async function loadLocations() {
-  locations.value = await sandboxLocations()
+  locations.value = await sandboxLocations(selectedWorldId.value)
+  refreshCoverage()
+}
+
+/** 切换世界：三个沙盒页面共用这个选择 */
+async function onSwitchWorld(id) {
+  setCurrentWorld(id)
+  cancelEdit()
+  await loadAll()
+}
+
+/** 新建世界：只填名字，其余（地图、地点、角色）由管理员自己配 */
+async function onCreateWorld() {
+  let name = ''
+  try {
+    const res = await ElMessageBox.prompt('给新世界起个名字（之后可以在下方继续配置地图与世界观）', '新建世界', {
+      confirmButtonText: '创建',
+      cancelButtonText: '取消',
+      inputPattern: /\S+/,
+      inputErrorMessage: '名字不能为空'
+    })
+    name = res.value.trim()
+  } catch (e) {
+    return
+  }
+  await saveSandboxWorld({ name, description: '', enabled: 1, portalVisible: 1 })
+  ElMessage.success('世界已创建，记得上传地图并添加地点')
+  worlds.value = (await sandboxWorlds()) || []
+  const created = worlds.value[worlds.value.length - 1]
+  setCurrentWorld(created ? created.id : null)
+  selectedWorldId.value = currentWorldId.value
+  await loadAll()
+}
+
+/** 删除世界：连同它的角色、地点、行动等数据一起删掉（不可恢复） */
+async function onDeleteWorld() {
+  const target = currentWorld.value
+  if (!target || !target.id) {
+    return
+  }
+  try {
+    await ElMessageBox.confirm(
+      `确定删除世界「${target.name || target.id}」吗？`
+        + '它名下的角色、地点、行动记录、记忆、背包、好感度、纪闻、旅人低语与金币流水都会一起删除，且不可恢复。',
+      '删除世界',
+      { type: 'warning', confirmButtonText: '确认删除', cancelButtonText: '取消' }
+    )
+  } catch (e) {
+    return
+  }
+  await deleteSandboxWorld(target.id)
+  ElMessage.success('世界已删除')
+  setCurrentWorld(null)
+  await loadAll()
+}
+
+/** 切换这个世界的「是否运行」 */
+async function onToggleWorldEnabled(val) {
+  if (!selectedWorldId.value) return
+  await setSandboxWorldEnabled(selectedWorldId.value, val ? 1 : 0)
+  ElMessage.success(val ? '这个世界已开始自动行动' : '这个世界已停止自动行动（前台仍可查看历史）')
+  await loadAll()
+}
+
+/** 切换这个世界的「前台是否可见」 */
+async function onToggleWorldVisible(val) {
+  if (!selectedWorldId.value) return
+  await setSandboxWorldVisible(selectedWorldId.value, val ? 1 : 0)
+  ElMessage.success(val ? '前台世界下拉里会显示这个世界' : '前台世界下拉里不再显示这个世界')
+  await loadAll()
 }
 
 function onMapSuccess(res) {
@@ -527,33 +811,106 @@ function percentFromEvent(event) {
 function onMapClick(event) {
   if (suppressMapClick || drag) return
   const point = percentFromEvent(event)
-  // 已有未保存的表单时，点击地图把区域整体挪过去，避免误新建
-  if (editing.value) {
-    const rect = formRect.value
-    applyRect(form, {
-      left: point.x - rect.width / 2,
-      top: point.y - rect.height / 2,
-      width: rect.width,
-      height: rect.height
-    })
+  if (!editing.value) {
+    openAdd(point.x, point.y)
     return
   }
-  openAdd(point.x, point.y)
+  if (drawingMode.value === 'point') {
+    form.x = Math.round(point.x)
+    form.y = Math.round(point.y)
+    return
+  }
+  if (magicMode.value) {
+    runMagicWand(point)
+    return
+  }
+  workingPolygon.value = [...workingPolygon.value, applySnap(point)]
+  recomputeConflict()
 }
 
-/** 新增地点：以点击位置为中心，给一块默认区域 */
+function onMapHover(event) {
+  if (!editing.value || !world.mapImage) return
+  cursorPoint.value = percentFromEvent(event)
+}
+
+function onMapLeave() {
+  cursorPoint.value = null
+}
+
+function undoVertex() {
+  workingPolygon.value = workingPolygon.value.slice(0, -1)
+  recomputeConflict()
+}
+
+function clearPolygon() {
+  workingPolygon.value = []
+  conflict.value = null
+  conflictCells.value = []
+}
+
+/**
+ * 描边收尾：去掉重复/共线顶点，检查顶点数与自交，最后确认没有重叠冲突。
+ * @returns {boolean} 是否可以保存
+ */
+function finishPolygon() {
+  const cleaned = normalizePolygon(workingPolygon.value)
+  if (cleaned.length < 3) {
+    ElMessage.warning('至少需要 3 个顶点才能围出一块区域')
+    return false
+  }
+  if (selfIntersects(cleaned)) {
+    ElMessage.warning('区域边界不能自交（不能画成 8 字形），请调整顶点')
+    return false
+  }
+  workingPolygon.value = cleaned
+  recomputeConflict()
+  if (conflict.value) {
+    ElMessage.warning(
+      `与「${conflict.value.name}」重叠了 ${conflict.value.percent.toFixed(1)}%，区域之间不能交叉重叠`
+    )
+    return false
+  }
+  return true
+}
+
+/** 魔法棒：点一下地图上颜色均匀的区域，自动描出轮廓草稿 */
+function runMagicWand(point) {
+  const image = mapRef.value ? mapRef.value.querySelector('.map-img') : null
+  const result = magicWandPolygon(image, point.x, point.y)
+  if (!result.ok) {
+    ElMessage.warning(result.message)
+    return
+  }
+  const cleaned = normalizePolygon(result.polygon)
+  if (cleaned.length < 3) {
+    ElMessage.warning('没描出有效轮廓，换个位置点点看')
+    return
+  }
+  workingPolygon.value = cleaned
+  recomputeConflict()
+  if (conflict.value) {
+    ElMessage.warning(
+      `自动描出的区域与「${conflict.value.name}」重叠了 ${conflict.value.percent.toFixed(1)}%，请拖顶点调整`
+    )
+  } else {
+    ElMessage.success(`已描出 ${cleaned.length} 个顶点的轮廓草稿，可以拖动顶点微调`)
+  }
+}
+
+/** 新增地点：以点击位置作为第一个顶点，接着继续点就能描边 */
 function openAdd(cx = 50, cy = 50) {
   form.id = null
   form.name = ''
   form.icon = 'pin'
-  const left = clampPct(cx - 6)
-  const top = clampPct(cy - 3.5)
-  form.x = left
-  form.y = top
-  form.x2 = Math.min(100, left + 12)
-  form.y2 = Math.min(100, top + 7)
+  form.x = Math.round(clampPct(cx))
+  form.y = Math.round(clampPct(cy))
   form.description = ''
   form.sortOrder = locations.value.length
+  drawingMode.value = 'polygon'
+  magicMode.value = false
+  workingPolygon.value = [[form.x, form.y]]
+  conflict.value = null
+  conflictCells.value = []
   editing.value = true
 }
 
@@ -561,19 +918,34 @@ function openEdit(row) {
   form.id = row.id
   form.name = row.name
   form.icon = row.icon || 'pin'
-  const left = row.x == null ? 44 : row.x
-  const top = row.y == null ? 46 : row.y
-  form.x = left
-  form.y = top
-  form.x2 = left + (row.width == null ? 0 : row.width)
-  form.y2 = top + (row.height == null ? 0 : row.height)
+  form.x = row.x == null ? 50 : row.x
+  form.y = row.y == null ? 50 : row.y
   form.description = row.description || ''
   form.sortOrder = row.sortOrder || 0
+  const polygon = parsePolygon(row.polygon)
+  if (polygon.length >= 3) {
+    drawingMode.value = 'polygon'
+    workingPolygon.value = polygon.map((p) => [...p])
+  } else if (Number(row.width || 0) > 0 && Number(row.height || 0) > 0) {
+    // 老的矩形地点：自动转成 4 个顶点，可以直接拖成多边形
+    drawingMode.value = 'polygon'
+    workingPolygon.value = (polygonOf(row) || []).map((p) => [...p])
+  } else {
+    drawingMode.value = 'point'
+    workingPolygon.value = []
+  }
+  magicMode.value = false
+  conflict.value = null
+  conflictCells.value = []
   editing.value = true
 }
 
 function cancelEdit() {
   editing.value = false
+  workingPolygon.value = []
+  conflict.value = null
+  conflictCells.value = []
+  magicMode.value = false
   drag = null
 }
 
@@ -582,26 +954,35 @@ async function onSaveLocation() {
     ElMessage.warning('请输入地点名称')
     return
   }
-  const rect = formRect.value
-  if (rect.width < 1 && rect.height < 1) {
-    ElMessage.warning('区域范围太小了，请拖动地图上的虚线框调整一下')
+  if (drawingMode.value === 'polygon' && !finishPolygon()) {
     return
   }
   saving.value = true
   try {
-    await saveSandboxLocation({
+    const payload = {
       id: form.id,
       name: form.name,
       icon: form.icon,
       description: form.description,
       sortOrder: form.sortOrder,
-      x: Math.round(rect.left),
-      y: Math.round(rect.top),
-      width: Math.round(rect.width),
-      height: Math.round(rect.height)
-    })
+      // 新建地点要指明属于哪个世界；编辑时后端已经有记录，不必再传
+      worldId: form.id ? undefined : selectedWorldId.value
+    }
+    if (drawingMode.value === 'polygon') {
+      // 多边形区域：宽高由后端按外接矩形自动算
+      payload.polygon = polygonToJson(workingPolygon.value)
+    } else {
+      // 单点地点：传空字符串表示清掉多边形，按坐标点判定
+      payload.polygon = ''
+      payload.x = Math.round(clampPct(form.x))
+      payload.y = Math.round(clampPct(form.y))
+      payload.width = 0
+      payload.height = 0
+    }
+    await saveSandboxLocation(payload)
     ElMessage.success('地点已保存')
     editing.value = false
+    workingPolygon.value = []
     await loadLocations()
   } finally {
     saving.value = false
@@ -618,45 +999,68 @@ async function onDeleteLocation(row) {
   await loadLocations()
 }
 
-// 拖动地图上的区域即可移动/缩放；正在编辑时拖动的是预览区域
-function startDrag(event, target, mode) {
+/** 拖动「正在编辑的区域」的某个顶点来微调边界 */
+function onVertexDown(event, index) {
   event.preventDefault()
-  event.stopPropagation()
-  drag = { target, mode, start: percentFromEvent(event), rect: rectOf(target) }
-  draggingId.value = target && target.id != null ? target.id : null
+  drag = { mode: 'vertex', index }
   moved = false
   window.addEventListener('pointermove', onPointerMove)
   window.addEventListener('pointerup', onPointerUp)
 }
 
-function onAreaDown(event, loc) {
-  startDrag(event, loc, 'move')
-}
-
-function onResizeDown(event, loc) {
-  startDrag(event, loc, 'resize')
-}
-
-function onPreviewDown(event) {
-  startDrag(event, form, 'move')
+/**
+ * 拖动已保存的区域 = 整体平移（松手后自动保存）。
+ * 正在编辑别的区域时忽略，避免误操作；单击不拖动则是打开编辑。
+ */
+function onSavedDown(event, loc) {
+  if (editing.value && form.id !== loc.id) return
+  event.preventDefault()
+  const polygon = polygonOf(loc) || [[Number(loc.x == null ? 50 : loc.x), Number(loc.y == null ? 50 : loc.y)]]
+  drag = {
+    mode: 'translate',
+    loc,
+    // 单点地点整体平移时改的是坐标，不是多边形（后端要求多边形至少 3 个顶点）
+    isPolygon: !!polygonOf(loc),
+    polygon: polygon.map((p) => [...p]),
+    start: percentFromEvent(event)
+  }
+  moved = false
+  window.addEventListener('pointermove', onPointerMove)
+  window.addEventListener('pointerup', onPointerUp)
 }
 
 function onPointerMove(event) {
   if (!drag) return
   const point = percentFromEvent(event)
-  const dx = point.x - drag.start.x
-  const dy = point.y - drag.start.y
-  if (Math.abs(dx) > 0.4 || Math.abs(dy) > 0.4) {
+  if (drag.mode === 'vertex') {
+    const snapped = applySnap(point)
+    const next = workingPolygon.value.map((p) => [...p])
+    next[drag.index] = snapped
+    workingPolygon.value = next
     moved = true
+    recomputeConflictThrottled()
+    return
   }
-  if (drag.mode === 'move') {
-    applyRect(drag.target, { ...drag.rect, left: drag.rect.left + dx, top: drag.rect.top + dy })
-  } else {
-    applyRect(drag.target, {
-      ...drag.rect,
-      width: Math.max(2, drag.rect.width + dx),
-      height: Math.max(1.5, drag.rect.height + dy)
-    })
+  if (drag.mode === 'translate') {
+    const dx = point.x - drag.start.x
+    const dy = point.y - drag.start.y
+    if (Math.abs(dx) > 0.4 || Math.abs(dy) > 0.4) {
+      moved = true
+    }
+    const shifted = drag.polygon.map(([x, y]) => [clampPct(x + dx), clampPct(y + dy)])
+    drag.shifted = shifted
+    if (!drag.isPolygon) {
+      // 单点地点：直接改坐标做实时预览
+      drag.loc.x = Math.round(shifted[0][0])
+      drag.loc.y = Math.round(shifted[0][1])
+    } else if (editing.value && form.id === drag.loc.id) {
+      // 正在编辑的就是它 → 只改预览，保存时一起提交
+      workingPolygon.value = shifted
+      recomputeConflictThrottled()
+    } else {
+      // 其它已保存区域：直接改本地对象做实时预览，松手后再落库
+      drag.loc.polygon = polygonToJson(shifted)
+    }
   }
 }
 
@@ -665,22 +1069,43 @@ async function onPointerUp() {
   window.removeEventListener('pointerup', onPointerUp)
   const state = drag
   drag = null
-  draggingId.value = null
+  if (!state) return
+  cursorPoint.value = null
   suppressMapClick = true
   setTimeout(() => {
     suppressMapClick = false
   }, 200)
-  if (!state) return
-  // 预览区域只改表单，保存时一起提交
-  if (state.target === form) return
+  if (state.mode === 'vertex') {
+    recomputeConflict()
+    return
+  }
+  // 平移：没真正移动就是一次单击 → 打开编辑
   if (!moved) {
-    openEdit(state.target)
+    openEdit(state.loc)
+    return
+  }
+  if (editing.value && form.id === state.loc.id) {
+    recomputeConflict()
     return
   }
   try {
-    await saveSandboxLocation({ ...state.target })
-    ElMessage.success('区域已更新')
+    const shifted = state.shifted || state.polygon
+    const payload = state.isPolygon
+      ? { ...state.loc, polygon: polygonToJson(shifted) }
+      : {
+          ...state.loc,
+          polygon: '',
+          x: Math.round(shifted[0][0]),
+          y: Math.round(shifted[0][1]),
+          width: 0,
+          height: 0
+        }
+    await saveSandboxLocation(payload)
+    ElMessage.success('区域已移动')
   } catch (e) {
+    // 保存失败（例如移动后与别的区域重叠）时回滚显示；
+    // 后端返回的原因由请求层统一弹出提示，这里不重复提示
+  } finally {
     await loadLocations()
   }
 }
@@ -702,6 +1127,27 @@ onBeforeUnmount(() => {
 .range-sep { margin: 0 8px; color: var(--el-text-color-secondary); }
 .world-form { max-width: 760px; }
 .setting-form { max-width: 760px; }
+/* 多世界：切换与开关工具条 */
+.world-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--el-border-color-lighter);
+  background: var(--el-fill-color-blank);
+}
+.world-label { font-size: 13px; color: var(--el-text-color-regular); }
+.world-tag {
+  margin-left: 8px;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 11px;
+  color: var(--el-text-color-secondary);
+  background: var(--el-fill-color-light);
+}
 .map-thumb { width: 220px; border-radius: 10px; display: block; }
 .map-preview {
   position: relative;
@@ -724,68 +1170,98 @@ onBeforeUnmount(() => {
   color: var(--el-text-color-secondary);
   font-size: 13px;
 }
-/* 地点区域：半透明色块 + 虚线边框，可整体拖动，右下角手柄可缩放 */
-.map-area {
+/* 区域编辑层：viewBox 就是 0~100 的百分比坐标系，SVG 坐标可以直接当地图坐标 */
+.edit-layer {
   position: absolute;
-  padding: 2px 4px;
-  border: 1.5px dashed var(--el-color-primary);
-  border-radius: 8px;
-  background: rgba(64, 158, 255, 0.16);
-  cursor: move;
-  overflow: hidden;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.5);
-}
-.map-area:hover { background: rgba(64, 158, 255, 0.26); }
-.map-area.dim { opacity: 0.35; }
-.map-area.preview {
-  border-style: dashed;
-  background: rgba(255, 111, 159, 0.18);
-  border-color: #ff6f9f;
+  inset: 0;
+  width: 100%;
+  height: 100%;
   z-index: 3;
+  overflow: visible;
 }
-.area-label {
+.loc-shape {
+  fill: rgba(64, 158, 255, 0.16);
+  stroke: var(--el-color-primary);
+  stroke-width: 1.5;
+  stroke-dasharray: 4 3;
+  /* 地图被拉伸时线宽保持不变 */
+  vector-effect: non-scaling-stroke;
+  cursor: move;
+  transition: fill 0.2s ease;
+}
+.loc-shape:hover { fill: rgba(64, 158, 255, 0.3); }
+.loc-shape.dim { opacity: 0.3; }
+.loc-shape.point { fill: rgba(64, 158, 255, 0.5); }
+
+/* 正在描边的区域 */
+.working-poly {
+  fill: rgba(255, 111, 159, 0.2);
+  stroke: #ff6f9f;
+  stroke-width: 1.8;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+.working-poly.bad {
+  fill: rgba(245, 108, 108, 0.26);
+  stroke: #f56c6c;
+}
+.working-line {
+  fill: none;
+  stroke: #ff6f9f;
+  stroke-width: 1.8;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+.rubber-line {
+  stroke: #ff6f9f;
+  stroke-width: 1.2;
+  stroke-dasharray: 3 3;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+.vertex-dot {
+  fill: #fff;
+  stroke: #ff6f9f;
+  stroke-width: 1.4;
+  vector-effect: non-scaling-stroke;
+  cursor: grab;
+}
+.vertex-dot:hover { fill: #ff6f9f; }
+.conflict-cell {
+  fill: rgba(245, 108, 108, 0.35);
+  stroke: none;
+  pointer-events: none;
+}
+
+/* 地名标签：跟着区域标注点走，不占区域面积 */
+.map-label {
+  position: absolute;
+  z-index: 4;
+  transform: translate(-50%, -50%);
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  padding: 1px 7px;
+  border-radius: 999px;
   font-size: 12px;
-  color: #2c3e50;
-  background: rgba(255, 255, 255, 0.86);
-  padding: 1px 6px;
-  border-radius: 999px;
+  color: var(--el-text-color-primary);
+  background: rgba(255, 255, 255, 0.88);
   white-space: nowrap;
-  max-width: 100%;
-  overflow: hidden;
+  pointer-events: none;
 }
-.area-label svg { color: var(--el-color-primary); flex-shrink: 0; }
-.area-size {
-  position: absolute;
-  right: 4px;
-  bottom: 3px;
-  font-size: 10px;
-  color: #5a6b7d;
-  background: rgba(255, 255, 255, 0.75);
-  padding: 0 4px;
-  border-radius: 999px;
+.map-label svg { color: var(--el-color-primary); flex-shrink: 0; }
+.map-label.dim { opacity: 0.4; }
+
+/* 描边工具条 */
+.draw-tools {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
 }
-.area-handle {
-  position: absolute;
-  right: -1px;
-  bottom: -1px;
-  width: 12px;
-  height: 12px;
-  border-radius: 4px 0 6px 0;
-  background: var(--el-color-primary);
-  cursor: nwse-resize;
-  opacity: 0.85;
-}
-.preview-badge {
-  margin-left: 2px;
-  padding: 0 6px;
-  border-radius: 999px;
-  font-size: 10px;
-  color: #fff;
-  background: var(--el-color-primary);
-}
+.vertex-count { font-size: 12px; color: var(--el-text-color-regular); }
+.draw-tip { display: block; margin-top: 8px; line-height: 1.7; max-width: 760px; }
+.conflict-text { color: var(--el-color-danger); font-size: 12px; line-height: 1.7; }
 
 .loc-form {
   margin-top: 14px;

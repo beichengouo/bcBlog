@@ -23,6 +23,7 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -43,8 +44,14 @@ public class AdminSandboxController {
     // ---------------- 世界与地图 ----------------
 
     @GetMapping("/world")
-    public Result<SandboxWorld> world() {
-        return Result.ok(sandboxService.world());
+    public Result<SandboxWorld> world(@RequestParam(required = false) Long worldId) {
+        return Result.ok(sandboxService.world(worldId));
+    }
+
+    /** 全部世界（后台世界管理用） */
+    @GetMapping("/worlds")
+    public Result<List<SandboxWorld>> worlds() {
+        return Result.ok(sandboxService.worlds());
     }
 
     @PostMapping("/world")
@@ -53,11 +60,32 @@ public class AdminSandboxController {
         return Result.ok();
     }
 
+    /** 删除世界：连同它的角色、地点、行动、记忆、背包、好感度、纪闻、低语、金币流水一起清掉 */
+    @DeleteMapping("/world/{id}")
+    public Result<Void> deleteWorld(@PathVariable Long id) {
+        sandboxService.deleteWorld(id);
+        return Result.ok();
+    }
+
+    /** 切换「是否运行」：关闭后该世界不再自动行动，前台可以只看历史 */
+    @PutMapping("/world/{id}/enabled")
+    public Result<Void> setWorldEnabled(@PathVariable Long id, @RequestParam Integer enabled) {
+        sandboxService.setWorldEnabled(id, enabled);
+        return Result.ok();
+    }
+
+    /** 切换「前台是否可见」 */
+    @PutMapping("/world/{id}/visible")
+    public Result<Void> setWorldVisible(@PathVariable Long id, @RequestParam Integer visible) {
+        sandboxService.setWorldVisible(id, visible);
+        return Result.ok();
+    }
+
     // ---------------- 地点 ----------------
 
     @GetMapping("/locations")
-    public Result<List<SandboxLocation>> locations() {
-        return Result.ok(sandboxService.locations());
+    public Result<List<SandboxLocation>> locations(@RequestParam(required = false) Long worldId) {
+        return Result.ok(sandboxService.locations(worldId));
     }
 
     @PostMapping("/locations")
@@ -87,8 +115,8 @@ public class AdminSandboxController {
     // ---------------- 角色 ----------------
 
     @GetMapping("/characters")
-    public Result<List<SandboxCharacter>> characters() {
-        return Result.ok(sandboxService.characters());
+    public Result<List<SandboxCharacter>> characters(@RequestParam(required = false) Long worldId) {
+        return Result.ok(sandboxService.characters(worldId));
     }
 
     @PostMapping("/characters")
@@ -98,8 +126,9 @@ public class AdminSandboxController {
 
     /** AI 一键创作角色：结合当前世界观生成角色卡，供新增角色表单填充 */
     @PostMapping("/characters/generate")
-    public Result<SandboxCharacterDraftVO> generateCharacter(@RequestBody SandboxCharacterGenerateDTO dto) {
-        return Result.ok(sandboxService.generateCharacter(dto));
+    public Result<SandboxCharacterDraftVO> generateCharacter(@RequestBody SandboxCharacterGenerateDTO dto,
+                                                             @RequestParam(required = false) Long worldId) {
+        return Result.ok(sandboxService.generateCharacter(dto, worldId));
     }
 
     @DeleteMapping("/characters/{id}")
@@ -116,8 +145,8 @@ public class AdminSandboxController {
 
     /** 一键让全部启用角色行动一轮：多角色同时行动，便于互相遇见与互动 */
     @PostMapping("/run-all")
-    public Result<SandboxRunAllVO> runAll() {
-        return Result.ok(sandboxService.runAll());
+    public Result<SandboxRunAllVO> runAll(@RequestParam(required = false) Long worldId) {
+        return Result.ok(sandboxService.runAll(worldId));
     }
 
     // ---------------- 行动日志 ----------------
@@ -125,9 +154,10 @@ public class AdminSandboxController {
     @GetMapping("/acts")
     public Result<PageResult<SandboxAct>> acts(@RequestParam(required = false) Long characterId,
                                                @RequestParam(required = false) String locationName,
+                                               @RequestParam(required = false) Long worldId,
                                                @RequestParam(defaultValue = "1") long page,
                                                @RequestParam(defaultValue = "10") long size) {
-        return Result.ok(sandboxService.acts(characterId, locationName, page, size));
+        return Result.ok(sandboxService.acts(characterId, locationName, worldId, page, size));
     }
 
     @DeleteMapping("/acts/{id}")
@@ -235,9 +265,10 @@ public class AdminSandboxController {
 
     @GetMapping("/news")
     public Result<PageResult<SandboxNews>> news(@RequestParam(required = false) String date,
+                                                @RequestParam(required = false) Long worldId,
                                                 @RequestParam(defaultValue = "1") long page,
                                                 @RequestParam(defaultValue = "10") long size) {
-        return Result.ok(sandboxService.newsPage(date, page, size));
+        return Result.ok(sandboxService.newsPage(date, page, size, worldId));
     }
 
     @PostMapping("/news")
@@ -258,6 +289,53 @@ public class AdminSandboxController {
         Integer count = Convert.toInt(body.get("count"), null);
         Long providerId = Convert.toLong(body.get("providerId"), null);
         String model = body.get("model") == null ? null : String.valueOf(body.get("model"));
-        return Result.ok(sandboxService.generateNews(count, providerId, model));
+        Long worldId = Convert.toLong(body.get("worldId"), null);
+        return Result.ok(sandboxService.generateNews(count, providerId, model, worldId));
+    }
+
+    // ---------------- 旅人集市 ----------------
+
+    /** 后台：最新一批集市商品（含已下架的） */
+    @GetMapping("/shop")
+    public Result<List<com.bc.bcblog.entity.SandboxShopItem>> shop(@RequestParam(required = false) Long worldId) {
+        return Result.ok(sandboxService.shopItemsForAdmin(worldId));
+    }
+
+    /** 后台：手动上架 / 编辑商品 */
+    @PostMapping("/shop")
+    public Result<com.bc.bcblog.entity.SandboxShopItem> saveShopItem(
+            @RequestBody com.bc.bcblog.entity.SandboxShopItem item) {
+        return Result.ok(sandboxService.saveShopItem(item));
+    }
+
+    @DeleteMapping("/shop/{id}")
+    public Result<Void> deleteShopItem(@PathVariable Long id) {
+        sandboxService.deleteShopItem(id);
+        return Result.ok();
+    }
+
+    /** 后台：立即生成一批新商品 */
+    @PostMapping("/shop/generate")
+    public Result<Integer> generateShop(@RequestBody Map<String, Object> body) {
+        Integer count = Convert.toInt(body.get("count"), null);
+        Long providerId = Convert.toLong(body.get("providerId"), null);
+        String model = body.get("model") == null ? null : String.valueOf(body.get("model"));
+        Long worldId = Convert.toLong(body.get("worldId"), null);
+        return Result.ok(sandboxService.generateShopItems(count, providerId, model, worldId));
+    }
+
+    /** 后台：购买记录 */
+    @GetMapping("/shop/orders")
+    public Result<PageResult<com.bc.bcblog.entity.SandboxShopOrder>> shopOrders(
+            @RequestParam(required = false) Long worldId,
+            @RequestParam(defaultValue = "1") long page,
+            @RequestParam(defaultValue = "10") long size) {
+        return Result.ok(sandboxService.shopOrders(worldId, page, size));
+    }
+
+    /** 后台：今日集市统计（卖出件数 / 回收积分） */
+    @GetMapping("/shop/stats")
+    public Result<Map<String, Object>> shopStats(@RequestParam(required = false) Long worldId) {
+        return Result.ok(sandboxService.shopStats(worldId));
     }
 }

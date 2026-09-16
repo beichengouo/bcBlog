@@ -6,6 +6,7 @@ import com.bc.bcblog.common.Result;
 import com.bc.bcblog.entity.SandboxAct;
 import com.bc.bcblog.entity.SandboxCoinLog;
 import com.bc.bcblog.entity.SandboxInteraction;
+import com.bc.bcblog.entity.SandboxWorld;
 import com.bc.bcblog.service.SandboxService;
 import com.bc.bcblog.vo.SandboxCoinResultVO;
 import com.bc.bcblog.vo.SandboxPortalVO;
@@ -18,6 +19,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Map;
+import java.util.List;
 
 /**
  * 前台沙盒接口。
@@ -34,20 +36,39 @@ public class PortalSandboxController {
 
     /** 沙盒首页：世界、地图地点、角色与最近行动 */
     @GetMapping
-    public Result<SandboxPortalVO> portal() {
-        return Result.ok(sandboxService.portal());
+    public Result<SandboxPortalVO> portal(@RequestParam(required = false) Long worldId) {
+        // 不传 worldId 时用第一个世界（兼容旧链接）
+        return Result.ok(sandboxService.portal(worldId));
+    }
+
+    /** 前台可切换的世界列表：只列「前台可见」的，包含已停止运行的（游客可以只看历史） */
+    @GetMapping("/worlds")
+    public Result<List<SandboxWorld>> worlds() {
+        return Result.ok(sandboxService.visibleWorlds());
     }
 
     /** 行动时间线（可按角色筛选） */
     @GetMapping("/acts")
     public Result<PageResult<SandboxAct>> acts(@RequestParam(required = false) Long characterId,
                                                @RequestParam(required = false) String locationName,
+                                               @RequestParam(required = false) Long worldId,
                                                @RequestParam(defaultValue = "1") long page,
                                                @RequestParam(defaultValue = "10") long size) {
-        return Result.ok(sandboxService.acts(characterId, locationName, page, size));
+        return Result.ok(sandboxService.acts(characterId, locationName, worldId, page, size));
     }
 
     /** 某个角色收到的旅人低语 */
+    /** 旅人集市：把商品赠送给某个角色（扣积分、进角色背包） */
+    @PostMapping("/shop/buy")
+    public Result<com.bc.bcblog.entity.SandboxShopOrder> buyShopItem(@RequestBody Map<String, Object> body) {
+        Long itemId = Convert.toLong(body.get("itemId"), null);
+        Long characterId = Convert.toLong(body.get("characterId"), null);
+        if (itemId == null || characterId == null) {
+            return Result.fail(400, "请选择要赠送的商品和角色");
+        }
+        return Result.ok(sandboxService.buyShopItem(itemId, characterId));
+    }
+
     @GetMapping("/interactions")
     public Result<PageResult<SandboxInteraction>> interactions(@RequestParam Long characterId,
                                                                @RequestParam(defaultValue = "1") long page,

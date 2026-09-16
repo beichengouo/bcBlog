@@ -1,9 +1,41 @@
 <template>
   <div class="sandbox">
     <header class="sandbox-head">
-      <h1>{{ world.name || '沙盒世界' }}</h1>
+      <div class="head-title">
+        <!-- 多个世界时标题本身就是切换入口；只有一个世界时用纯文字标题 -->
+        <el-dropdown
+          v-if="worlds.length > 1"
+          trigger="click"
+          placement="bottom-start"
+          @command="onSwitchWorld"
+        >
+          <button type="button" class="world-title-btn">
+            <span class="world-title-name">{{ currentWorldName }}</span>
+            <svg class="world-title-caret" viewBox="0 0 24 24" width="16" height="16" fill="none"
+                 stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M6 9l6 6 6-6" />
+            </svg>
+          </button>
+          <template #dropdown>
+            <el-dropdown-menu class="world-menu">
+              <el-dropdown-item
+                v-for="item in worlds"
+                :key="'w-' + item.id"
+                :command="item.id"
+                :class="{ 'is-current': item.id === currentWorldId }"
+              >
+                <span class="world-option-name">{{ item.name || ('世界 ' + item.id) }}</span>
+                <span v-if="item.enabled !== 1" class="world-option-tag">已停止</span>
+              </el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
+        <h1 v-else>{{ world.name || '沙盒世界' }}</h1>
+      </div>
       <p>{{ world.description || '管理员还没有填写世界简介' }}</p>
-      <span v-if="!enabled" class="paused">AI 自动行动已暂停，当前只展示历史记录</span>
+      <span v-if="!enabled" class="paused">
+        {{ currentWorldStopped ? '这个世界已停止运行，当前只展示历史记录' : 'AI 自动行动已暂停，当前只展示历史记录' }}
+      </span>
     </header>
 
     <section class="map-card">
@@ -36,7 +68,29 @@
           </div>
         </div>
 
-        <!-- 地点区域：默认只显示地名与图标，不显示角色头像 -->
+        <!-- 地点区域：套索画的多边形用 SVG 描边显示；单点地点画成小圆点 -->
+        <svg class="area-layer" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+          <template v-for="loc in locations" :key="'shape-' + loc.id">
+            <polygon
+              v-if="locationPolygon(loc)"
+              :points="polygonPoints(loc)"
+              class="area-shape"
+              :class="{ on: activeLocationId === loc.id, flash: flashLocationId === loc.id }"
+              @click.stop="toggleLocation(loc)"
+            />
+            <circle
+              v-else
+              :cx="Number(loc.x == null ? 50 : loc.x)"
+              :cy="Number(loc.y == null ? 50 : loc.y)"
+              r="2.4"
+              class="area-shape point"
+              :class="{ on: activeLocationId === loc.id, flash: flashLocationId === loc.id }"
+              @click.stop="toggleLocation(loc)"
+            />
+          </template>
+        </svg>
+
+        <!-- 地点名标签：放在区域标注点上（形心；凹多边形退回内部点），默认只显示地名与图标 -->
         <div
           v-for="loc in locations"
           :key="'area-' + loc.id"
@@ -49,8 +103,8 @@
           <span class="area-label">
             <LocationIcon :icon="loc.icon" :size="15" />
             <span class="area-name">{{ loc.name }}</span>
+            <span v-if="charactersIn(loc).length" class="area-count">{{ charactersIn(loc).length }}</span>
           </span>
-          <span v-if="charactersIn(loc).length" class="area-count">{{ charactersIn(loc).length }}</span>
         </div>
 
         <!-- 点击地点后，该地的角色头像出现在区域下方 -->
@@ -135,6 +189,7 @@
             </div>
             <div class="status">
               <span class="chip coin-chip">金币 {{ active.coins || 0 }}</span>
+              <span class="chip combat-chip">战斗力 {{ active.combatPower == null ? 10 : active.combatPower }}</span>
               <span v-for="(value, key) in active.status || {}" :key="key" class="chip">
                 {{ key }} {{ value }}
               </span>
@@ -281,6 +336,7 @@
                 <span v-if="act.companions" class="companion-tag">与 {{ act.companions }} 互动</span>
                 <span v-if="act.favorChange" class="favor-tag">好感 {{ act.favorChange }}</span>
                 <span v-if="act.itemChange" class="item-tag">{{ act.itemChange }}</span>
+                <span v-if="act.combatChange" class="combat-tag">战斗力 {{ act.combatChange > 0 ? "+" : "" }}{{ act.combatChange }}</span>
               </div>
               <div class="act-body">{{ act.actions }}</div>
               <div v-if="act.innerVoice" class="voice">「{{ act.innerVoice }}」</div>
@@ -291,7 +347,8 @@
       </div>
     </section>
 
-    <section class="card panel">
+    <!-- 旅人低语：后台总开关关闭时整块不显示（默认不渲染，接口确认开启后才出现） -->
+    <section v-if="whisperEnabled" class="card panel">
       <div class="panel-head">
         <h3>旅人低语</h3>
         <div class="panel-tools">
@@ -343,10 +400,98 @@
       </div>
     </section>
 
+    <!-- 旅人集市：AI 定时刷新的商品，用积分买下后直接赠送给角色（商品进角色背包） -->
+    <section v-if="shopEnabled" class="card shop">
+      <div class="shop-head">
+        <h3>{{ shopTitle || '旅人集市' }}</h3>
+        <span class="muted">把商品送给角色，TA 下一次行动时会收到「来自异世界的礼物」</span>
+      </div>
+      <div v-if="!shopItems.length" class="muted shop-empty">集市今天还没开张</div>
+      <div v-else class="shop-grid">
+        <button
+          v-for="item in shopItems"
+          :key="'shop-' + item.id"
+          type="button"
+          class="shop-cell"
+          :class="['r' + (item.rarity || 1), { soldout: item.stock <= 0 }]"
+          :style="{ '--r-color': rarityMeta(item.rarity).color, '--r-border': rarityMeta(item.rarity).border }"
+          @click="openBuy(item)"
+        >
+          <span class="shop-ribbon"></span>
+          <span class="shop-rarity-badge">{{ rarityMeta(item.rarity).name }}</span>
+          <span class="shop-icon-wrap">
+            <span class="shop-icon">{{ emojiForItem(item.name) }}</span>
+          </span>
+          <span class="shop-name">{{ item.name }}</span>
+          <span class="shop-desc">{{ item.description || '' }}</span>
+          <span class="shop-price"><span class="coin-dot">✦</span>{{ item.price }}</span>
+          <span class="shop-stockbar"><i :style="{ width: stockPercent(item) + '%' }"></i></span>
+          <span class="shop-stock" :class="{ out: item.stock <= 0 }">
+            {{ item.stock <= 0 ? '已售罄' : '剩 ' + item.stock + ' / ' + item.totalStock }}
+          </span>
+          <span v-if="item.stock <= 0" class="shop-stamp">已售罄</span>
+        </button>
+      </div>
+    </section>
+
+    <el-dialog v-model="buyVisible" :title="buyItem ? '赠送「' + buyItem.name + '」' : '赠送'" width="520px">
+      <div v-if="buyItem" class="buy-body">
+        <div class="buy-top">
+          <span class="shop-icon big">{{ emojiForItem(buyItem.name) }}</span>
+          <div class="buy-info">
+            <div class="buy-name" :style="{ color: rarityMeta(buyItem.rarity).color }">
+              {{ buyItem.name }}
+              <span class="buy-rarity">{{ rarityMeta(buyItem.rarity).name }}</span>
+            </div>
+            <p class="buy-desc">{{ buyItem.description || '（这件商品没有留下描述）' }}</p>
+            <div class="buy-price">
+              <span>{{ buyItem.price }} 积分</span>
+              <span class="muted">剩余 {{ buyItem.stock }} / {{ buyItem.totalStock }}</span>
+              <span class="muted" v-if="isLogin">我的积分：{{ myPoints }}</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="buy-block">
+          <div class="buy-block-title">赠送记录</div>
+          <div v-if="!(buyItem.orders || []).length" class="muted">还没有人赠送过这件商品</div>
+          <div v-else class="buy-orders">
+            <span v-for="order in buyItem.orders" :key="'o-' + order.id" class="buy-order">
+              {{ order.userName || '一位旅人' }} 送给了 {{ order.characterName }}
+            </span>
+          </div>
+        </div>
+
+        <div class="buy-block">
+          <div class="buy-block-title">送给谁</div>
+          <el-select v-model="buyCharacterId" placeholder="选择要赠送的角色" style="width: 100%">
+            <el-option v-for="c in characters" :key="'bc-' + c.id" :label="c.name" :value="c.id">
+              <span class="option-name">{{ c.name }}</span>
+              <span class="option-loc">{{ c.locationName || '尚未行动' }}</span>
+            </el-option>
+          </el-select>
+          <p class="muted buy-tip">商品会直接放进 TA 的背包；角色只会知道「收到来自异世界的礼物」，不会知道是谁送的。</p>
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="buyVisible = false">取消</el-button>
+        <el-button
+          type="primary"
+          :loading="buying"
+          :disabled="!buyCharacterId || !buyItem || buyItem.stock <= 0"
+          @click="confirmBuy"
+        >
+          确认赠送（{{ buyItem ? buyItem.price : 0 }} 积分）
+        </el-button>
+      </template>
+    </el-dialog>
+
     <section class="card timeline">
       <div class="timeline-head">
         <h3>行动时间线</h3>
-        <div class="filters">
+        <!-- 筛选条与收起按钮放在同一个右侧分组里，避免被 space-between 拉得很开 -->
+        <div class="timeline-tools">
+          <div class="filters">
           <button class="chip-btn" :class="{ on: !filterId }" @click="setFilter(null)">全部</button>
           <button
             v-for="c in characters"
@@ -366,10 +511,15 @@
           >
             <el-option v-for="loc in locations" :key="'lf-' + loc.id" :label="loc.name" :value="loc.name" />
           </el-select>
+          </div>
+          <!-- 收起按钮在最右侧，和「角色档案」的收起位置一致 -->
+          <button type="button" class="ghost-btn collapse-btn" @click="timelineCollapsed = !timelineCollapsed">
+            {{ timelineCollapsed ? '展开' : '收起' }}
+          </button>
         </div>
       </div>
-      <div v-if="!timeline.length" class="muted">还没有行动记录</div>
-      <div v-for="act in timeline" :key="act.id" class="timeline-item">
+      <div v-if="!timelineCollapsed && !timeline.length" class="muted">还没有行动记录</div>
+      <div v-show="!timelineCollapsed" v-for="act in timeline" :key="act.id" class="timeline-item">
         <div class="timeline-time">{{ act.createTime }}</div>
         <div class="timeline-content">
           <div class="timeline-title">
@@ -382,13 +532,14 @@
             <span v-if="act.favorChange" class="favor-tag inline">好感 {{ act.favorChange }}</span>
             <span v-if="act.reaction === 1" class="react-tag inline">回应</span>
             <span v-if="act.itemChange" class="item-tag inline">{{ act.itemChange }}</span>
+            <span v-if="act.combatChange" class="combat-tag inline">战斗力 {{ act.combatChange > 0 ? "+" : "" }}{{ act.combatChange }}</span>
             <span v-if="act.newsRef" class="news-tag inline">听闻 · {{ act.newsRef }}</span>
           </div>
           <div class="act-body">{{ act.actions }}</div>
           <div v-if="act.innerVoice" class="voice">「{{ act.innerVoice }}」</div>
         </div>
       </div>
-      <button v-if="hasMore" class="more" @click="loadMoreTimeline">加载更多</button>
+      <button v-if="hasMore && !timelineCollapsed" class="more" @click="loadMoreTimeline">加载更多</button>
     </section>
   </div>
 </template>
@@ -396,14 +547,17 @@
 <script setup>
 import { ref, reactive, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { ElMessage } from 'element-plus'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import LocationIcon from '@/components/sandbox/LocationIcon.vue'
 import SandboxMapViewer from '@/components/sandbox/SandboxMapViewer.vue'
 import { useMemberStore } from '@/store/member'
 import { emojiForItem, rarityMeta } from '@/utils/sandboxItems'
+import { bbox, labelPoint, locationOfCharacter, polygonOf } from '@/utils/sandboxGeo'
 import {
   portalSandbox,
+  portalSandboxWorlds,
+  buySandboxShopItem,
   portalSandboxActs,
   portalSandboxCoin,
   portalSandboxInteractions,
@@ -411,6 +565,7 @@ import {
 } from '@/api/sandbox'
 
 const router = useRouter()
+const route = useRoute()
 const memberStore = useMemberStore()
 const { userInfo } = storeToRefs(memberStore)
 const isLogin = computed(() => !!userInfo.value)
@@ -420,12 +575,37 @@ const world = reactive({ name: '', description: '', mapImage: '' })
 const locations = ref([])
 const characters = ref([])
 const enabled = ref(true)
+/** 旅人低语总开关：默认「不可见」，等接口确认开启后才显示（关闭时前台整块不出现） */
+const whisperEnabled = ref(false)
+/** 旅人集市 */
+const shopEnabled = ref(false)
+const shopTitle = ref('')
+const shopItems = ref([])
+const buyVisible = ref(false)
+const buyItem = ref(null)
+const buyCharacterId = ref(null)
+const buying = ref(false)
+/** 前台可切换的世界（只含「前台可见」的，可能不止一个） */
+const worlds = ref([])
+/** 当前世界：优先用地址栏 ?world=xxx，其次用上次选择的 */
+const currentWorldId = ref(null)
+const currentWorldStopped = computed(() => {
+  const hit = worlds.value.find((item) => item.id === currentWorldId.value)
+  return !!hit && hit.enabled !== 1
+})
+/** 标题里显示的世界名（当前选中的那个） */
+const currentWorldName = computed(() => {
+  const hit = worlds.value.find((item) => item.id === currentWorldId.value)
+  return (hit && hit.name) || world.name || '沙盒世界'
+})
 const whisperPoints = ref(1)
 const coinRate = ref(10)
 /** 旅人纪闻（当天世界大事） */
 const news = ref([])
 const newsTitle = ref('')
 const newsCollapsed = ref(false)
+/** 行动时间线是否折叠（折叠后只留标题与筛选条） */
+const timelineCollapsed = ref(false)
 /** 被纪闻点中的地点会闪烁高亮 */
 const flashLocationId = ref(null)
 
@@ -475,46 +655,43 @@ watch(activeId, () => {
 /** 当前展开的地点（同一时间只展开一个） */
 const activeLocation = computed(() => locations.value.find((loc) => loc.id === activeLocationId.value) || null)
 
-/** 地点区域：x,y 为左上角，width/height 为宽高（0 表示单点） */
-function areaRect(location) {
-  const left = Number(location.x == null ? 50 : location.x)
-  const top = Number(location.y == null ? 50 : location.y)
-  return {
-    left,
-    top,
-    width: Math.max(0, Number(location.width || 0)),
-    height: Math.max(0, Number(location.height || 0))
-  }
+/**
+ * 地点区域的判定与标注位置都走公共工具（与后端 SandboxGeo 同一套算法），
+ * 这样「角色算在哪个区域」和「地图上显示在哪个区域」永远一致。
+ */
+function locationPolygon(location) {
+  return polygonOf(location)
 }
 
-/** 区域显示样式（单点也留一点最小尺寸，方便点击） */
+/** 多边形顶点转成 SVG points 字符串（坐标就是 0~100 的百分比，直接对应 viewBox） */
+function polygonPoints(location) {
+  const polygon = polygonOf(location)
+  return polygon ? polygon.map(([x, y]) => `${x},${y}`).join(' ') : ''
+}
+
+/** 地点名标签位置：区域标注点（形心，凹多边形退回内部点） */
 function areaStyle(location) {
-  const rect = areaRect(location)
-  return {
-    left: rect.left + '%',
-    top: rect.top + '%',
-    width: Math.max(3, rect.width) + '%',
-    height: Math.max(2.2, rect.height) + '%'
-  }
+  const polygon = polygonOf(location)
+  const point = polygon
+    ? labelPoint(polygon)
+    : [Number(location.x == null ? 50 : location.x), Number(location.y == null ? 50 : location.y)]
+  return { left: point[0] + '%', top: point[1] + '%' }
 }
 
-function inArea(location, x, y) {
-  const rect = areaRect(location)
-  if (rect.width <= 0 || rect.height <= 0) {
-    return Math.abs(rect.left - x) <= 2 && Math.abs(rect.top - y) <= 2
+/** 区域外接矩形，用于摆放展开出来的角色头像行 */
+function locationBox(location) {
+  const polygon = polygonOf(location)
+  if (polygon) {
+    return bbox(polygon)
   }
-  return x >= rect.left && x <= rect.left + rect.width && y >= rect.top && y <= rect.top + rect.height
+  const x = Number(location.x == null ? 50 : location.x)
+  const y = Number(location.y == null ? 50 : location.y)
+  return [x - 3, y - 3, x + 3, y + 3]
 }
 
 /** 角色属于哪个地点：先按角色记录的地点名匹配，再用坐标落在哪个区域里兜底 */
 function locationOf(character) {
-  const byName = locations.value.find((loc) => loc.name === character.locationName)
-  if (byName) {
-    return byName
-  }
-  const x = Number(character.x == null ? 50 : character.x)
-  const y = Number(character.y == null ? 50 : character.y)
-  return locations.value.find((loc) => inArea(loc, x, y)) || null
+  return locationOfCharacter(character, locations.value)
 }
 
 function charactersIn(location) {
@@ -562,11 +739,12 @@ const actorsStyle = computed(() => {
   if (!location) {
     return {}
   }
-  const rect = areaRect(location)
-  const below = rect.top + rect.height < 68
+  // 用区域外接矩形来摆位置：多边形区域也能算出一个合理的贴边位置
+  const box = locationBox(location)
+  const below = box[3] < 68
   return {
-    left: Math.min(72, Math.max(0, rect.left - 2)) + '%',
-    top: (below ? rect.top + Math.max(rect.height, 2.2) : rect.top) + '%',
+    left: Math.min(72, Math.max(0, box[0] - 2)) + '%',
+    top: (below ? box[3] : box[1]) + '%',
     transform: below ? 'translateY(8px)' : 'translateY(calc(-100% - 8px))'
   }
 })
@@ -607,13 +785,55 @@ function characterPlace(character) {
   return placeText(character.locationName, character.subLocation)
 }
 
+/**
+ * 初始化世界列表与当前世界。
+ * 优先级：地址栏 ?world=xxx（可分享/刷新保持）→ 上次选择的（本地存）→ 第一个可见的世界。
+ */
+async function initWorlds() {
+  try {
+    worlds.value = (await portalSandboxWorlds()) || []
+  } catch (e) {
+    worlds.value = []
+  }
+  if (!worlds.value.length) {
+    currentWorldId.value = null
+    return
+  }
+  const fromUrl = Number(route.query.world)
+  const fromStore = Number(localStorage.getItem('bcblog-sandbox-world'))
+  const candidate = Number.isFinite(fromUrl) && fromUrl > 0 ? fromUrl
+    : (Number.isFinite(fromStore) && fromStore > 0 ? fromStore : null)
+  const hit = worlds.value.find((item) => item.id === candidate)
+  currentWorldId.value = hit ? hit.id : worlds.value[0].id
+  localStorage.setItem('bcblog-sandbox-world', String(currentWorldId.value))
+}
+
+/** 切换世界：重新加载地图、角色、纪闻与时间线，并把选择写进地址栏 */
+async function onSwitchWorld(id) {
+  currentWorldId.value = id
+  localStorage.setItem('bcblog-sandbox-world', String(id))
+  router.replace({ query: { ...route.query, world: id } })
+  // 换了世界，角色与地点筛选要清掉，否则会筛不到东西
+  filterId.value = null
+  locationFilter.value = ''
+  activeLocationId.value = null
+  await load()
+  await loadTimeline(true)
+}
+
 
 async function load() {
-  const data = await portalSandbox()
+  const data = await portalSandbox(currentWorldId.value || undefined)
   Object.assign(world, data.world || {})
   locations.value = data.locations || []
   characters.value = data.characters || []
   enabled.value = !!data.enabled
+  // 旅人低语总开关：关闭时前台整块隐藏
+  whisperEnabled.value = data.whisperEnabled !== false
+  // 旅人集市：后台总开关关闭时整块不显示
+  shopEnabled.value = data.shopEnabled === true
+  shopTitle.value = data.shopTitle || '旅人集市'
+  shopItems.value = data.shopItems || []
   whisperPoints.value = data.whisperPoints == null ? 1 : data.whisperPoints
   coinRate.value = data.coinRate == null ? 10 : data.coinRate
   news.value = data.news || []
@@ -671,6 +891,7 @@ async function loadTimeline(reset = false) {
   const data = await portalSandboxActs({
     characterId: filterId.value || undefined,
     locationName: locationFilter.value || undefined,
+    worldId: currentWorldId.value || undefined,
     page: timelinePage.value,
     size: pageSize
   })
@@ -710,9 +931,54 @@ async function sendWhisper() {
   }
 }
 
+/** 打开商品的赠送弹窗 */
+/** 库存条宽度：剩余 / 总量 */
+function stockPercent(item) {
+  const total = Number(item.totalStock || 0)
+  const stock = Number(item.stock || 0)
+  if (total <= 0) return 0
+  return Math.max(0, Math.min(100, Math.round((stock / total) * 100)))
+}
+
+function openBuy(item) {
+  if (!isLogin.value) {
+    ElMessage.warning('登录后才能把商品送给角色')
+    return
+  }
+  if (!item || item.stock <= 0) {
+    ElMessage.warning('这件商品已经售罄了')
+    return
+  }
+  buyItem.value = item
+  // 默认选中当前正在看的角色，省一步操作
+  buyCharacterId.value = active.value ? active.value.id : (characters.value[0] ? characters.value[0].id : null)
+  buyVisible.value = true
+}
+
+/** 确认赠送：扣积分 → 商品进角色背包 → 刷新商品与角色数据 */
+async function confirmBuy() {
+  if (!buyItem.value || !buyCharacterId.value) {
+    return
+  }
+  buying.value = true
+  try {
+    await buySandboxShopItem({ itemId: buyItem.value.id, characterId: buyCharacterId.value })
+    const name = (characters.value.find((c) => c.id === buyCharacterId.value) || {}).name || '角色'
+    ElMessage.success(`已经把「${buyItem.value.name}」送给${name}`)
+    buyVisible.value = false
+    await refreshCharacters()
+    if (active.value) {
+      await selectCharacter(characters.value.find((c) => c.id === active.value.id) || characters.value[0])
+    }
+    await memberStore.fetchInfo(true)
+  } finally {
+    buying.value = false
+  }
+}
+
 /** 只刷新地图与角色数据，保留当前选中的角色 */
 async function refreshCharacters() {
-  const data = await portalSandbox()
+  const data = await portalSandbox(currentWorldId.value || undefined)
   Object.assign(world, data.world || {})
   locations.value = data.locations || []
   characters.value = data.characters || []
@@ -799,6 +1065,7 @@ async function onContribute() {
 onMounted(async () => {
   // 手机上默认收起纪闻卡片，避免挡住地图
   newsCollapsed.value = window.innerWidth < 720
+  await initWorlds()
   clockTimer = setInterval(() => {
     now.value = Date.now()
   }, 30000)
@@ -827,6 +1094,84 @@ onBeforeUnmount(() => {
   padding: calc(var(--header-height) + 32px) 20px 60px;
 }
 .sandbox-head { text-align: center; margin-bottom: 22px; }
+.head-title {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+/*
+ * 世界标题：本身就是切换入口（按钮 + 下拉菜单），比塞一个 select 干净得多。
+ * 平时就是标题的样子，悬停时浮出一层浅色底 + 底部渐变小横线，暗示可以点。
+ */
+.world-title-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 14px;
+  border: none;
+  border-radius: 12px;
+  background: transparent;
+  cursor: pointer;
+  transition: background 0.25s ease;
+}
+.world-title-btn:hover { background: rgba(255, 255, 255, 0.42); }
+.world-title-name {
+  font-size: 30px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  line-height: 1.35;
+  color: var(--text-strong);
+  position: relative;
+}
+/* 标题下的小渐变线，跟着主题色走 */
+.world-title-name::after {
+  content: '';
+  position: absolute;
+  left: 2px;
+  right: 2px;
+  bottom: -2px;
+  height: 2px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, transparent, var(--accent-2, var(--accent)), transparent);
+  opacity: 0.55;
+}
+.world-title-caret {
+  flex-shrink: 0;
+  margin-top: 4px;
+  color: var(--text-muted);
+  transition: transform 0.25s ease;
+}
+.world-title-btn:hover .world-title-caret { transform: translateY(2px); }
+/* 下拉菜单：世界名在左、状态标签在右，当前世界加粗高亮 */
+.world-menu :deep(.el-dropdown-menu__item) {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-width: 180px;
+  font-size: 14px;
+}
+.world-menu :deep(.el-dropdown-menu__item.is-current) {
+  color: var(--accent-2, var(--accent));
+  font-weight: 600;
+}
+.world-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.world-option-name { overflow: hidden; text-overflow: ellipsis; }
+.world-option-tag {
+  flex-shrink: 0;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 11px;
+  color: #c98a2a;
+  background: rgba(233, 186, 80, 0.16);
+}
 .sandbox-head h1 {
   margin: 0 0 8px;
   font-size: 30px;
@@ -943,40 +1288,74 @@ onBeforeUnmount(() => {
 }
 .news-card.collapsed { width: auto; }
 
+/* 区域形状层：viewBox 就是 0~100 的百分比坐标系，所以 SVG 坐标可以直接当地图坐标用 */
+.area-layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 3;
+  overflow: visible;
+}
+.area-shape {
+  fill: rgba(255, 255, 255, 0.16);
+  stroke: rgba(255, 255, 255, 0.75);
+  stroke-width: 1.5;
+  stroke-dasharray: 4 3;
+  /* 地图被拉伸时线宽保持不变，否则细长地图的边框会粗细不一 */
+  vector-effect: non-scaling-stroke;
+  cursor: pointer;
+  transition: fill 0.25s ease, stroke 0.25s ease;
+}
+/* 悬停：明显加深（未悬停时保持原来的 0.16 不变），并描边变实、加一点投影，避免看不出来 */
+.area-shape:hover {
+  fill: rgba(255, 255, 255, 0.46);
+  stroke-width: 2.4;
+  stroke-dasharray: none;
+  filter: drop-shadow(0 0 5px rgba(0, 0, 0, 0.35));
+}
+.area-shape.on {
+  fill: var(--accent-soft);
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-dasharray: none;
+}
+.area-shape.point { fill: rgba(255, 255, 255, 0.42); }
+.area-shape.flash {
+  stroke: #ff6f9f;
+  stroke-width: 2.4;
+  stroke-dasharray: none;
+  animation: areaFlash 0.8s ease-in-out 2;
+}
+
+/* 区域名标签：放在区域标注点上，本身不占区域面积 */
 .area {
   position: absolute;
-  padding: 2px 4px;
-  border: 1.5px dashed rgba(255, 255, 255, 0.75);
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.16);
-  cursor: pointer;
-  overflow: hidden;
-  transition: background 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
-}
-.area:hover { background: rgba(255, 255, 255, 0.26); }
-.area.on {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.35), 0 8px 24px rgba(0, 0, 0, 0.25);
+  z-index: 4;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
 }
 .area-label {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  max-width: 100%;
   padding: 1px 8px;
   border-radius: 999px;
   font-size: 12px;
   color: #fff;
   background: rgba(0, 0, 0, 0.42);
   white-space: nowrap;
-  overflow: hidden;
+  pointer-events: auto;
+  cursor: pointer;
+  transition: background 0.25s ease, box-shadow 0.25s ease;
+}
+.area-label:hover { background: rgba(0, 0, 0, 0.6); }
+.area.on .area-label {
+  background: linear-gradient(120deg, var(--accent), var(--accent-2));
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.35), 0 6px 18px rgba(0, 0, 0, 0.3);
 }
 .area-name { overflow: hidden; text-overflow: ellipsis; }
 .area-count {
-  position: absolute;
-  right: 4px;
-  bottom: 3px;
   min-width: 18px;
   height: 18px;
   padding: 0 5px;
@@ -985,8 +1364,7 @@ onBeforeUnmount(() => {
   line-height: 18px;
   text-align: center;
   color: #fff;
-  background: linear-gradient(120deg, var(--accent), var(--accent-2));
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+  background: rgba(0, 0, 0, 0.34);
 }
 
 /* 点击地点后展开的角色头像行 */
@@ -1240,8 +1618,8 @@ onBeforeUnmount(() => {
   vertical-align: bottom;
 }
 .news-tag.inline { margin-left: 8px; }
-.area.flash {
-  border-color: #ff6f9f;
+.area.flash .area-label {
+  background: linear-gradient(120deg, #ff6f9f, #ff9ec4);
   animation: areaFlash 0.8s ease-in-out 2;
 }
 @keyframes areaFlash {
@@ -1468,6 +1846,15 @@ onBeforeUnmount(() => {
 
 .timeline { padding: 22px; }
 .timeline-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; }
+/* 右侧分组：筛选条 + 收起按钮，靠右排在一起 */
+.timeline-tools {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+  flex-wrap: wrap;
+}
+.collapse-btn { flex-shrink: 0; }
 .timeline-head h3 { margin: 0; font-size: 15px; color: var(--text-strong); }
 .filters { display: flex; gap: 8px; flex-wrap: wrap; }
 .loc-filter { width: 150px; }
@@ -1502,4 +1889,170 @@ onBeforeUnmount(() => {
   .char-search { width: 150px; }
   .panel { padding: 16px 14px 18px; }
 }
-</style>
+/* 战斗力：展示在角色信息里，行动变化时给个标签 */
+.combat-chip { color: #b0416b; background: rgba(255, 111, 159, 0.16); }
+.combat-tag {
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  color: #b0416b;
+  background: rgba(255, 111, 159, 0.16);
+  border: 1px solid rgba(255, 111, 159, 0.34);
+  white-space: nowrap;
+}
+.combat-tag.inline { margin-left: 8px; }
+/* 集市卡片自己带内边距：标题、副标题与商品格子都不再贴着容器边框 */
+.shop { padding: 22px 26px 26px; }
+/* ============ 旅人集市：摊位感卡片（品质辉光 + 图标底座 + 库存条 + 售罄印章） ============ */
+.shop-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+.shop-head h3 {
+  margin: 0;
+  font-size: 16px;
+  letter-spacing: 1px;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2, var(--accent)));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.shop-head h3::before { content: '✦ '; color: var(--accent); -webkit-text-fill-color: var(--accent); }
+.shop-empty { padding: 26px 0; text-align: center; }
+.shop-grid {
+  display: grid;
+  /* 电脑端一排最多 5 个 */
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  /* 卡片之间的间隔 */
+  gap: 18px;
+  padding: 2px 0 4px;
+}
+/* 窗口变窄时逐级减少每行数量，保证卡片不会挤在一起 */
+@media (max-width: 1280px) {
+  .shop-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+@media (max-width: 1000px) {
+  .shop-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+.shop-cell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  /* 卡片整体收小一圈，显得更精致 */
+  padding: 13px 10px 10px;
+  border: 1.5px solid var(--r-border, var(--border));
+  border-radius: 16px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.5), rgba(255, 255, 255, 0.16));
+  cursor: pointer;
+  overflow: hidden;
+  text-align: center;
+  transition: transform 0.22s ease, box-shadow 0.22s ease, border-color 0.22s ease;
+}
+/* 顶部品质绸带 */
+.shop-ribbon {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, transparent, var(--r-color, var(--accent)), transparent);
+}
+/* 品质角标 */
+.shop-rarity-badge {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  padding: 0 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  letter-spacing: 0.5px;
+  color: #fff;
+  background: var(--r-color, var(--accent));
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+}
+/* 图标底座：像摊位上的展台 */
+.shop-icon-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 32% 28%, rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0.35));
+  box-shadow: inset 0 -3px 8px rgba(0, 0, 0, 0.06), 0 6px 14px rgba(0, 0, 0, 0.1);
+  border: 1px solid var(--r-border, var(--border));
+  transition: transform 0.25s ease;
+ }
+.shop-icon { font-size: 22px; line-height: 1; }
+.shop-icon.big { font-size: 40px; }
+.shop-name { font-size: 13px; font-weight: 600; color: var(--r-color, var(--text-strong)); }
+.shop-desc {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  min-height: 30px;
+}
+.shop-price { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; font-weight: 700; color: #c98a2a; }
+.coin-dot { font-size: 11px; }
+/* 库存条：一眼看出还剩多少 */
+.shop-stockbar {
+  width: 84%;
+  height: 4px;
+  margin-top: 2px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.08);
+  overflow: hidden;
+}
+.shop-stockbar i {
+  display: block;
+  height: 100%;
+  border-radius: 4px;
+  background: linear-gradient(90deg, var(--r-color, var(--accent)), var(--accent-2, var(--accent)));
+  transition: width 0.3s ease;
+}
+.shop-stock { font-size: 11px; color: var(--text-muted); }
+.shop-stock.out { color: #d9534f; font-weight: 600; }
+/* 售罄印章 */
+.shop-stamp {
+  position: absolute;
+  top: 46%;
+  right: -30px;
+  padding: 3px 30px;
+  transform: rotate(-16deg);
+  font-size: 12px;
+  letter-spacing: 2px;
+  color: #fff;
+  background: rgba(217, 83, 79, 0.9);
+  box-shadow: 0 4px 12px rgba(217, 83, 79, 0.35);
+}
+.shop-cell:hover {
+  transform: translateY(-4px);
+  border-color: var(--r-color, var(--accent));
+  box-shadow: 0 12px 26px rgba(0, 0, 0, 0.16), 0 0 0 1px var(--r-border, transparent);
+}
+.shop-cell:hover .shop-icon-wrap { transform: translateY(-2px) scale(1.06); }
+/* 高品质：加一层柔光，越稀有越亮 */
+.shop-cell.r4 { box-shadow: 0 6px 18px rgba(168, 117, 224, 0.18); }
+.shop-cell.r5 { box-shadow: 0 6px 20px rgba(240, 177, 60, 0.24); }
+.shop-cell.soldout { filter: grayscale(0.65); opacity: 0.72; }
+.shop-cell.soldout:hover { transform: none; box-shadow: none; }
+/* 赠送弹窗 */
+.buy-body { display: flex; flex-direction: column; gap: 16px; }
+.buy-top { display: flex; gap: 14px; }
+.buy-info { flex: 1; }
+.buy-name { font-size: 16px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+.buy-rarity { font-size: 11px; padding: 0 6px; border-radius: 999px; background: rgba(0, 0, 0, 0.06); color: var(--text-muted); }
+.buy-desc { margin: 6px 0; color: var(--text-muted); font-size: 13px; line-height: 1.7; }
+.buy-price { display: flex; gap: 12px; font-size: 13px; }
+.buy-block-title { font-size: 13px; font-weight: 600; margin-bottom: 6px; color: var(--text-strong); }
+.buy-orders { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--text-muted); }
+.buy-order { padding: 2px 0; }
+.buy-tip { margin: 8px 0 0; font-size: 12px; line-height: 1.6; }
+@media (max-width: 720px) {
+  /* 手机端保持原样：两列 + 原来的间距 */
+  .shop { padding: 16px 14px 18px; }
+  .shop-grid { grid-template-columns: repeat(2, 1fr); gap: 14px; padding: 0; }
+}</style>

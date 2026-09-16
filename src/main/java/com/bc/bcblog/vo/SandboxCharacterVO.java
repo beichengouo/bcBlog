@@ -28,6 +28,8 @@ public class SandboxCharacterVO {
     private Map<String, Object> status;
     /** 金币余额 */
     private Integer coins;
+    /** 战斗力：综合实力（战斗技巧、魔力、装备），默认 10 */
+    private Integer combatPower;
     /** 最近几条金币流水（贡献 / 赚取 / 消耗） */
     private List<SandboxCoinLog> recentCoins;
     /** 与其他角色的好感度 */

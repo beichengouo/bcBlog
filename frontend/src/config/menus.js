@@ -24,11 +24,19 @@ export const adminMenus = [
       { key: 'emoji', path: '/admin/emoji', title: '表情包管理', icon: 'Star' },
       { key: 'photos', path: '/admin/photos', title: '流光忆庭', icon: 'PictureFilled' },
       { key: 'resources', path: '/admin/resources', title: '智库', icon: 'Collection' },
-      { key: 'sandboxWorld', path: '/admin/sandbox/world', title: '沙盒世界', icon: 'MapLocation' },
-      { key: 'sandboxCharacters', path: '/admin/sandbox/characters', title: '沙盒角色', icon: 'MagicStick' },
-      { key: 'sandboxActs', path: '/admin/sandbox/acts', title: '沙盒日志', icon: 'Clock' },
       { key: 'background', path: '/admin/background', title: '背景管理', icon: 'Picture' },
       { key: 'live2d', path: '/admin/live2d', title: '看板娘管理', icon: 'User' }
+    ]
+  },
+  {
+    key: 'sandbox',
+    title: '沙盒世界',
+    icon: 'MagicStick',
+    children: [
+      { key: 'sandboxWorld', path: '/admin/sandbox/world', title: '世界与地图', icon: 'MapLocation' },
+      { key: 'sandboxCharacters', path: '/admin/sandbox/characters', title: '角色管理', icon: 'User' },
+      { key: 'sandboxActs', path: '/admin/sandbox/acts', title: '行动日志', icon: 'Clock' }
+      ,{ key: 'sandboxShop', path: '/admin/sandbox/shop', title: '集市管理', icon: 'ShoppingCart' }
     ]
   },
   {

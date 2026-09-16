@@ -1,4 +1,4 @@
--- bcBlog 数据库结构导出（仅结构，不含数据，共 37 张表）
+-- bcBlog 数据库结构导出（仅结构，不含数据，共 38 张表）
 -- 用法：在 Navicat 中先创建 bc_blog 数据库（utf8mb4），选中该库后再执行本文件。
 -- 全新安装执行完本文件后，首次启动后端会自动创建默认管理员 admin / Admin@123456。
 -- 已经有数据的旧库请执行 docs/sql/upgrade_20260916_batch.sql 增量升级，不要执行本文件。
@@ -61,7 +61,7 @@ CREATE TABLE `admin_api_log` (
   PRIMARY KEY (`id`),
   KEY `idx_admin` (`admin_id`),
   KEY `idx_create_time` (`create_time`)
-) ENGINE=InnoDB AUTO_INCREMENT=64 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='API 调用审计';
+) ENGINE=InnoDB AUTO_INCREMENT=128 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='API 调用审计';
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -298,6 +298,23 @@ CREATE TABLE `music_playlist` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
+-- Table structure for table `page_background`
+--
+
+DROP TABLE IF EXISTS `page_background`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `page_background` (
+  `page_key` varchar(32) NOT NULL COMMENT '页面标识：home / photos / resources / sandbox',
+  `mode` varchar(10) NOT NULL DEFAULT 'follow' COMMENT 'follow=跟随前台默认壁纸，none=不使用壁纸，custom=使用 background_id',
+  `background_id` bigint DEFAULT NULL COMMENT 'mode=custom 时使用的壁纸 id',
+  `opacity` decimal(3,2) NOT NULL DEFAULT '1.00' COMMENT '壁纸不透明度 0.10~1.00',
+  `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`page_key`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='前台各页面独立背景设置';
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
 -- Table structure for table `sandbox_act`
 --
 
@@ -331,7 +348,7 @@ CREATE TABLE `sandbox_act` (
   PRIMARY KEY (`id`),
   KEY `idx_character_time` (`character_id`,`create_time`),
   KEY `idx_create_time` (`create_time`)
-) ENGINE=InnoDB AUTO_INCREMENT=80 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='沙盒行动记录';
+) ENGINE=InnoDB AUTO_INCREMENT=111 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='沙盒行动记录';
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -395,7 +412,7 @@ CREATE TABLE `sandbox_coin_log` (
   PRIMARY KEY (`id`),
   KEY `idx_character` (`character_id`),
   KEY `idx_create_time` (`create_time`)
-) ENGINE=InnoDB AUTO_INCREMENT=15 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='沙盒金币流水';
+) ENGINE=InnoDB AUTO_INCREMENT=28 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='沙盒金币流水';
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -439,7 +456,7 @@ CREATE TABLE `sandbox_item` (
   `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_char_item` (`character_id`,`name`)
-) ENGINE=InnoDB AUTO_INCREMENT=9 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='沙盒角色背包';
+) ENGINE=InnoDB AUTO_INCREMENT=15 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='沙盒角色背包';
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -458,6 +475,7 @@ CREATE TABLE `sandbox_location` (
   `y` int NOT NULL DEFAULT '50' COMMENT '纵向坐标百分比 0~100',
   `width` int NOT NULL DEFAULT '0' COMMENT '区域宽度百分比；0 表示单点',
   `height` int NOT NULL DEFAULT '0' COMMENT '区域高度百分比；0 表示单点',
+  `polygon` text COMMENT '多边形区域顶点 JSON [[x,y],...]（百分比），为空表示按矩形区域判定',
   `description` varchar(500) DEFAULT NULL COMMENT '地点描述，会作为 AI 行动参考',
   `sort_order` int NOT NULL DEFAULT '0' COMMENT '排序，越小越靠前',
   `create_time` datetime DEFAULT CURRENT_TIMESTAMP,
@@ -719,7 +737,7 @@ CREATE TABLE `sys_login_log` (
   `create_time` datetime DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   KEY `idx_username` (`username`)
-) ENGINE=InnoDB AUTO_INCREMENT=63 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='登录日志表';
+) ENGINE=InnoDB AUTO_INCREMENT=65 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='登录日志表';
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -823,7 +841,7 @@ CREATE TABLE `sys_visit_stat` (
   `pv` bigint NOT NULL DEFAULT '0' COMMENT '褰撴棩璁块棶閲',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_stat_date` (`stat_date`)
-) ENGINE=InnoDB AUTO_INCREMENT=178 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='姣忔棩璁块棶閲忕粺璁';
+) ENGINE=InnoDB AUTO_INCREMENT=210 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='姣忔棩璁块棶閲忕粺璁';
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
 
@@ -835,4 +853,4 @@ CREATE TABLE `sys_visit_stat` (
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2026-09-16  0:59:14
+-- Dump completed on 2026-09-16 12:50:51

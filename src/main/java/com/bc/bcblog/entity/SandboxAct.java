@@ -40,6 +40,8 @@ public class SandboxAct {
     private String statusJson;
     /** 这一步的金币变化，正为赚取、负为消耗 */
     private Integer coinChange;
+    /** 这一步战斗力的变化，0 表示没变（前台只在变化时展示） */
+    private Integer combatChange;
     /** 一句话概括 */
     private String summary;
     /** 这一步之后 AI 期望的间隔分钟数，0 表示未指定 */

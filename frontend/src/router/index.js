@@ -47,6 +47,7 @@ const routes = [
       { path: 'sandbox/world', component: () => import('@/views/admin/SandboxWorld.vue'), meta: { title: '沙盒世界', menu: 'sandboxWorld' } },
       { path: 'sandbox/characters', component: () => import('@/views/admin/SandboxCharacter.vue'), meta: { title: '沙盒角色', menu: 'sandboxCharacters' } },
       { path: 'sandbox/acts', component: () => import('@/views/admin/SandboxAct.vue'), meta: { title: '沙盒日志', menu: 'sandboxActs' } },
+      { path: 'sandbox/shop', component: () => import('@/views/admin/ShopManage.vue'), meta: { title: '集市管理', menu: 'sandboxShop' } },
       { path: 'settings', component: () => import('@/views/admin/Settings.vue'), meta: { title: '系统设置', menu: 'settings' } },
       { path: 'admins', component: () => import('@/views/admin/AdminUserManage.vue'), meta: { title: '管理员管理', menu: 'admins', superOnly: true } },
       { path: 'members', component: () => import('@/views/admin/MemberManage.vue'), meta: { title: '用户管理', menu: 'members', superOnly: true } },

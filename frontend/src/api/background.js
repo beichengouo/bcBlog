@@ -27,7 +27,17 @@ export function clearActiveBackground(scope) {
   return request.put('/admin/background/default', null, { params: { scope } })
 }
 
-// 前台：获取当前启用的背景
-export function getActiveBackground(scope) {
-  return request.get('/portal/background', { params: { scope } })
+// 前台：获取当前启用的背景（page 用于前台各页面独立背景：home/photos/resources/sandbox）
+export function getActiveBackground(scope, page) {
+  return request.get('/portal/background', { params: { scope, page } })
+}
+
+// 后台：前台各页面的独立背景设置
+export function pageBackgroundList() {
+  return request.get('/admin/background/pages')
+}
+
+// 后台：保存某个页面的背景设置（mode：follow / none / custom）
+export function savePageBackground(pageKey, data) {
+  return request.put(`/admin/background/pages/${pageKey}`, data)
 }

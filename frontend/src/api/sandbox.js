@@ -3,8 +3,28 @@ import request from '@/utils/request'
 // ---------------- 后台：沙盒世界管理 ----------------
 
 // 世界（地图背景 + 世界观设定）
-export function sandboxWorld() {
-  return request.get('/admin/sandbox/world')
+export function sandboxWorld(worldId) {
+  return request.get('/admin/sandbox/world', { params: { worldId } })
+}
+
+// 全部世界（后台世界管理：切换 / 新建 / 删除 / 开关）
+export function sandboxWorlds() {
+  return request.get('/admin/sandbox/worlds')
+}
+
+// 删除世界（连同它的角色、地点、行动、记忆、背包、关系、纪闻、低语、金币流水一起删）
+export function deleteSandboxWorld(id) {
+  return request.delete(`/admin/sandbox/world/${id}`)
+}
+
+// 切换世界「是否运行」
+export function setSandboxWorldEnabled(id, enabled) {
+  return request.put(`/admin/sandbox/world/${id}/enabled`, null, { params: { enabled } })
+}
+
+// 切换世界「前台是否可见」
+export function setSandboxWorldVisible(id, visible) {
+  return request.put(`/admin/sandbox/world/${id}/visible`, null, { params: { visible } })
 }
 
 export function saveSandboxWorld(data) {
@@ -12,8 +32,8 @@ export function saveSandboxWorld(data) {
 }
 
 // 地图地点
-export function sandboxLocations() {
-  return request.get('/admin/sandbox/locations')
+export function sandboxLocations(worldId) {
+  return request.get('/admin/sandbox/locations', { params: { worldId } })
 }
 
 export function saveSandboxLocation(data) {
@@ -34,8 +54,8 @@ export function saveSandboxSettings(data) {
 }
 
 // 角色
-export function sandboxCharacters() {
-  return request.get('/admin/sandbox/characters')
+export function sandboxCharacters(worldId) {
+  return request.get('/admin/sandbox/characters', { params: { worldId } })
 }
 
 export function saveSandboxCharacter(data) {
@@ -43,8 +63,8 @@ export function saveSandboxCharacter(data) {
 }
 
 // AI 一键创作角色卡（结合当前世界观，耗时长一些）
-export function generateSandboxCharacter(data) {
-  return request.post('/admin/sandbox/characters/generate', data, { timeout: 180000 })
+export function generateSandboxCharacter(data, worldId) {
+  return request.post('/admin/sandbox/characters/generate', data, { params: { worldId }, timeout: 180000 })
 }
 
 export function deleteSandboxCharacter(id) {
@@ -57,8 +77,8 @@ export function runSandboxCharacter(id) {
 }
 
 // 一键让全部启用角色行动一轮（多角色依次行动，便于互相遇见，耗时较长）
-export function runAllSandboxCharacters() {
-  return request.post('/admin/sandbox/run-all', null, { timeout: 600000 })
+export function runAllSandboxCharacters(worldId) {
+  return request.post('/admin/sandbox/run-all', null, { params: { worldId }, timeout: 600000 })
 }
 
 // 行动日志
@@ -81,8 +101,48 @@ export function deleteSandboxInteraction(id) {
 
 // ---------------- 前台：沙盒世界 ----------------
 
-export function portalSandbox() {
-  return request.get('/portal/sandbox')
+export function portalSandbox(worldId) {
+  return request.get('/portal/sandbox', { params: { worldId } })
+}
+
+// 前台可切换的世界（只返回「前台可见」的，含已停止运行的）
+export function portalSandboxWorlds() {
+  return request.get('/portal/sandbox/worlds')
+}
+
+// 前台：从旅人集市买下商品并赠送给某个角色
+export function buySandboxShopItem(data) {
+  return request.post('/portal/sandbox/shop/buy', data)
+}
+
+// ---------------- 后台：旅人集市 ----------------
+
+// 最新一批商品（含已下架的）
+export function sandboxShop(worldId) {
+  return request.get('/admin/sandbox/shop', { params: { worldId } })
+}
+
+export function saveSandboxShopItem(data) {
+  return request.post('/admin/sandbox/shop', data)
+}
+
+export function deleteSandboxShopItem(id) {
+  return request.delete(`/admin/sandbox/shop/${id}`)
+}
+
+// 立即生成一批新商品
+export function generateSandboxShop(data) {
+  return request.post('/admin/sandbox/shop/generate', data, { timeout: 180000 })
+}
+
+// 购买记录
+export function sandboxShopOrders(params) {
+  return request.get('/admin/sandbox/shop/orders', { params })
+}
+
+// 今日统计（卖出件数 / 回收积分）
+export function sandboxShopStats(worldId) {
+  return request.get('/admin/sandbox/shop/stats', { params: { worldId } })
 }
 
 export function portalSandboxActs(params) {

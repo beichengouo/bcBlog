@@ -19,6 +19,8 @@ public class SandboxCoinLog {
     private Long id;
     /** 角色 ID */
     private Long characterId;
+    /** 所属世界（用于多世界隔离与级联清理） */
+    private Long worldId;
     /** 贡献人用户 ID，AI 赚取/消耗时为空 */
     private Long userId;
     /** 贡献人昵称快照 */

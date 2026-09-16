@@ -48,6 +48,8 @@ public class SandboxCharacter {
     private String statusJson;
     /** 金币余额：AI 日常活动赚取或消耗，前台用户也可用积分贡献 */
     private Integer coins;
+    /** 战斗力：综合实力（战斗技巧、魔力、装备），默认 10 */
+    private Integer combatPower;
     /** 下次 AI 行动时间 */
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     private LocalDateTime nextRunTime;
@@ -66,6 +68,8 @@ public class SandboxCharacter {
     private Integer aiIntervalMax;
     /** 最后一次调用失败原因 */
     private String lastError;
+    /** 连续失败次数：AI 调用连续失败时累加，成功后清零（用于失败退避） */
+    private Integer failCount;
     /** 是否启用：1 启用，0 停用 */
     private Integer enabled;
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")

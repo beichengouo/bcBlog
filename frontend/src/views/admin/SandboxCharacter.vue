@@ -4,6 +4,20 @@
       <div class="toolbar">
         <span>沙盒角色</span>
         <div class="toolbar-right">
+          <span class="tip">世界</span>
+          <el-select v-model="selectedWorldId" size="small" style="width: 150px" @change="onSwitchWorld">
+            <el-option
+              v-for="item in worlds"
+              :key="item.id"
+              :label="item.name || ('世界 ' + item.id)"
+              :value="item.id"
+            >
+              <div class="world-option">
+                <span class="world-option-name">{{ item.name || ('世界 ' + item.id) }}</span>
+                <span v-if="item.enabled !== 1" class="world-option-tag">已停止</span>
+              </div>
+            </el-option>
+          </el-select>
           <span class="tip">共 {{ list.length }} 个角色</span>
           <el-button type="warning" plain :loading="runningAll" @click="onRunAll">全员行动一轮</el-button>
           <el-button type="primary" @click="openAdd">新增角色</el-button>
@@ -54,6 +68,11 @@
       <el-table-column label="下次行动" width="170">
         <template #default="{ row }">
           <span>{{ row.enabled === 1 ? (row.nextRunTime || '待计算') : '已停用' }}</span>
+        </template>
+      </el-table-column>
+      <el-table-column label="战斗力" width="90">
+        <template #default="{ row }">
+          <span class="combat-cell">{{ row.combatPower == null ? 10 : row.combatPower }}</span>
         </template>
       </el-table-column>
       <el-table-column label="金币" width="90">
@@ -266,6 +285,10 @@
         </el-form-item>
         <el-form-item label="金币余额">
           <el-input-number v-model="form.coins" :min="0" :max="99999999" controls-position="right" />
+        </el-form-item>
+        <el-form-item label="战斗力">
+          <el-input-number v-model="form.combatPower" :min="1" :max="9999" controls-position="right" />
+          <span class="tip">综合实力（战斗技巧、魔力、装备），默认 10；AI 在行动里遇到学会新魔法、得到强力装备、受伤这类事件时也会自己微调</span>
           <span class="tip">角色身上的钱：AI 日常活动会赚取或消耗，前台用户也能用积分贡献</span>
         </el-form-item>
         <el-form-item label="当前状态">
@@ -316,6 +339,7 @@ import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   sandboxCharacters,
+  sandboxWorlds,
   saveSandboxCharacter,
   deleteSandboxCharacter,
   runSandboxCharacter,
@@ -326,6 +350,7 @@ import {
   generateSandboxCharacter
 } from '@/api/sandbox'
 import { aiProviderList, aiProviderModels } from '@/api/ai'
+import { useSandboxWorld } from '@/composables/useSandboxWorld'
 import { emojiForItem, ITEM_RARITIES, rarityMeta } from '@/utils/sandboxItems'
 
 const uploadHeaders = { Authorization: localStorage.getItem('token') || '' }
@@ -357,6 +382,10 @@ const draftPlace = ref('')
 /** 是否在保存后立即生成第一条行动 */
 const generateFirstAct = ref(true)
 const dialogVisible = ref(false)
+/** 当前世界（三个沙盒页面共用一个选择） */
+const worlds = ref([])
+const { currentWorldId, setCurrentWorld } = useSandboxWorld()
+const selectedWorldId = ref(null)
 const temperature = ref(0.9)
 /** 标准状态项，对应 AI 提示词里的固定字段 */
 const STANDARD_STATUS_KEYS = ['体力', '魔力', '饥饿度', '心情']
@@ -376,6 +405,7 @@ const form = reactive({
   x: 50,
   y: 50,
   coins: 0,
+  combatPower: 10,
   intervalMin: 45,
   intervalMax: 75,
   aiIntervalMin: null,
@@ -386,10 +416,29 @@ const form = reactive({
 async function load() {
   loading.value = true
   try {
-    list.value = await sandboxCharacters()
+    list.value = await sandboxCharacters(selectedWorldId.value)
   } finally {
     loading.value = false
   }
+}
+
+/** 切换世界：与「世界与地图」「行动日志」共用同一个选择 */
+async function onSwitchWorld(id) {
+  setCurrentWorld(id)
+  await load()
+}
+
+/** 首次进入：先取世界列表并定位到当前世界（与其它沙盒页面保持一致） */
+async function initWorld() {
+  worlds.value = (await sandboxWorlds()) || []
+  if (!worlds.value.length) {
+    selectedWorldId.value = null
+    return
+  }
+  const stored = currentWorldId.value
+  const exists = worlds.value.some((item) => item.id === stored)
+  setCurrentWorld(exists ? stored : worlds.value[0].id)
+  selectedWorldId.value = currentWorldId.value
 }
 
 async function loadProviders() {
@@ -471,6 +520,7 @@ function openAdd() {
   form.x = 50
   form.y = 50
   form.coins = 0
+  form.combatPower = 10
   form.intervalMin = 45
   form.intervalMax = 75
   form.aiIntervalMin = null
@@ -562,7 +612,7 @@ async function onAiGenerate() {
       providerId: aiProviderId.value,
       model: aiModel.value,
       requirement: aiRequirement.value.trim()
-    })
+    }, selectedWorldId.value)
     applyDraft(draft)
     ElMessage.success('已生成，请检查后保存')
   } finally {
@@ -657,6 +707,8 @@ async function onSave() {
   try {
     const saved = await saveSandboxCharacter({
       ...form,
+      // 新建角色要指明属于哪个世界；编辑时后端已有记录
+      worldId: form.id ? undefined : selectedWorldId.value,
       temperature: temperature.value,
       statusJson: buildStatusJson()
     })
@@ -736,7 +788,7 @@ async function onRunAll() {
   }
   runningAll.value = true
   try {
-    const res = await runAllSandboxCharacters()
+    const res = await runAllSandboxCharacters(selectedWorldId.value)
     const detail = (res.items || []).map((line) => `· ${line}`).join('<br/>') || '没有启用中的角色'
     await ElMessageBox.alert(
       `成功 ${res.success} 个，失败 ${res.failed} 个<br/><br/>${detail}`,
@@ -839,6 +891,7 @@ async function onDeleteItem(row) {
 }
 
 onMounted(async () => {
+  await initWorld()
   await loadProviders()
   await load()
 })
@@ -907,4 +960,15 @@ onMounted(async () => {
   padding: 0 2px;
 }
 .draft-item button:hover { color: var(--el-color-danger); }
+.world-option { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.world-option-name { overflow: hidden; text-overflow: ellipsis; }
+.world-option-tag {
+  flex-shrink: 0;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 11px;
+  color: var(--el-color-warning);
+  background: rgba(230, 162, 60, 0.14);
+}
+.combat-cell { color: #b0416b; font-weight: 600; }
 </style>

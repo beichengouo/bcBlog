@@ -31,6 +31,11 @@ public class SandboxLocation {
     private Integer width;
     /** 区域高度百分比，0 表示单点 */
     private Integer height;
+    /**
+     * 多边形区域顶点 JSON：[[x,y],[x,y],...]，百分比坐标（0~100）。
+     * 为空时按矩形区域（x/y/width/height）判定，老数据无需迁移。
+     */
+    private String polygon;
     /** 地点描述，会作为 AI 行动参考 */
     private String description;
     /** 排序，越小越靠前 */
