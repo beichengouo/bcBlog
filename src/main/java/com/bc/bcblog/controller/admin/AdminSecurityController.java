@@ -34,14 +34,28 @@ public class AdminSecurityController {
     public Result<Map<String, Object>> status() {
         Map<String, Object> data = new LinkedHashMap<>();
         Long uid = StpUtil.getLoginIdAsLong();
+        SysUser user = userMapper.selectById(uid);
+        data.put("username", user == null ? "-" : user.getUsername());
         data.put("hasSecurityPassword", securityPasswordService.hasPassword(uid));
         data.put("verified", securityPasswordService.isVerified());
-        data.put("securityEmail", mask(configService.getConfigValue("admin_security_email", "")));
+        // 安全邮箱：此接口仅超级管理员可访问（WebConfig 里 SUPER_ONLY_PATHS 已限制），
+        // 所以这里返回明文方便直接编辑，页面上再自行做展示处理
+        data.put("securityEmail", configService.getConfigValue("admin_security_email", ""));
+        data.put("securityEmailMask", mask(configService.getConfigValue("admin_security_email", "")));
         data.put("enabled", configService.getConfigValue("admin_security_enabled", "1"));
+        // 二次验证有效期内验证一次即可，过期需重新验证
+        data.put("verifyMinutes", configService.getConfigValue("admin_security_verify_minutes", "30"));
+        // 异常登录提醒相关
+        data.put("alertEnabled", configService.getConfigValue("admin_login_alert_enabled", "1"));
+        data.put("nightStart", configService.getConfigValue("admin_login_alert_night_start", "00:00"));
+        data.put("nightEnd", configService.getConfigValue("admin_login_alert_night_end", "06:00"));
+        data.put("alertFailTimes", configService.getConfigValue("admin_login_alert_fail_times", "3"));
+        // 单点登录开关
+        data.put("singleLogin", configService.getConfigValue("admin_single_login", "1"));
         return Result.ok(data);
     }
 
-    /** 二次验证：输入安全密码（未设置过安全密码时用登录密码） */
+    /** 二次验证：输入安全密码（必须先设置过安全密码，否则一律失败） */
     @PostMapping("/verify")
     public Result<Void> verify(@RequestBody Map<String, Object> body) {
         Long uid = StpUtil.getLoginIdAsLong();
@@ -66,16 +80,24 @@ public class AdminSecurityController {
     /** 保存安全邮箱等安全设置 */
     @PostMapping("/settings")
     public Result<Void> saveSettings(@RequestBody Map<String, Object> body) {
-        if (body.get("securityEmail") != null) {
-            configService.setConfigValue("admin_security_email", String.valueOf(body.get("securityEmail")).trim());
-        }
-        if (body.get("enabled") != null) {
-            configService.setConfigValue("admin_security_enabled", String.valueOf(body.get("enabled")));
-        }
-        if (body.get("alertEnabled") != null) {
-            configService.setConfigValue("admin_login_alert_enabled", String.valueOf(body.get("alertEnabled")));
-        }
+        saveIfPresent(body, "securityEmail", "admin_security_email", true);
+        saveIfPresent(body, "enabled", "admin_security_enabled", false);
+        saveIfPresent(body, "alertEnabled", "admin_login_alert_enabled", false);
+        saveIfPresent(body, "verifyMinutes", "admin_security_verify_minutes", false);
+        saveIfPresent(body, "nightStart", "admin_login_alert_night_start", false);
+        saveIfPresent(body, "nightEnd", "admin_login_alert_night_end", false);
+        saveIfPresent(body, "alertFailTimes", "admin_login_alert_fail_times", false);
+        saveIfPresent(body, "singleLogin", "admin_single_login", false);
         return Result.ok();
+    }
+
+    /** 请求体里出现过该字段才落库，避免前端只提交部分字段时把其它配置清空 */
+    private void saveIfPresent(Map<String, Object> body, String field, String configKey, boolean trim) {
+        if (body.get(field) == null) {
+            return;
+        }
+        String value = String.valueOf(body.get(field));
+        configService.setConfigValue(configKey, trim ? value.trim() : value);
     }
 
     /** 在线会话列表 */

@@ -1,6 +1,7 @@
 package com.bc.bcblog.entity;
 
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.fasterxml.jackson.annotation.JsonFormat;
@@ -26,6 +27,12 @@ public class SandboxAct {
     private Integer x;
     /** 这一步的纵向坐标 */
     private Integer y;
+    /**
+     * 这一步相比上一步移动的实际距离（km），换了地点才有值。
+     * 由服务端按页算好（分页后"上一条"不一定在同一页里，前端拿不到），只用于展示，不落库。
+     */
+    @TableField(exist = false)
+    private Double moveKm;
     /** 做了什么，多条用换行分隔 */
     private String actions;
     /** 心声 */

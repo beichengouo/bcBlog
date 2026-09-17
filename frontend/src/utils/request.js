@@ -86,9 +86,19 @@ export default request
 async function handleSecurityVerify(config) {
   try {
     const { value } = await ElMessageBox.prompt(
-      '该操作需要验证安全密码（未设置过安全密码时请输入登录密码）',
+      '该操作需要验证安全密码（若还没设置过安全密码，请先到「系统安全 → 安全设置」设置）',
       '安全验证',
-      { confirmButtonText: '验证', cancelButtonText: '取消', inputType: 'password', inputPlaceholder: '请输入安全密码' }
+      {
+        confirmButtonText: '验证',
+        cancelButtonText: '取消',
+        inputType: 'password',
+        inputPlaceholder: '请输入安全密码',
+        // 不允许点空白处 / ESC / 右上角关闭，必须显式选择"验证"或"取消"
+        closeOnClickModal: false,
+        closeOnPressEscape: false,
+        showClose: false,
+        inputValidator: (v) => (v && v.trim() ? true : '请输入安全密码')
+      }
     )
     await request.post('/admin/security/verify', { password: value })
     ElMessage.success('验证通过，本次登录内不再重复验证')

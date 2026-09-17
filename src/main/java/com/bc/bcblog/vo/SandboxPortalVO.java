@@ -29,6 +29,10 @@ public class SandboxPortalVO {
     private String shopTitle;
     /** 集市总开关 */
     private boolean shopEnabled;
+    /** 角色每天最多自购几件（0 = 不限制），前台用来提示玩家 */
+    private int shopBuyPerDay;
+    /** 地图宽度（km）：前台地图 hover 与行动时间线用它把坐标差换算成实际距离 */
+    private int kmMapWidth;
     /** 当前世界最新一批商品 */
     private List<com.bc.bcblog.entity.SandboxShopItem> shopItems;
 }

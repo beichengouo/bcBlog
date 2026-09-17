@@ -9,6 +9,7 @@ import cn.hutool.json.JSONUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.bc.bcblog.common.BusinessException;
+import com.bc.bcblog.dto.ChatMessage;
 import com.bc.bcblog.entity.AiProvider;
 import com.bc.bcblog.entity.SysUser;
 import com.bc.bcblog.mapper.AiProviderMapper;
@@ -355,6 +356,15 @@ public class AiProviderServiceImpl implements AiProviderService {
 
     @Override
     public String chat(AiProvider provider, String model, String systemPrompt, String userPrompt, Double temperature) {
+        List<ChatMessage> messages = new ArrayList<>();
+        messages.add(ChatMessage.system(systemPrompt));
+        messages.add(ChatMessage.user(userPrompt));
+        return chatMessages(provider, model, messages, temperature, true);
+    }
+
+    @Override
+    public String chatMessages(AiProvider provider, String model, List<ChatMessage> messages,
+                               Double temperature, boolean jsonMode) {
         AiProvider p = provider == null ? resolveManualProvider(null) : provider;
         if (isBlank(p.getApiKey())) {
             throw new BusinessException("服务商「" + p.getName() + "」还没有配置 API Key");
@@ -362,9 +372,12 @@ public class AiProviderServiceImpl implements AiProviderService {
         if (isBlank(model)) {
             throw new BusinessException("请先选择要使用的模型");
         }
+        if (messages == null || messages.isEmpty()) {
+            throw new BusinessException("提示词不能为空");
+        }
         long start = System.currentTimeMillis();
         try {
-            String result = doChat(p, model, systemPrompt, userPrompt, temperature);
+            String result = doChat(p, model, messages, temperature, jsonMode);
             auditLogService.record(p.getName() + " / " + model, true, null, System.currentTimeMillis() - start);
             return result;
         } catch (Exception e) {
@@ -375,7 +388,8 @@ public class AiProviderServiceImpl implements AiProviderService {
     }
 
     /** 真正发起请求（密钥在这里解密使用） */
-    private String doChat(AiProvider p, String model, String systemPrompt, String userPrompt, Double temperature) {
+    private String doChat(AiProvider p, String model, List<ChatMessage> messages,
+                          Double temperature, boolean jsonMode) {
 
         String base = trimSlash(p.getBaseUrl());
         String[] urls = {base + "/chat/completions", base + "/v1/chat/completions"};
@@ -384,21 +398,21 @@ public class AiProviderServiceImpl implements AiProviderService {
         key = key == null ? "" : key.trim();
         JSONObject body = new JSONObject();
         body.set("model", model);
-        JSONArray messages = new JSONArray();
-        JSONObject sys = new JSONObject();
-        sys.set("role", "system");
-        sys.set("content", systemPrompt);
-        messages.add(sys);
-        JSONObject user = new JSONObject();
-        user.set("role", "user");
-        user.set("content", userPrompt);
-        messages.add(user);
-        body.set("messages", messages);
+        JSONArray messageArray = new JSONArray();
+        for (ChatMessage message : messages) {
+            JSONObject node = new JSONObject();
+            node.set("role", message.getRole());
+            node.set("content", message.getContent() == null ? "" : message.getContent());
+            messageArray.add(node);
+        }
+        body.set("messages", messageArray);
         body.set("temperature", temperature == null ? 0.9 : temperature);
 
         HttpResponse ok = null;
         // 先尝试要求返回 JSON 对象，部分兼容接口不支持时自动去掉该参数重试
-        for (boolean withFormat : new boolean[]{true, false}) {
+        // jsonMode=false 时（例如"草稿+自审+JSON"的混合输出）不能要求 json_object，否则上游会强制纯 JSON
+        boolean[] formatAttempts = jsonMode ? new boolean[]{true, false} : new boolean[]{false};
+        for (boolean withFormat : formatAttempts) {
             for (String u : urls) {
                 JSONObject b = JSONUtil.parseObj(body.toString());
                 if (withFormat) {

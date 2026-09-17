@@ -97,7 +97,7 @@
           class="area"
           :class="{ on: activeLocationId === loc.id, flash: flashLocationId === loc.id }"
           :style="areaStyle(loc)"
-          :title="loc.description || loc.name"
+          :title="locationTitle(loc)"
           @click.stop="toggleLocation(loc)"
         >
           <span class="area-label">
@@ -146,19 +146,54 @@
       @select="onViewerSelect"
     />
 
-    <section class="card panel">
+    <!-- 最新动态：世界最近发生的 3 件事，各自一个容器、按三行纵向排列 -->
+    <section class="latest-block">
+      <div class="latest-block-head">
+        <span class="latest-label">最新动态</span>
+        <span class="muted">世界里最近发生的几件事</span>
+      </div>
+      <div class="latest-grid">
+        <article v-for="act in latestActs" :key="'latest-' + act.id" class="card latest-card">
+          <span class="latest-time">{{ act.createTime }}</span>
+          <span class="latest-text" :title="act.summary || act.actions">
+            <strong>{{ characterName(act.characterId) }}</strong>
+            <span class="muted">在 {{ placeText(act.locationName, act.subLocation) }}</span><template
+              v-if="act.summary"
+            >：{{ act.summary }}</template>
+          </span>
+          <button type="button" class="ghost-btn latest-btn" @click="viewCharacterActs(act.characterId)">
+            查看 TA 的行动
+          </button>
+        </article>
+        <article v-if="!latestActs.length" class="card latest-card">
+          <span class="muted">还没有行动记录</span>
+        </article>
+      </div>
+    </section>
+
+    <section ref="profileRef" class="card panel">
       <div class="panel-head">
         <h3>角色档案</h3>
         <div class="panel-tools">
           <input v-model="keyword" class="char-search" type="search" placeholder="搜索角色名 / 称号 / 所在地" />
-          <button class="ghost-btn" @click="collapsed = !collapsed">
+          <!-- 收起只作用于"角色详情"；看「全部」时没有详情可收，按钮就不显示 -->
+          <button v-if="active" class="ghost-btn" @click="collapsed = !collapsed">
             {{ collapsed ? '展开' : '收起' }}
           </button>
         </div>
       </div>
 
-      <div v-show="!collapsed" class="panel-body">
+      <!-- 面板主体不随收起按钮消失：收起只收角色详情，行动记录（主要阅读内容）始终保留 -->
+      <div class="panel-body">
         <div class="char-chips">
+          <!-- 「全部」= 只按"全部角色"看行动记录；点具体角色才展开上面的角色详情 -->
+          <button class="char-chip" :class="{ on: !activeId }" @click="selectAllCharacters">
+            <span class="chip-avatar fallback">全</span>
+            <span class="chip-text">
+              <span class="chip-name">全部</span>
+              <span class="chip-loc">所有角色的行动</span>
+            </span>
+          </button>
           <button
             v-for="c in filteredCharacters"
             :key="'chip-' + c.id"
@@ -178,7 +213,8 @@
           </div>
         </div>
 
-        <div v-if="active" class="detail">
+        <!-- 角色详情：收起按钮只收这一块，下面的行动记录始终保留 -->
+        <div v-if="active" v-show="!collapsed" class="detail">
           <div class="detail-head">
             <img v-if="active.avatar" class="detail-avatar" :src="active.avatar" :alt="active.name" />
             <div class="detail-title">
@@ -190,6 +226,7 @@
             <div class="status">
               <span class="chip coin-chip">金币 {{ active.coins || 0 }}</span>
               <span class="chip combat-chip">战斗力 {{ active.combatPower == null ? 10 : active.combatPower }}</span>
+              <span class="chip goal-chip">目标 {{ active.goal || '还没有明确目标' }}</span>
               <span v-for="(value, key) in active.status || {}" :key="key" class="chip">
                 {{ key }} {{ value }}
               </span>
@@ -245,6 +282,9 @@
                   {{ rel.targetName }}
                   <span class="muted">
                     {{ rel.targetTitle || '旅行者' }} · {{ rel.targetLocation || '行踪不明' }}
+                    <template v-if="distanceToCharacter(rel.targetId)">
+                      · {{ distanceToCharacter(rel.targetId) }}
+                    </template>
                   </span>
                 </div>
                 <div class="relation-bar">
@@ -326,24 +366,60 @@
             </div>
           </div>
 
-          <div class="recent">
-            <h3>最近的行动</h3>
-            <div v-if="!(active.recentActs || []).length" class="muted">还没有行动记录</div>
-            <div v-for="act in active.recentActs || []" :key="act.id" class="act">
-              <div class="act-meta">
-                <span class="time">{{ act.createTime }}</span>
-                <span class="place">{{ placeText(act.locationName, act.subLocation) }}</span>
-                <span v-if="act.companions" class="companion-tag">与 {{ act.companions }} 互动</span>
-                <span v-if="act.favorChange" class="favor-tag">好感 {{ act.favorChange }}</span>
-                <span v-if="act.itemChange" class="item-tag">{{ act.itemChange }}</span>
-                <span v-if="act.combatChange" class="combat-tag">战斗力 {{ act.combatChange > 0 ? "+" : "" }}{{ act.combatChange }}</span>
+        </div>
+        <div v-else-if="!collapsed" class="muted panel-hint">
+          当前展示全部角色的行动记录；点上方角色名可以只看某个人。
+        </div>
+
+        <!-- 行动记录：原来独立的「行动时间线」合并到这里，每页 5 条 + 页码翻页 -->
+        <div class="acts">
+          <div class="acts-head">
+            <h3>{{ active ? active.name + ' 的行动记录' : '全部角色的行动记录' }}</h3>
+            <div class="acts-tools">
+              <el-select
+                v-model="locationFilter"
+                class="loc-filter"
+                clearable
+                placeholder="全部地点"
+                @change="loadTimeline(true)"
+              >
+                <el-option v-for="loc in locations" :key="'lf-' + loc.id" :label="loc.name" :value="loc.name" />
+              </el-select>
+              <span class="muted acts-total">共 {{ timelineTotal }} 条</span>
+            </div>
+          </div>
+          <div v-if="!timeline.length" class="muted">还没有行动记录</div>
+          <div v-for="act in timeline" :key="act.id" class="timeline-item">
+            <div class="timeline-time">{{ act.createTime }}</div>
+            <div class="timeline-content">
+              <div class="timeline-title">
+                <strong>{{ characterName(act.characterId) }}</strong>
+                <span class="muted">在 {{ placeText(act.locationName, act.subLocation) }}</span>
+                <span v-if="act.coinChange" class="coin-delta inline" :class="act.coinChange > 0 ? 'plus' : 'minus'">
+                  {{ act.coinChange > 0 ? '+' : '' }}{{ act.coinChange }} 金币
+                </span>
+                <span v-if="act.companions" class="companion-tag inline">与 {{ act.companions }} 互动</span>
+                <span v-if="act.favorChange" class="favor-tag inline">好感 {{ act.favorChange }}</span>
+                <span v-if="act.reaction === 1" class="react-tag inline">回应</span>
+                <span v-if="act.itemChange" class="item-tag inline">{{ act.itemChange }}</span>
+                <span v-if="act.combatChange" class="combat-tag inline">战斗力 {{ act.combatChange > 0 ? "+" : "" }}{{ act.combatChange }}</span>
+                <span v-if="moveKmOf(act) >= 1" class="move-tag inline">移动 {{ formatKm(moveKmOf(act)) }}</span>
+                <span v-if="act.newsRef" class="news-tag inline">听闻 · {{ act.newsRef }}</span>
               </div>
               <div class="act-body">{{ act.actions }}</div>
               <div v-if="act.innerVoice" class="voice">「{{ act.innerVoice }}」</div>
             </div>
           </div>
+          <el-pagination
+            v-if="timelineTotal > pageSize"
+            class="acts-pager"
+            :current-page="timelinePage"
+            :page-size="pageSize"
+            :total="timelineTotal"
+            layout="prev, pager, next"
+            @current-change="onTimelinePage"
+          />
         </div>
-        <div v-else class="muted">请选择一个角色查看档案</div>
       </div>
     </section>
 
@@ -400,11 +476,15 @@
       </div>
     </section>
 
-    <!-- 旅人集市：AI 定时刷新的商品，用积分买下后直接赠送给角色（商品进角色背包） -->
+    <!-- 旅人集市：AI 定时刷新的商品，商品用金币标价；角色会自己掏金币买，
+         前台用户购买时按汇率把金币价折算成积分扣款，买下后直接赠送给角色（商品进角色背包） -->
     <section v-if="shopEnabled" class="card shop">
       <div class="shop-head">
         <h3>{{ shopTitle || '旅人集市' }}</h3>
-        <span class="muted">把商品送给角色，TA 下一次行动时会收到「来自异世界的礼物」</span>
+        <span class="muted">
+          角色会自己用金币买（{{ shopBuyPerDay > 0 ? ('每天最多 ' + shopBuyPerDay + ' 件') : '不限件数' }}）；
+          你花积分折算买下送给角色，TA 下一次行动时会收到「来自异世界的礼物」
+        </span>
       </div>
       <div v-if="!shopItems.length" class="muted shop-empty">集市今天还没开张</div>
       <div v-else class="shop-grid">
@@ -424,7 +504,7 @@
           </span>
           <span class="shop-name">{{ item.name }}</span>
           <span class="shop-desc">{{ item.description || '' }}</span>
-          <span class="shop-price"><span class="coin-dot">✦</span>{{ item.price }}</span>
+          <span class="shop-price"><span class="coin-dot">✦</span>{{ item.price }} 金币</span>
           <span class="shop-stockbar"><i :style="{ width: stockPercent(item) + '%' }"></i></span>
           <span class="shop-stock" :class="{ out: item.stock <= 0 }">
             {{ item.stock <= 0 ? '已售罄' : '剩 ' + item.stock + ' / ' + item.totalStock }}
@@ -445,7 +525,8 @@
             </div>
             <p class="buy-desc">{{ buyItem.description || '（这件商品没有留下描述）' }}</p>
             <div class="buy-price">
-              <span>{{ buyItem.price }} 积分</span>
+              <span>{{ buyItem.price }} 金币</span>
+              <span class="muted">≈ {{ pointsOfItem(buyItem.price) }} 积分</span>
               <span class="muted">剩余 {{ buyItem.stock }} / {{ buyItem.totalStock }}</span>
               <span class="muted" v-if="isLogin">我的积分：{{ myPoints }}</span>
             </div>
@@ -457,7 +538,12 @@
           <div v-if="!(buyItem.orders || []).length" class="muted">还没有人赠送过这件商品</div>
           <div v-else class="buy-orders">
             <span v-for="order in buyItem.orders" :key="'o-' + order.id" class="buy-order">
-              {{ order.userName || '一位旅人' }} 送给了 {{ order.characterName }}
+              <template v-if="order.buyerType === 'character'">
+                {{ order.characterName }} 自己在集市买下了它
+              </template>
+              <template v-else>
+                {{ order.userName || '一位旅人' }} 送给了 {{ order.characterName }}
+              </template>
             </span>
           </div>
         </div>
@@ -481,66 +567,11 @@
           :disabled="!buyCharacterId || !buyItem || buyItem.stock <= 0"
           @click="confirmBuy"
         >
-          确认赠送（{{ buyItem ? buyItem.price : 0 }} 积分）
+          确认赠送（{{ buyItem ? pointsOfItem(buyItem.price) : 0 }} 积分）
         </el-button>
       </template>
     </el-dialog>
 
-    <section class="card timeline">
-      <div class="timeline-head">
-        <h3>行动时间线</h3>
-        <!-- 筛选条与收起按钮放在同一个右侧分组里，避免被 space-between 拉得很开 -->
-        <div class="timeline-tools">
-          <div class="filters">
-          <button class="chip-btn" :class="{ on: !filterId }" @click="setFilter(null)">全部</button>
-          <button
-            v-for="c in characters"
-            :key="'f-' + c.id"
-            class="chip-btn"
-            :class="{ on: filterId === c.id }"
-            @click="setFilter(c.id)"
-          >
-            {{ c.name }}
-          </button>
-          <el-select
-            v-model="locationFilter"
-            class="loc-filter"
-            clearable
-            placeholder="全部地点"
-            @change="loadTimeline(true)"
-          >
-            <el-option v-for="loc in locations" :key="'lf-' + loc.id" :label="loc.name" :value="loc.name" />
-          </el-select>
-          </div>
-          <!-- 收起按钮在最右侧，和「角色档案」的收起位置一致 -->
-          <button type="button" class="ghost-btn collapse-btn" @click="timelineCollapsed = !timelineCollapsed">
-            {{ timelineCollapsed ? '展开' : '收起' }}
-          </button>
-        </div>
-      </div>
-      <div v-if="!timelineCollapsed && !timeline.length" class="muted">还没有行动记录</div>
-      <div v-show="!timelineCollapsed" v-for="act in timeline" :key="act.id" class="timeline-item">
-        <div class="timeline-time">{{ act.createTime }}</div>
-        <div class="timeline-content">
-          <div class="timeline-title">
-            <strong>{{ characterName(act.characterId) }}</strong>
-            <span class="muted">在 {{ placeText(act.locationName, act.subLocation) }}</span>
-            <span v-if="act.coinChange" class="coin-delta inline" :class="act.coinChange > 0 ? 'plus' : 'minus'">
-              {{ act.coinChange > 0 ? '+' : '' }}{{ act.coinChange }} 金币
-            </span>
-            <span v-if="act.companions" class="companion-tag inline">与 {{ act.companions }} 互动</span>
-            <span v-if="act.favorChange" class="favor-tag inline">好感 {{ act.favorChange }}</span>
-            <span v-if="act.reaction === 1" class="react-tag inline">回应</span>
-            <span v-if="act.itemChange" class="item-tag inline">{{ act.itemChange }}</span>
-            <span v-if="act.combatChange" class="combat-tag inline">战斗力 {{ act.combatChange > 0 ? "+" : "" }}{{ act.combatChange }}</span>
-            <span v-if="act.newsRef" class="news-tag inline">听闻 · {{ act.newsRef }}</span>
-          </div>
-          <div class="act-body">{{ act.actions }}</div>
-          <div v-if="act.innerVoice" class="voice">「{{ act.innerVoice }}」</div>
-        </div>
-      </div>
-      <button v-if="hasMore && !timelineCollapsed" class="more" @click="loadMoreTimeline">加载更多</button>
-    </section>
   </div>
 </template>
 
@@ -599,13 +630,20 @@ const currentWorldName = computed(() => {
   return (hit && hit.name) || world.name || '沙盒世界'
 })
 const whisperPoints = ref(1)
-const coinRate = ref(10)
+const coinRate = ref(1)
+const shopBuyPerDay = ref(2)
+/** 地图宽度（km）：后台→世界与地图里配置，用来把坐标差换算成"约 N km" */
+const kmMapWidth = ref(200)
+
+// 商品金币价折算成积分（与后端一致：按汇率向上取整，1 金币不能算成 0 积分）
+function pointsOfItem(coinPrice) {
+  const rate = Math.max(1, Number(coinRate.value) || 1)
+  return Math.ceil((Number(coinPrice) || 0) / rate)
+}
 /** 旅人纪闻（当天世界大事） */
 const news = ref([])
 const newsTitle = ref('')
 const newsCollapsed = ref(false)
-/** 行动时间线是否折叠（折叠后只留标题与筛选条） */
-const timelineCollapsed = ref(false)
 /** 被纪闻点中的地点会闪烁高亮 */
 const flashLocationId = ref(null)
 
@@ -616,9 +654,10 @@ const activeLocationId = ref(null)
 /** 背包里被选中的物品（点击格子后展示详情） */
 const selectedItem = ref(null)
 const filterId = ref(null)
-/** 时间线按一级地点筛选 */
+/** 行动记录按一级地点筛选 */
 const locationFilter = ref('')
 const keyword = ref('')
+/** 角色档案详情是否折叠（折叠后下面的行动记录仍然保留） */
 const collapsed = ref(false)
 
 const whisperTargetId = ref(null)
@@ -634,13 +673,17 @@ let clockTimer = null
 const timeline = ref([])
 const timelinePage = ref(1)
 const timelineTotal = ref(0)
-const pageSize = 10
+/** 行动记录每页条数：5 条一页在手机与桌面都刚好 */
+const pageSize = 5
+/** 「最新动态」用的"全世界最新几条行动"（默认 3 条，不随列表筛选变化） */
+const latestActs = ref([])
+/** 角色档案面板，用于「查看 TA 的行动 / 全部记录」滚动定位 */
+const profileRef = ref(null)
 
 const active = computed(() => {
   if (!activeId.value) return null
   return characters.value.find((c) => c.id === activeId.value) || null
 })
-const hasMore = computed(() => timeline.value.length < timelineTotal.value)
 /** 背包物品总件数 */
 const totalItemCount = computed(() => {
   const items = (active.value && active.value.items) || []
@@ -706,6 +749,117 @@ function charactersIn(location) {
 
 function toggleLocation(location) {
   activeLocationId.value = activeLocationId.value === location.id ? null : location.id
+}
+
+// ============================== 实际距离（km） ==============================
+// 与后端 SandboxGeo 保持一致：地图宽 kmMapWidth 对应横向 100 个坐标单位，
+// 地图容器是 16:9，所以纵向 1 单位的实际长度只有横向的 9/16。
+const Y_UNIT_RATIO = 9 / 16
+
+function pointOf(character) {
+  return {
+    x: Number(character.x == null ? 50 : character.x),
+    y: Number(character.y == null ? 50 : character.y)
+  }
+}
+
+function kmBetweenPoints(a, b) {
+  const perUnit = (Number(kmMapWidth.value) || 200) / 100
+  const dx = (a.x - b.x) * perUnit
+  const dy = (a.y - b.y) * perUnit * Y_UNIT_RATIO
+  return Math.sqrt(dx * dx + dy * dy)
+}
+
+function formatKm(km) {
+  return km < 10 ? km.toFixed(1) + ' km' : Math.round(km) + ' km'
+}
+
+/** 算距离以谁为起点：优先时间线筛选的角色，其次正在看档案的角色，最后取世界里的第一个角色 */
+const distanceBase = computed(() => {
+  if (filterId.value) {
+    const hit = characters.value.find((character) => character.id === filterId.value)
+    if (hit) {
+      return hit
+    }
+  }
+  if (active.value) {
+    return active.value
+  }
+  return characters.value[0] || null
+})
+
+/** 地点标注点（多边形取形心，与地图上的地名位置一致） */
+function locationLabelPoint(location) {
+  const polygon = polygonOf(location)
+  if (polygon) {
+    return labelPoint(polygon)
+  }
+  return [Number(location.x == null ? 50 : location.x), Number(location.y == null ? 50 : location.y)]
+}
+
+/** 地图上 hover 地点时的提示：地点描述 + 距基准角色多远（玩家能看懂 AI 为什么走这么久） */
+function locationTitle(location) {
+  const base = location.description || location.name
+  const from = distanceBase.value
+  if (!from || !location) {
+    return base
+  }
+  if (from.locationName && from.locationName === location.name) {
+    return `${base}｜${from.name} 正在这里`
+  }
+  const point = locationLabelPoint(location)
+  const km = kmBetweenPoints(pointOf(from), { x: point[0], y: point[1] })
+  return `${base}｜距 ${from.name} 约 ${formatKm(km)}`
+}
+
+/**
+ * 当前角色到指定角色的距离文本（用在"与其他角色的关系"里）。
+ * 不再用"同一片区域"这种说法：区域最大能有 60 多公里，同区域也可能离得很远。
+ * 只有一级地点与二级地点都相同（真的站在原地同一处）才显示"同在此处"。
+ */
+function distanceToCharacter(targetId) {
+  const from = active.value
+  const to = characters.value.find((character) => character.id === targetId)
+  if (!from || !to) {
+    return ''
+  }
+  if (sameSpot(from, to)) {
+    return '同在此处'
+  }
+  const km = kmBetweenPoints(pointOf(from), pointOf(to))
+  return km < 1 ? '就在附近' : '相距约 ' + formatKm(km)
+}
+
+/** 是否在同一个"具体地点"：一级地点与二级地点都相同（与后端 nearbyCompanions 的判定一致） */
+function sameSpot(a, b) {
+  return Boolean(a && b && a.locationName && a.subLocation
+    && a.locationName === b.locationName && a.subLocation === b.subLocation)
+}
+
+/**
+ * 这一步的移动距离（km）：时间线是从新到旧，所以往前找同一个角色更早的那条行动来对比。
+ * 只在换了地区时才显示，避免"在城里走了两步"也刷一堆距离标签。
+ */
+function moveKmOf(act) {
+  // 服务端已经算好了（分页后"上一条"可能不在这页里），优先用它
+  if (act.moveKm != null) {
+    return act.moveKm
+  }
+  const index = timeline.value.findIndex((item) => item.id === act.id)
+  if (index < 0) {
+    return 0
+  }
+  let previous = null
+  for (let i = index + 1; i < timeline.value.length; i++) {
+    if (timeline.value[i].characterId === act.characterId) {
+      previous = timeline.value[i]
+      break
+    }
+  }
+  if (!previous || !act.locationName || act.locationName === previous.locationName) {
+    return 0
+  }
+  return kmBetweenPoints(pointOf(act), pointOf(previous))
 }
 
 /** 点纪闻条目：如果事件发生在某个已知地点，就把那个地点展开 */
@@ -815,6 +969,8 @@ async function onSwitchWorld(id) {
   router.replace({ query: { ...route.query, world: id } })
   // 换了世界，角色与地点筛选要清掉，否则会筛不到东西
   filterId.value = null
+  activeId.value = null
+  whisperTargetId.value = null
   locationFilter.value = ''
   activeLocationId.value = null
   await load()
@@ -835,13 +991,16 @@ async function load() {
   shopTitle.value = data.shopTitle || '旅人集市'
   shopItems.value = data.shopItems || []
   whisperPoints.value = data.whisperPoints == null ? 1 : data.whisperPoints
-  coinRate.value = data.coinRate == null ? 10 : data.coinRate
+  coinRate.value = data.coinRate == null ? 1 : data.coinRate
+  shopBuyPerDay.value = data.shopBuyPerDay == null ? 2 : data.shopBuyPerDay
+  kmMapWidth.value = data.kmMapWidth == null ? 200 : data.kmMapWidth
   news.value = data.news || []
   newsTitle.value = data.newsTitle || ''
   if (characters.value.length) {
     await selectCharacter(characters.value[0])
   }
   await loadTimeline(true)
+  await loadLatestActs()
 }
 
 async function selectCharacter(character) {
@@ -850,6 +1009,32 @@ async function selectCharacter(character) {
   whisperTargetId.value = character.id
   // 同时刷新角色数据，保证好感度等数值是最新的
   await Promise.all([loadWhispers(), loadTimeline(true), refreshCharacters()])
+}
+
+/**
+ * 切到「全部」：隐藏角色详情，只按"全部角色"看行动记录。
+ * 保留当前地点筛选（用户可能正想看"某个地方所有人的动静"）。
+ */
+async function selectAllCharacters() {
+  activeId.value = null
+  filterId.value = null
+  await loadTimeline(true)
+}
+
+/** 最新动态卡片上的「查看 TA 的行动」：选中该角色并滚到档案区 */
+async function viewCharacterActs(characterId) {
+  const character = characters.value.find((item) => item.id === characterId)
+  if (!character) {
+    return
+  }
+  scrollToProfile()
+  await selectCharacter(character)
+}
+
+function scrollToProfile() {
+  if (profileRef.value && profileRef.value.scrollIntoView) {
+    profileRef.value.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
 }
 
 function openMapViewer() {
@@ -864,11 +1049,6 @@ function openMapViewer() {
 async function onViewerSelect(character) {
   await selectCharacter(character)
   mapViewerVisible.value = false
-}
-
-async function setFilter(id) {
-  filterId.value = id
-  await loadTimeline(true)
 }
 
 async function loadWhispers() {
@@ -896,12 +1076,35 @@ async function loadTimeline(reset = false) {
     size: pageSize
   })
   timelineTotal.value = data.total || 0
-  timeline.value = reset ? data.list || [] : timeline.value.concat(data.list || [])
+  // 页码分页：每次都整体替换。以前这里是"加载更多"式的累加，
+  // 改成页码翻页后如果还累加，翻回第 1 页会变成 1+2+1 三页叠在一起（看起来像"全部记录"）
+  timeline.value = data.list || []
+  // 行动被清理或数量变少时当前页可能越界，直接退回第 1 页，避免停在空白页
+  if (!timeline.value.length && timelinePage.value > 1) {
+    timelinePage.value = 1
+    await loadTimeline(false)
+  }
 }
 
-async function loadMoreTimeline() {
-  timelinePage.value += 1
+/** 页码翻页：直接跳到第 page 页（不再用"加载更多"累加） */
+async function onTimelinePage(page) {
+  timelinePage.value = page
   await loadTimeline(false)
+  scrollToProfile()
+}
+
+/** 「最新动态」：取全世界最新的 3 条行动（不随列表筛选变化） */
+async function loadLatestActs() {
+  try {
+    const data = await portalSandboxActs({
+      worldId: currentWorldId.value || undefined,
+      page: 1,
+      size: 3
+    })
+    latestActs.value = data.list || []
+  } catch (e) {
+    latestActs.value = []
+  }
 }
 
 async function sendWhisper() {
@@ -993,7 +1196,10 @@ function coinTypeText(type) {
   if (type === 'contribute') return '旅人贡献'
   if (type === 'earn') return '赚取'
   if (type === 'spend') return '花销'
-  return '管理员调整'
+  if (type === 'shop_buy') return '集市购物'
+  if (type === 'init') return '初始金币'
+  if (type === 'admin') return '管理员调整'
+  return '其他变动'
 }
 
 /** 好感度 -100~100 映射到进度条宽度 */
@@ -1508,16 +1714,6 @@ onBeforeUnmount(() => {
   border: 1px solid var(--border);
 }
 .appearance { margin: 16px 0 0; color: var(--text); font-size: 14px; line-height: 1.9; }
-.recent h3 { margin: 20px 0 10px; font-size: 15px; color: var(--text-strong); }
-.act {
-  padding: 12px 14px;
-  border-radius: var(--radius-sm);
-  background: var(--glass-bg);
-  border: 1px solid var(--border);
-  margin-bottom: 10px;
-}
-.act-meta { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--text-muted); }
-.act-meta .place { color: var(--accent); }
 .act-body { margin-top: 6px; white-space: pre-line; line-height: 1.8; color: var(--text); font-size: 14px; }
 .voice { margin-top: 6px; color: var(--accent-2); font-size: 13px; font-style: italic; }
 
@@ -1573,6 +1769,16 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 .companion-tag.inline { margin-left: 10px; }
+.move-tag {
+  padding: 1px 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  color: #6f9f8a;
+  background: rgba(111, 159, 138, 0.16);
+  border: 1px solid rgba(111, 159, 138, 0.38);
+  white-space: nowrap;
+}
+.move-tag.inline { margin-left: 8px; }
 .favor-tag {
   padding: 1px 9px;
   border-radius: 999px;
@@ -1844,18 +2050,48 @@ onBeforeUnmount(() => {
 }
 .send:disabled { opacity: 0.6; cursor: not-allowed; }
 
-.timeline { padding: 22px; }
-.timeline-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; }
-/* 右侧分组：筛选条 + 收起按钮，靠右排在一起 */
-.timeline-tools {
+/* 行动记录（原来的「行动时间线」合并进角色档案后的样式） */
+.acts { margin-top: 22px; padding-top: 18px; border-top: 1px dashed var(--border); }
+.acts-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; }
+.acts-head h3 { margin: 0; font-size: 15px; color: var(--text-strong); }
+.acts-tools { display: flex; align-items: center; gap: 10px; margin-left: auto; }
+.acts-total { font-size: 12px; }
+.acts-pager { margin-top: 16px; justify-content: center; }
+.panel-hint { padding: 6px 0 2px; }
+/* 地图与角色档案之间的最新动态：最近 3 条，各自一个容器，纵向排三行 */
+.latest-block { margin-bottom: 22px; }
+.latest-block-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.latest-label {
+  flex-shrink: 0;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  color: var(--accent);
+  background: rgba(255, 111, 159, 0.14);
+  border: 1px solid rgba(255, 111, 159, 0.32);
+}
+/* 三行纵向排列：每张卡片独占一行 */
+.latest-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
+.latest-card {
+  padding: 12px 16px;
+  /* 卡片之间由 gap 控制间距，去掉 .card 默认的下边距 */
+  margin-bottom: 0;
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-left: auto;
-  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 13px;
 }
+.latest-time { flex-shrink: 0; color: var(--text-muted); font-size: 12px; }
+.latest-text {
+  flex: 1;
+  min-width: 0;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.latest-btn { flex-shrink: 0; }
 .collapse-btn { flex-shrink: 0; }
-.timeline-head h3 { margin: 0; font-size: 15px; color: var(--text-strong); }
 .filters { display: flex; gap: 8px; flex-wrap: wrap; }
 .loc-filter { width: 150px; }
 .loc-filter :deep(.el-select__wrapper) { border-radius: 999px; font-size: 12px; }
@@ -1874,13 +2110,16 @@ onBeforeUnmount(() => {
 .timeline-content { flex: 1; }
 .timeline-title { font-size: 14px; color: var(--text-strong); }
 .timeline-title .muted { margin-left: 8px; font-size: 12px; }
-.more { display: block; margin: 18px auto 0; }
-
 @media (max-width: 720px) {
   .sandbox { padding: calc(var(--header-height) + 20px) 12px 50px; }
   .detail-head { align-items: flex-start; }
   .status { margin-left: 0; width: 100%; }
   .timeline-item { flex-direction: column; gap: 4px; }
+  /* 窄屏：最新动态的卡片内改成竖排，按钮不再和文字抢宽度 */
+  .latest-card { flex-wrap: wrap; }
+  .latest-text { white-space: normal; }
+  .latest-btn { margin-left: 0; }
+  .loc-filter { width: 130px; }
   .timeline-time { width: auto; }
   .area-label { font-size: 11px; padding: 1px 6px; }
   .area-actors { max-width: 88%; gap: 8px; }
@@ -1891,6 +2130,7 @@ onBeforeUnmount(() => {
 }
 /* 战斗力：展示在角色信息里，行动变化时给个标签 */
 .combat-chip { color: #b0416b; background: rgba(255, 111, 159, 0.16); }
+.goal-chip { color: #4f9d8f; background: rgba(79, 157, 143, 0.16); }
 .combat-tag {
   padding: 1px 8px;
   border-radius: 999px;

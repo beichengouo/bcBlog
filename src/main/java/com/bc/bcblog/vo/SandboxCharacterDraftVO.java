@@ -25,6 +25,10 @@ public class SandboxCharacterDraftVO {
     private Map<String, Object> status = new LinkedHashMap<>();
     /** 初始金币 */
     private Integer coins;
+    /** 对自身实力的看法（AI 生成，可改） */
+    private String powerView;
+    /** 对金钱财富的看法（AI 生成，可改） */
+    private String wealthView;
     /** 初始背包物品 */
     private List<SandboxItem> items;
     /** AI 原始返回，便于排查 */

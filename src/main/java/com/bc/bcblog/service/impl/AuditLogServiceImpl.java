@@ -61,7 +61,8 @@ public class AuditLogServiceImpl implements AuditLogService {
             entity.setSource("manual");
             entity.setTarget(truncate(target, 190));
             entity.setSuccess(0);
-            entity.setMessage("权限不足：该功能仅超级管理员可用");
+            // 消息按真实原因写，便于在「API 调用审计」里分辨是超管专属还是二次验证未通过
+            entity.setMessage("权限不足：" + action);
             entity.setCreateTime(LocalDateTime.now());
             fillCaller(entity);
             logMapper.insert(entity);

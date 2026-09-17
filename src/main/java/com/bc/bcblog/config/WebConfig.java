@@ -5,6 +5,8 @@ import cn.dev33.satoken.router.SaRouter;
 import cn.dev33.satoken.context.SaHolder;
 import cn.dev33.satoken.stp.StpUtil;
 import com.bc.bcblog.common.BusinessException;
+import com.bc.bcblog.common.AdminPathRules;
+import com.bc.bcblog.common.SecurityPathRules;
 import com.bc.bcblog.entity.SysUser;
 import com.bc.bcblog.mapper.SysUserMapper;
 import com.bc.bcblog.service.AuditLogService;
@@ -38,48 +40,6 @@ public class WebConfig implements WebMvcConfigurer {
     private final SecurityPasswordService securityPasswordService;
 
     /**
-     * 仅超级管理员可用的后台接口：
-     * 这些功能会使用系统级密钥（GitHub Token、邮箱授权码、地图/ACG Token）或管理账号，
-     * 一级/二级管理员被授权了对应菜单也不能调用。
-     */
-    private static final String[] SUPER_ONLY_PATHS = {
-            "/api/admin/gitalk/**",
-            "/api/admin/email/**",
-            "/api/admin/acg-cover/**",
-            "/api/admin/ip-location/**",
-            "/api/admin/invite/**",
-            "/api/admin/user/**",
-            "/api/admin/member/**",
-            "/api/admin/audit/**",
-            "/api/admin/security/**",
-            "/api/admin/config/ip-location-ak/**",
-            "/api/admin/config/gaode-ip-key/**",
-            "/api/admin/config/acg-cover-token/**"
-            ,"/api/admin/log/**"
-            // 破坏性操作：删世界 / 清空世界 / 导入并覆盖世界，仅超级管理员可用
-            ,"/api/admin/sandbox/world/import",
-            "/api/admin/sandbox/world/*/reset",
-            "/api/admin/sandbox/world/*"
-    };
-
-    /** 需要「安全密码」二次验证的敏感操作（本次登录验证过一次即可） */
-    private static final String[] SECURITY_PROTECTED_PATHS = {
-            "/api/admin/user/**",
-            "/api/admin/member/**",
-            "/api/admin/invite/**",
-            "/api/admin/gitalk/**",
-            "/api/admin/email/**",
-            "/api/admin/deepseek/**",
-            "/api/admin/ai/provider/**",
-            "/api/admin/ai/**",
-            "/api/admin/acg-cover/**",
-            "/api/admin/config/ip-location-ak/**",
-            "/api/admin/config/gaode-ip-key/**",
-            "/api/admin/config/acg-cover-token/**",
-            "/api/admin/system/cleanup"
-    };
-
-    /**
      * 菜单 key → 后台接口路径前缀。
      * 前端菜单授权（sys_user.menus）以前只影响侧边栏显示，后端不校验，等于"配了也能绕过"；
      * 这里把菜单与接口对应起来：一级/二级管理员访问未授权菜单的接口会直接 403 并记一条越权审计。
@@ -92,7 +52,9 @@ public class WebConfig implements WebMvcConfigurer {
     private static final Map<String, String[]> MENU_PATHS = new LinkedHashMap<>();
 
     static {
-        MENU_PATHS.put("articles", new String[]{"/api/admin/article/**"});
+        // 文章管理页里的「AI 一键写文章」用的是 /api/admin/ai/article，
+        // 它消耗的是调用者自己的 Key，让有文章菜单的人也能用
+        MENU_PATHS.put("articles", new String[]{"/api/admin/article/**", "/api/admin/ai/article"});
         MENU_PATHS.put("categories", new String[]{"/api/admin/category/**"});
         MENU_PATHS.put("tags", new String[]{"/api/admin/tag/**"});
         MENU_PATHS.put("comments", new String[]{"/api/admin/comment/**"});
@@ -113,6 +75,8 @@ public class WebConfig implements WebMvcConfigurer {
         MENU_PATHS.put("points", new String[]{"/api/admin/point/**"});
         MENU_PATHS.put("levels", new String[]{"/api/admin/level/**"});
         MENU_PATHS.put("logs", new String[]{"/api/admin/log/**"});
+        // 安全设置页（仅超级管理员可用，同时受 SUPER_ONLY_PATHS 限制）
+        MENU_PATHS.put("security", new String[]{"/api/admin/security/**"});
         MENU_PATHS.put("settings", new String[]{"/api/admin/config/**", "/api/admin/system/**"});
         MENU_PATHS.put("api", new String[]{"/api/admin/ai/**", "/api/admin/deepseek/**"});
         MENU_PATHS.put("deepseek", new String[]{"/api/admin/deepseek/**"});
@@ -140,11 +104,10 @@ public class WebConfig implements WebMvcConfigurer {
                             // 敏感接口仅超级管理员可用，并记录越权尝试
                             if (!"SUPER".equals(user.getRole())) {
                                 String path = SaHolder.getRequest().getRequestPath();
-                                for (String pattern : SUPER_ONLY_PATHS) {
-                                    if (SaRouter.isMatch(pattern, path)) {
-                                        auditLogService.recordDenied("越权尝试", path);
-                                        throw new BusinessException(403, "该功能仅超级管理员可用");
-                                    }
+                                // 哪些接口算"超管专属"，见 AdminPathRules（含只拦写操作的路径）
+                                if (AdminPathRules.isSuperOnly(path, SaHolder.getRequest().getMethod())) {
+                                    auditLogService.recordDenied("越权尝试", path);
+                                    throw new BusinessException(403, "该功能仅超级管理员可用");
                                 }
                             }
                             // 菜单授权校验：非超管必须拥有该接口对应的菜单
@@ -152,16 +115,32 @@ public class WebConfig implements WebMvcConfigurer {
                                 String path = SaHolder.getRequest().getRequestPath();
                                 Set<String> granted = parseMenus(user.getMenus());
                                 // 这个接口受菜单管辖、而当前管理员又没有对应菜单 → 拒绝
-                                if (matchesAnyMenuPath(path) && !hasAnyMenuAccess(granted, path)) {
+                                // 例外：站点设置读取、后台壁纸透明度、系统监控、模型下拉框这类被多个页面
+                                // 共用的公共读接口不参与菜单校验（见 AdminPathRules.MENU_EXEMPT_READ_PATHS）
+                                boolean menuManaged = matchesAnyMenuPath(path)
+                                        && !AdminPathRules.isMenuExempt(path, SaHolder.getRequest().getMethod());
+                                if (menuManaged && !hasAnyMenuAccess(granted, path)) {
                                     auditLogService.recordDenied("越权尝试", path);
                                     throw new BusinessException(403, "没有该菜单的权限，请联系超级管理员授权");
                                 }
                             }
-                            // 敏感操作需要二次验证（安全密码）；本次登录验证过一次后不再要求
-                            if ("1".equals(configService.getConfigValue("admin_security_enabled", "1"))) {
+                            // 敏感操作需要二次验证（安全密码）
+                            // 说明：只对超级管理员强制。普通管理员能访问的菜单本来就是超级管理员授权的，
+                            // 而且「安全设置」页是超管专属，他们没有自己的安全密码，
+                            // 如果也要求验证，被授权的菜单会直接变成不可用。
+                            if ("SUPER".equals(user.getRole())
+                                    && "1".equals(configService.getConfigValue("admin_security_enabled", "1"))) {
                                 String path = SaHolder.getRequest().getRequestPath();
-                                for (String pattern : SECURITY_PROTECTED_PATHS) {
-                                    if (SaRouter.isMatch(pattern, path) && !securityPasswordService.isVerified()) {
+                                // 哪些路径要验证、哪些只拦写操作，见 SecurityPathRules
+                                if (SecurityPathRules.needVerify(path, SaHolder.getRequest().getMethod())) {
+                                    // 没设置过安全密码时不再回退用登录密码（那样等于没有二次验证）
+                                    if (!securityPasswordService.hasPassword(StpUtil.getLoginIdAsLong())) {
+                                        auditLogService.recordDenied("未设置安全密码", path);
+                                        throw new BusinessException(403, "请先到「系统安全 → 安全设置」设置安全密码，再进行敏感操作");
+                                    }
+                                    if (!securityPasswordService.isVerified()) {
+                                        // 记一条审计：万一以后出现"没输密码也能操作"的情况，能看出请求是否真的到过服务端
+                                        auditLogService.recordDenied("二次验证未通过", path);
                                         throw new BusinessException(428, "该操作需要输入安全密码验证");
                                     }
                                 }
@@ -192,15 +171,26 @@ public class WebConfig implements WebMvcConfigurer {
         if (menus == null || menus.trim().isEmpty()) {
             return result;
         }
-        try {
-            JSONArray array = JSONUtil.parseArray(menus);
-            for (Object item : array) {
-                if (item != null) {
-                    result.add(String.valueOf(item).trim());
+        String text = menus.trim();
+        // sys_user.menus 实际存的是逗号分隔字符串（如 dashboard,articles,tags）；
+        // 这里同时兼容 JSON 数组写法，避免任何一种写法被误判成"没有任何菜单"
+        if (text.startsWith("[")) {
+            try {
+                for (Object item : JSONUtil.parseArray(text)) {
+                    if (item != null) {
+                        result.add(String.valueOf(item).replace("\"", "").trim());
+                    }
                 }
+                return result;
+            } catch (Exception ignored) {
+                // 落到下面的逗号分隔解析
             }
-        } catch (Exception e) {
-            log.warn("解析管理员菜单授权失败：{}", e.getMessage());
+        }
+        for (String item : text.split(",")) {
+            String key = item.replace("[", "").replace("]", "").replace("\"", "").trim();
+            if (!key.isEmpty()) {
+                result.add(key);
+            }
         }
         return result;
     }

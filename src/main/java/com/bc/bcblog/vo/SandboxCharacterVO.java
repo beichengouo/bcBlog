@@ -30,6 +30,8 @@ public class SandboxCharacterVO {
     private Integer coins;
     /** 战斗力：综合实力（战斗技巧、魔力、装备），默认 10 */
     private Integer combatPower;
+    /** 当前目标（AI 维护，管理员可改） */
+    private String goal;
     /** 最近几条金币流水（贡献 / 赚取 / 消耗） */
     private List<SandboxCoinLog> recentCoins;
     /** 与其他角色的好感度 */
@@ -40,6 +42,10 @@ public class SandboxCharacterVO {
     private List<SandboxMemory> recentMemories;
     /** 最近几条行动，前台档案面板展示 */
     private List<SandboxAct> recentActs;
+    /** 对自身实力的看法（后台可改，前台档案可展示） */
+    private String powerView;
+    /** 对金钱财富的看法 */
+    private String wealthView;
     /** 下次自动行动时间（前台展示倒计时用） */
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     private LocalDateTime nextRunTime;

@@ -131,6 +131,17 @@ mysql --default-character-set=utf8mb4 -uroot -p bc_blog < upgrade_20260916_batch
 | `upgrade_035_page_background.sql` | 前台各页面独立背景与不透明度（`page_background` 表） |
 | `upgrade_036_sandbox_fail_backoff.sql` | 沙盒 AI 调用失败的退避（`sandbox_character.fail_count` + 两个配置项） |
 | `upgrade_037_sandbox_multi_world.sql` | 沙盒多世界（世界「是否运行 / 前台是否可见」两个开关、低语与金币流水补 world_id、旅人低语总开关） |
+| `upgrade_038_sandbox_combat_power.sql` | 沙盒角色「战斗力」字段 |
+| `upgrade_039_sandbox_shop.sql` | 沙盒旅人集市（商品 / 订单 / 礼物表与刷新配置） |
+| `upgrade_040_sandbox_prompt_budget.sql` | 沙盒提示词预算守护配置 |
+| `upgrade_041_sandbox_character_goal.sql` | 沙盒角色「当前目标」字段 |
+| `upgrade_042_sandbox_shop_coin.sql` | 集市改用金币计价（订单/礼物补 `coin_price`、订单补 `buyer_type`）、汇率默认 1:1、角色每日自购上限配置 |
+| `upgrade_043_sandbox_distance.sql` | 沙盒位置距离化：地图宽度（km）、交通方式速度表、互动距离门槛三个配置项 |
+| `upgrade_044_admin_permission_fix.sql` | 后台权限边界修正（超管专属菜单收紧）：沙盒系统服务商配置 + 清理失效的超管专属菜单键 |
+| `upgrade_045_sandbox_coin_and_lock.sql` | 沙盒金币正确性：角色执行锁 `running_at`、`power_view`/`wealth_view` 两个态度字段、执行锁超时配置 |
+| `upgrade_046_sandbox_spend_limit.sql` | 沙盒单次花费上限配置（余额分档 + 上限截断，防 AI 随口写大额支出） |
+| `upgrade_047_sandbox_verify_mode.sql` | 沙盒输出自查模式三档（默认「仅可疑时查」）+ 可疑判定规则 |
+| `upgrade_048_sandbox_draft_mode.sql` | 沙盒三段式输出（草稿→自审→终稿，默认开）+ 文风补充配置 |
 | `upgrade_20260916_batch.sql` | **以上全部合并版（推荐，只用这一份）** |
 
 > 说明：旧的 `upgrade_20260915_batch.sql` 已经把内容并入 `upgrade_20260916_batch.sql`，

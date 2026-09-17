@@ -24,6 +24,8 @@ public class SandboxGift {
     private String itemDescription;
     private Integer quantity;
     private Integer pointsCost;
+    /** 商品单价（金币）：前台用户按汇率折算成积分购买 */
+    private Integer coinPrice;
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     private LocalDateTime createTime;
 }

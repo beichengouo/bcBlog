@@ -26,6 +26,10 @@ public class SandboxShopOrder {
     private Integer quantity;
     /** 消耗积分（管理员为 0） */
     private Integer pointsCost;
+    /** 商品单价（金币）：前台用户购买时按汇率折算成积分，角色自购时直接扣金币 */
+    private Integer coinPrice;
+    /** 购买者类型：user=前台用户赠送 / character=沙盒角色自购 */
+    private String buyerType;
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     private LocalDateTime createTime;
 }

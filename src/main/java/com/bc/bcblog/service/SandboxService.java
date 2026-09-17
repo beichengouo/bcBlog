@@ -62,6 +62,12 @@ public interface SandboxService {
 
     void saveSettings(SandboxSettingVO vo);
 
+    /** 集市管理页专用：只写集市相关配置（世界运行参数仍归超级管理员） */
+    void saveShopSettings(SandboxSettingVO vo);
+
+    /** 行动日志页的「旅人纪闻设置」专用：只写纪闻相关配置 */
+    void saveNewsSettings(SandboxSettingVO vo);
+
     // ---------------- 角色 ----------------
 
     /** 某个世界的角色；worldId 为空时取第一个世界 */
@@ -86,6 +92,9 @@ public interface SandboxService {
 
     /** 让指定角色执行一次 AI 行动，manual=true 表示管理员手动触发（不占用每日额度） */
     SandboxAct runOnce(Long characterId, boolean manual);
+
+    /** 管理员手动解除某个角色的执行锁（正常执行完会自动释放；这个是卡住时的应急出口） */
+    void unlockCharacter(Long characterId);
 
     /** 定时任务入口：逐个检查到期角色并执行 */
     void runScheduled();
@@ -113,6 +122,12 @@ public interface SandboxService {
 
     /** 用积分给角色贡献金币：必须登录，按后台配置的比例换算 */
     SandboxCoinResultVO contributeCoins(Long characterId, int points);
+
+    /**
+     * 金币对账修复：以金币流水为准重算角色余额，并把每条流水的"当时余额"按顺序重算。
+     * 用于修复历史上因"整值回写"造成的余额丢失。
+     */
+    Map<String, Object> repairCoins(Long worldId);
 
     // ---------------- 好感度 ----------------
 

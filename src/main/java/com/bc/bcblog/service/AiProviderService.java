@@ -1,6 +1,7 @@
 package com.bc.bcblog.service;
 
 import com.bc.bcblog.entity.AiProvider;
+import com.bc.bcblog.dto.ChatMessage;
 import com.bc.bcblog.vo.AiArticleVO;
 
 import java.util.List;
@@ -36,4 +37,15 @@ public interface AiProviderService {
 
     /** 直接用一个已解析好的服务商发起对话（内部会解密密钥并写审计日志） */
     String chat(AiProvider provider, String model, String systemPrompt, String userPrompt, Double temperature);
+
+    /**
+     * 按消息数组调用（支持 assistant 预填充）。
+     *
+     * @param messages 按顺序排列的消息；最后一条可以是 {@code assistant}，模型会"接着写"，
+     *                 用来把输出强制引到我们期望的格式上（例如以 &lt;draft&gt; 开头）
+     * @param jsonMode 是否要求返回 JSON 对象（response_format=json_object）。
+     *                 注意：做"草稿+JSON"这种混合输出时必须传 false，否则上游会强制纯 JSON
+     */
+    String chatMessages(AiProvider provider, String model, List<ChatMessage> messages,
+                        Double temperature, boolean jsonMode);
 }

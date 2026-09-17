@@ -54,7 +54,12 @@ public class PortalSandboxController {
                                                @RequestParam(required = false) Long worldId,
                                                @RequestParam(defaultValue = "1") long page,
                                                @RequestParam(defaultValue = "10") long size) {
-        return Result.ok(sandboxService.acts(characterId, locationName, worldId, page, size));
+        PageResult<SandboxAct> result = sandboxService.acts(characterId, locationName, worldId, page, size);
+        // 前台不需要 AI 原始回复（里面可能含 <draft>/<review> 这类提示词段落），这里直接抹掉再返回
+        if (result != null && result.getList() != null) {
+            result.getList().forEach(act -> act.setRawResponse(null));
+        }
+        return Result.ok(result);
     }
 
     /** 某个角色收到的旅人低语 */

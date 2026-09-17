@@ -1479,7 +1479,8 @@ INSERT IGNORE INTO `sys_config` (`config_key`, `config_value`, `remark`) VALUES
     ('admin_login_alert_night_start', '00:00', '深夜时段开始（该时段登录视为异常）HH:mm'),
     ('admin_login_alert_night_end', '06:00', '深夜时段结束 HH:mm'),
     ('admin_login_alert_fail_times', '3', '连续登录失败几次触发提醒，0 表示不提醒'),
-    ('admin_single_login', '1', '单点登录：1 同一管理员只允许一处后台在线，新登录踢掉旧会话');
+    ('admin_single_login', '1', '单点登录：1 同一管理员只允许一处后台在线，新登录踢掉旧会话'),
+    ('admin_security_verify_minutes', '30', '安全密码二次验证的有效期（分钟）：超过需重新验证，填 0 表示本次登录内一直有效');
 
 -- 异常登录提醒邮件模板（可在后台「邮件管理」里编辑或新增多套）
 INSERT INTO `sys_email_template`
@@ -1752,6 +1753,112 @@ INSERT IGNORE INTO `sys_config` (`config_key`, `config_value`, `remark`) VALUES
 -- 沙盒提示词预算守护（upgrade_040）
 INSERT IGNORE INTO `sys_config` (`config_key`, `config_value`, `remark`) VALUES
     ('sandbox_prompt_char_limit', '9000', '沙盒行动提示词的字符上限：超过后自动精简（去掉他角色动静与今日要闻、最近行动取 6 条）');
+
+-- 沙盒角色「当前目标」（upgrade_041）
+DROP PROCEDURE IF EXISTS `bcblog_add_col`;
+DELIMITER //
+CREATE PROCEDURE `bcblog_add_col`(IN p_table VARCHAR(64), IN p_col VARCHAR(64), IN p_def TEXT)
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS
+                   WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = p_table AND COLUMN_NAME = p_col) THEN
+        SET @ddl = CONCAT('ALTER TABLE `', p_table, '` ADD COLUMN `', p_col, '` ', p_def);
+        PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+    END IF;
+END //
+DELIMITER ;
+CALL bcblog_add_col('sandbox_character', 'goal',
+    'varchar(100) DEFAULT NULL COMMENT ''当前目标（AI 维护，管理员可改）'' AFTER `sub_location`');
+DROP PROCEDURE IF EXISTS `bcblog_add_col`;
+
+
+-- 旅人集市改用「金币」计价 + 角色可以自己买（upgrade_042）
+DROP PROCEDURE IF EXISTS `bcblog_add_col`;
+DELIMITER //
+CREATE PROCEDURE `bcblog_add_col`(IN p_table VARCHAR(64), IN p_col VARCHAR(64), IN p_def TEXT)
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS
+                   WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = p_table AND COLUMN_NAME = p_col) THEN
+        SET @ddl = CONCAT('ALTER TABLE `', p_table, '` ADD COLUMN `', p_col, '` ', p_def);
+        PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+    END IF;
+END //
+DELIMITER ;
+CALL bcblog_add_col('sandbox_shop_order', 'coin_price',
+    'int NOT NULL DEFAULT 0 COMMENT ''商品单价（金币）'' AFTER `points_cost`');
+CALL bcblog_add_col('sandbox_shop_order', 'buyer_type',
+    'varchar(20) NOT NULL DEFAULT ''user'' COMMENT ''购买者：user=前台用户赠送 / character=沙盒角色自购'' AFTER `coin_price`');
+CALL bcblog_add_col('sandbox_gift', 'coin_price',
+    'int NOT NULL DEFAULT 0 COMMENT ''商品单价（金币）'' AFTER `points_cost`');
+DROP PROCEDURE IF EXISTS `bcblog_add_col`;
+
+-- 汇率改为 1 积分 = 1 金币；新增「角色每日自购上限」
+UPDATE `sys_config` SET `config_value` = '1' WHERE `config_key` = 'sandbox_coin_rate';
+INSERT IGNORE INTO `sys_config` (`config_key`, `config_value`, `remark`) VALUES
+    ('sandbox_shop_buy_per_day', '2', '沙盒角色每天最多在旅人集市自购几件商品，0 表示不限制');
+
+
+-- 沙盒位置距离化（upgrade_043）：地图尺度、交通方式、互动距离门槛
+INSERT IGNORE INTO `sys_config` (`config_key`, `config_value`, `remark`) VALUES
+    ('sandbox_km_map_width', '200', '地图宽度（km）：横向 100 个坐标单位对应多少公里，纵向按 16:9 折算'),
+    ('sandbox_travel_speeds', '步行:4,骑乘:20,车船:12,飞行:60', '交通方式与速度（名称:km/h，逗号分隔）：提示词与赶路时间下限都用它'),
+    ('sandbox_social_max_km', '30', '允许同行/涨好感的角色间最大距离（km），0 表示不限制');
+
+
+-- 后台权限边界修正（upgrade_044）：沙盒系统服务商配置 + 清理失效的超管专属菜单键
+INSERT IGNORE INTO `sys_config` (`config_key`, `config_value`, `remark`) VALUES
+    ('sandbox_system_provider_id', '', '沙盒系统级 AI 调用统一使用的服务商 id，留空表示自动');
+
+UPDATE `sys_user` SET `menus` = TRIM(BOTH ',' FROM REPLACE(CONCAT(',', `menus`, ','), ',gitalk,', ','))
+WHERE `role` <> 'SUPER' AND `menus` LIKE '%gitalk%';
+UPDATE `sys_user` SET `menus` = TRIM(BOTH ',' FROM REPLACE(CONCAT(',', `menus`, ','), ',deepseek,', ','))
+WHERE `role` <> 'SUPER' AND `menus` LIKE '%deepseek%';
+UPDATE `sys_user` SET `menus` = TRIM(BOTH ',' FROM REPLACE(CONCAT(',', `menus`, ','), ',third,', ','))
+WHERE `role` <> 'SUPER' AND `menus` LIKE '%third%';
+UPDATE `sys_user` SET `menus` = TRIM(BOTH ',' FROM REPLACE(CONCAT(',', `menus`, ','), ',email,', ','))
+WHERE `role` <> 'SUPER' AND `menus` LIKE '%email%';
+UPDATE `sys_user` SET `menus` = TRIM(BOTH ',' FROM REPLACE(CONCAT(',', `menus`, ','), ',sandboxWorld,', ','))
+WHERE `role` <> 'SUPER' AND `menus` LIKE '%sandboxWorld%';
+UPDATE `sys_user` SET `menus` = NULL WHERE `role` <> 'SUPER' AND (`menus` = '' OR `menus` = ',');
+
+
+-- 沙盒金币正确性 + 执行锁 + 角色态度（upgrade_045）
+DROP PROCEDURE IF EXISTS `bcblog_add_col`;
+DELIMITER //
+CREATE PROCEDURE `bcblog_add_col`(IN p_table VARCHAR(64), IN p_col VARCHAR(64), IN p_def TEXT)
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS
+                   WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = p_table AND COLUMN_NAME = p_col) THEN
+        SET @ddl = CONCAT('ALTER TABLE `', p_table, '` ADD COLUMN `', p_col, '` ', p_def);
+        PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+    END IF;
+END //
+DELIMITER ;
+CALL bcblog_add_col('sandbox_character', 'running_at',
+    'datetime DEFAULT NULL COMMENT ''正在执行行动的抢锁时间，执行结束会清空（并发保护）''');
+CALL bcblog_add_col('sandbox_character', 'power_view',
+    'varchar(60) DEFAULT NULL COMMENT ''对自身实力的看法（会写进行动提示词）''');
+CALL bcblog_add_col('sandbox_character', 'wealth_view',
+    'varchar(60) DEFAULT NULL COMMENT ''对金钱财富的看法（会写进行动提示词）''');
+DROP PROCEDURE IF EXISTS `bcblog_add_col`;
+
+INSERT IGNORE INTO `sys_config` (`config_key`, `config_value`, `remark`) VALUES
+    ('sandbox_run_lock_minutes', '5', '沙盒角色行动的执行锁超时（分钟）：超过视为失效锁，可被重新抢占');
+
+
+-- 沙盒单次花费上限（upgrade_046）
+INSERT IGNORE INTO `sys_config` (`config_key`, `config_value`, `remark`) VALUES
+    ('sandbox_max_spend_per_act', '10', '沙盒角色单次行动的「非集市花费」上限（金币）：余额越少越省，超出会被截断并在流水里注明');
+
+
+-- 沙盒输出自查模式（upgrade_047）：默认「仅可疑时查」
+INSERT IGNORE INTO `sys_config` (`config_key`, `config_value`, `remark`) VALUES
+    ('sandbox_verify_mode', 'suspicious', '沙盒输出自查模式：off 关闭 / suspicious 仅可疑时查（默认） / always 每次都查');
+
+
+-- 沙盒三段式输出 + 文风补充（upgrade_048）
+INSERT IGNORE INTO `sys_config` (`config_key`, `config_value`, `remark`) VALUES
+    ('sandbox_draft_mode', 'on', '沙盒角色行动三段式输出（草稿→自审→终稿）：on 开启（默认）/ off 关闭'),
+    ('sandbox_style_extra', '', '行动提示词的【文风补充】（可粘贴酒馆预设里的写作基准段落，留空不追加）');
 
 
 -- ============================================================================

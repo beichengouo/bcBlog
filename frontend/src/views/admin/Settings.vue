@@ -134,7 +134,8 @@
         </div>
       </el-form-item>
       <el-form-item>
-        <el-button type="warning" plain :loading="cleaning" @click="onCleanup">立即清理一次</el-button>
+        <!-- 立即清理会真的删数据，后端也只允许超级管理员调用，这里对普通管理员隐藏 -->
+        <el-button v-if="isSuper" type="warning" plain :loading="cleaning" @click="onCleanup">立即清理一次</el-button>
       </el-form-item>
       <el-form-item>
         <el-button type="primary" :loading="saving" @click="onSave">保存</el-button>
@@ -144,13 +145,17 @@
 </template>
 
 <script setup>
-import { reactive, ref, onMounted } from 'vue'
+import { computed, reactive, ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { ElMessageBox } from 'element-plus'
 import { getConfig, saveConfig, uploadSiteLogo, deleteSiteLogo } from '@/api/config'
 import { runCleanup } from '@/api/system'
 import { applySiteMeta } from '@/utils/siteMeta'
+import { useUserStore } from '@/store/user'
 
+const userStore = useUserStore()
+/** 只有超级管理员能「立即清理」：这是破坏性操作，后端也只放行超管 */
+const isSuper = computed(() => userStore.userInfo && userStore.userInfo.role === 'SUPER')
 const saving = ref(false)
 const cleaning = ref(false)
 const logoInput = ref()

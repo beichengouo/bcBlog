@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useUserStore } from '@/store/user'
 import { applySiteMeta, getSiteName } from '@/utils/siteMeta'
+import { ensureSecurityVerified } from '@/utils/securityGate'
 
 const routes = [
   { path: '/', redirect: '/portal' },
@@ -54,18 +55,41 @@ const routes = [
       { path: 'levels', component: () => import('@/views/admin/LevelManage.vue'), meta: { title: '等级配置', menu: 'levels' } },
       { path: 'invites', component: () => import('@/views/admin/InviteManage.vue'), meta: { title: '邀请码管理', menu: 'invites', superOnly: true } },
       { path: 'logs', component: () => import('@/views/admin/LoginLog.vue'), meta: { title: '登录日志', menu: 'logs' } },
+      { path: 'security', component: () => import('@/views/admin/SecuritySettings.vue'), meta: { title: '安全设置', menu: 'security', superOnly: true } },
       { path: 'audit', component: () => import('@/views/admin/ApiAudit.vue'), meta: { title: 'API 调用审计', menu: 'audit', superOnly: true } },
       { path: 'points', component: () => import('@/views/admin/PointManage.vue'), meta: { title: '积分管理', menu: 'points' } }
     ]
   }
 ]
 
+// 需要「安全密码」二次验证的后台菜单（与后端 WebConfig.SECURITY_PROTECTED_PATHS 对应）。
+// 说明：「安全设置」本身不在其中，否则没设过安全密码的人将无处可设。
+const SECURITY_MENUS = new Set([
+  'settings',
+  'logs',
+  'audit',
+  'points',
+  'levels',
+  'admins',
+  'members',
+  'invites',
+  'gitalk',
+  'email',
+  'deepseek',
+  'api',
+  'third',
+  'sandboxWorld',
+  'sandboxCharacters',
+  'sandboxActs',
+  'sandboxShop'
+])
+
 const router = createRouter({
   history: createWebHistory(),
   routes
 })
 
-router.beforeEach(async (to) => {
+router.beforeEach(async (to, from) => {
   const userStore = useUserStore()
   if (to.path.startsWith('/admin') && !userStore.token) {
     return '/login'
@@ -93,6 +117,15 @@ router.beforeEach(async (to) => {
       const keys = info.menus || []
       if (!keys.includes(to.meta.menu)) {
         return '/admin/dashboard'
+      }
+    }
+    // 敏感菜单二次验证：没通过就不进入该菜单，页面自然也不会去加载数据
+    // （后端对这些接口同样会拦，这里只是让交互更明确、避免"点空白处就进去了"）
+    if (info.role === 'SUPER' && to.meta.menu && SECURITY_MENUS.has(to.meta.menu)) {
+      const passed = await ensureSecurityVerified(to.meta.menu, to.meta.title)
+      if (!passed) {
+        // 已经停在某个后台页面上就留在原地，否则回仪表盘，避免出现空白页
+        return from.matched.length ? false : '/admin/dashboard'
       }
     }
   }

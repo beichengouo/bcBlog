@@ -20,6 +20,7 @@
           </el-select>
           <span class="tip">共 {{ list.length }} 个角色</span>
           <el-button type="warning" plain :loading="runningAll" @click="onRunAll">全员行动一轮</el-button>
+          <el-button plain :loading="repairing" @click="onRepairCoins">金币对账</el-button>
           <el-button type="primary" @click="openAdd">新增角色</el-button>
         </div>
       </div>
@@ -75,6 +76,11 @@
           <span class="combat-cell">{{ row.combatPower == null ? 10 : row.combatPower }}</span>
         </template>
       </el-table-column>
+      <el-table-column label="当前目标" min-width="140">
+        <template #default="{ row }">
+          <span class="goal-cell">{{ row.goal || '—' }}</span>
+        </template>
+      </el-table-column>
       <el-table-column label="金币" width="90">
         <template #default="{ row }">
           <span class="coin-cell">{{ row.coins || 0 }}</span>
@@ -100,9 +106,69 @@
           <el-button size="small" @click="openBackpack(row)">背包</el-button>
           <el-button size="small" @click="openEdit(row)">编辑</el-button>
           <el-button size="small" type="danger" @click="onDelete(row)">删除</el-button>
+          <!-- 行动卡住（AI 超时/进程重启）时手动解围；正常执行完锁会自动释放 -->
+          <el-button v-if="row.runningAt" size="small" type="warning" plain @click="onUnlock(row)">
+            解除执行锁
+          </el-button>
+          <!-- 执行完成后留一个时间戳：扫一眼就知道哪个角色这次跑过、哪个没跑 -->
+          <div v-if="lastRunAt[row.id]" class="run-stamp">最近执行 · {{ lastRunAt[row.id] }}</div>
         </template>
       </el-table-column>
     </el-table>
+
+    <!-- 最近执行结果：单角色执行与「全员行动一轮」都写到这里，避免只看得到一闪而过的提示 -->
+    <el-card class="mt run-results" shadow="never">
+      <template #header>
+        <div class="toolbar">
+          <span>
+            最近执行结果
+            <span class="tip">（保留最近 {{ RUN_RESULT_LIMIT }} 条，刷新页面后清空）</span>
+          </span>
+          <div class="toolbar-right">
+            <el-button size="small" @click="resultsCollapsed = !resultsCollapsed">
+              {{ resultsCollapsed ? '展开' : '收起' }}
+            </el-button>
+            <el-button size="small" :disabled="!runResults.length" @click="runResults = []">清空</el-button>
+          </div>
+        </div>
+      </template>
+      <div v-show="!resultsCollapsed">
+        <div v-if="!runResults.length" class="tip">
+          还没有执行记录：点表格里的「立即执行」或右上角「全员行动一轮」，结果会显示在这里。
+        </div>
+        <div v-for="item in runResults" :key="item.id" class="run-item" :class="{ failed: !item.ok }">
+          <div class="run-head">
+            <el-tag size="small" :type="item.ok ? 'success' : 'danger'">{{ item.ok ? '成功' : '失败' }}</el-tag>
+            <strong>{{ item.characterName }}</strong>
+            <span class="tip">{{ item.time }}</span>
+            <span v-if="item.ok && item.act && item.act.locationName" class="tip">
+              在 {{ placeText(item.act) }}
+            </span>
+            <el-button size="small" text type="primary" @click="viewInActLog(item)">在行动日志里查看</el-button>
+          </div>
+          <template v-if="item.ok && item.act">
+            <div class="run-text">{{ item.act.actions }}</div>
+            <div v-if="item.act.innerVoice" class="run-voice">「{{ item.act.innerVoice }}」</div>
+            <div class="run-tags">
+              <span v-if="item.act.moveKm" class="run-tag">移动 {{ formatKm(item.act.moveKm) }}</span>
+              <span v-if="item.act.coinChange" class="run-tag">
+                金币 {{ item.act.coinChange > 0 ? '+' : '' }}{{ item.act.coinChange }}
+              </span>
+              <span v-if="item.act.combatChange" class="run-tag">
+                战斗力 {{ item.act.combatChange > 0 ? '+' : '' }}{{ item.act.combatChange }}
+              </span>
+              <span v-if="item.act.itemChange" class="run-tag">{{ item.act.itemChange }}</span>
+              <span v-if="item.act.companions" class="run-tag">与 {{ item.act.companions }} 互动</span>
+              <span v-if="item.act.favorChange" class="run-tag">好感 {{ item.act.favorChange }}</span>
+              <span v-if="item.act.nextAfterReason" class="run-tag">
+                下次：{{ item.act.nextAfterReason }}（{{ item.act.nextAfterMinutes || 0 }} 分钟后）
+              </span>
+            </div>
+          </template>
+          <div v-else class="run-error">{{ item.error || '执行失败' }}</div>
+        </div>
+      </div>
+    </el-card>
 
     <el-dialog
       v-model="backpackVisible"
@@ -291,6 +357,33 @@
           <span class="tip">综合实力（战斗技巧、魔力、装备），默认 10；AI 在行动里遇到学会新魔法、得到强力装备、受伤这类事件时也会自己微调</span>
           <span class="tip">角色身上的钱：AI 日常活动会赚取或消耗，前台用户也能用积分贡献</span>
         </el-form-item>
+        <el-form-item label="当前目标">
+          <el-input
+            v-model="form.goal"
+            maxlength="100"
+            style="width: 320px"
+            placeholder="例如：去晨雾森林采药（AI 会自己维护，你也可以直接改）"
+          />
+          <span class="tip">目标不同的角色会各自行动，不容易一直黏在一起</span>
+        </el-form-item>
+        <el-form-item label="对实力的看法">
+          <el-input
+            v-model="form.powerView"
+            maxlength="60"
+            style="width: 320px"
+            placeholder="例如：不甘平庸，想变强"
+          />
+          <span class="tip">写进行动提示词：想变强的角色会主动修炼、拜师、攒钱买装备</span>
+        </el-form-item>
+        <el-form-item label="对财富的看法">
+          <el-input
+            v-model="form.wealthView"
+            maxlength="60"
+            style="width: 320px"
+            placeholder="例如：穷怕了，拼命攒钱 / 钱是身外之物"
+          />
+          <span class="tip">写进行动提示词：看重钱的角色会多接委托、摆摊做买卖，不在意的就散财、安稳过日子</span>
+        </el-form-item>
         <el-form-item label="当前状态">
           <div class="status-editor">
             <div class="status-row">
@@ -337,6 +430,7 @@
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useRouter } from 'vue-router'
 import {
   sandboxCharacters,
   sandboxWorlds,
@@ -344,7 +438,10 @@ import {
   deleteSandboxCharacter,
   runSandboxCharacter,
   runAllSandboxCharacters,
+  sandboxActs,
   sandboxItems,
+  repairSandboxCoins,
+  unlockSandboxCharacter,
   saveSandboxItem,
   deleteSandboxItem,
   generateSandboxCharacter
@@ -364,6 +461,17 @@ const modelLoading = ref(false)
 /** 正在执行中的角色 ID 集合：允许多个角色同时执行，各自独立转圈 */
 const runningIds = ref([])
 const runningAll = ref(false)
+/** 金币对账中 */
+const repairing = ref(false)
+/**
+ * 「最近执行结果」面板：单角色执行与全员行动一轮的结果都写这里，最新在最上面。
+ * 只存在内存里（刷新即清空），用来弥补"执行完成只有一个一闪而过的提示"。
+ */
+const runResults = ref([])
+const resultsCollapsed = ref(false)
+const RUN_RESULT_LIMIT = 8
+/** 每个角色最近一次执行的完成时间（行内展示「最近执行 · 12:34」） */
+const lastRunAt = reactive({})
 const backpackVisible = ref(false)
 const backpackCharacter = ref(null)
 const backpackItems = ref([])
@@ -385,6 +493,7 @@ const dialogVisible = ref(false)
 /** 当前世界（三个沙盒页面共用一个选择） */
 const worlds = ref([])
 const { currentWorldId, setCurrentWorld } = useSandboxWorld()
+const router = useRouter()
 const selectedWorldId = ref(null)
 const temperature = ref(0.9)
 /** 标准状态项，对应 AI 提示词里的固定字段 */
@@ -392,7 +501,13 @@ const STANDARD_STATUS_KEYS = ['体力', '魔力', '饥饿度', '心情']
 const statusForm = reactive({ 体力: 100, 魔力: 100, 饥饿度: 20, 心情: '平静' })
 const extraStatus = ref([])
 
-const form = reactive({
+/**
+ * 表单默认值：新增/编辑前都先整体重置。
+ * 教训：以前编辑是"手写字段清单"塞进表单，漏了「战斗力 / 当前目标」，
+ * 结果编辑 A 保存后，B 的战斗力被写成了 A 的值（数据被改坏）。
+ * 现在改成"先重置 → 再按字段名批量灌入这一行的值"，以后新增字段也不会再漏。
+ */
+const FORM_DEFAULTS = {
   id: null,
   name: '',
   title: '',
@@ -406,12 +521,31 @@ const form = reactive({
   y: 50,
   coins: 0,
   combatPower: 10,
+  goal: '',
+  powerView: '',
+  wealthView: '',
   intervalMin: 45,
   intervalMax: 75,
   aiIntervalMin: null,
   aiIntervalMax: null,
   enabled: 1
-})
+}
+
+const form = reactive({ ...FORM_DEFAULTS })
+
+/** 把表单整体恢复成默认值（含状态项、草稿物品等附件） */
+function resetForm() {
+  Object.assign(form, FORM_DEFAULTS)
+  statusForm.体力 = 100
+  statusForm.魔力 = 100
+  statusForm.饥饿度 = 20
+  statusForm.心情 = '平静'
+  extraStatus.value = []
+  draftItems.value = []
+  draftPlace.value = ''
+  models.value = []
+  temperature.value = 0.9
+}
 
 async function load() {
   loading.value = true
@@ -425,6 +559,9 @@ async function load() {
 /** 切换世界：与「世界与地图」「行动日志」共用同一个选择 */
 async function onSwitchWorld(id) {
   setCurrentWorld(id)
+  // 换了世界，执行结果与行内时间戳都属于上一个世界，清掉避免张冠李戴
+  runResults.value = []
+  Object.keys(lastRunAt).forEach((key) => delete lastRunAt[key])
   await load()
 }
 
@@ -507,62 +644,47 @@ function onUploadError() {
 }
 
 function openAdd() {
-  form.id = null
-  form.name = ''
-  form.title = ''
-  form.avatar = ''
-  form.appearance = ''
-  form.persona = ''
+  resetForm()
+  // 新建时的默认服务商：沿用列表里第一个（AI 一键创作也用它）
   form.providerId = providers.value.length ? providers.value[0].id : null
-  form.model = ''
-  form.temperature = 0.9
-  temperature.value = 0.9
-  form.x = 50
-  form.y = 50
-  form.coins = 0
-  form.combatPower = 10
-  form.intervalMin = 45
-  form.intervalMax = 75
-  form.aiIntervalMin = null
-  form.aiIntervalMax = null
-  form.enabled = 1
-  statusForm.体力 = 100
-  statusForm.魔力 = 100
-  statusForm.饥饿度 = 20
-  statusForm.心情 = '平静'
-  extraStatus.value = []
-  models.value = []
-  // AI 一键创作的初始状态：默认沿用角色表单当前选择的服务商
   aiProviderId.value = form.providerId || (providers.value.length ? providers.value[0].id : null)
   aiModel.value = ''
   aiModels.value = []
   aiRequirement.value = ''
-  draftItems.value = []
-  draftPlace.value = ''
   generateFirstAct.value = true
   dialogVisible.value = true
 }
 
 function openEdit(row) {
-  Object.assign(form, {
-    id: row.id,
-    name: row.name,
-    title: row.title || '',
-    avatar: row.avatar || '',
-    appearance: row.appearance || '',
-    persona: row.persona || '',
-    providerId: row.providerId,
-    model: row.model || '',
-    temperature: Number(row.temperature || 0.9),
-    x: row.x == null ? 50 : row.x,
-    y: row.y == null ? 50 : row.y,
-    coins: row.coins == null ? 0 : row.coins,
-    intervalMin: row.intervalMin || 45,
-    intervalMax: row.intervalMax || 75,
-    aiIntervalMin: row.aiIntervalMin == null ? null : row.aiIntervalMin,
-    aiIntervalMax: row.aiIntervalMax == null ? null : row.aiIntervalMax,
-    enabled: row.enabled == null ? 1 : row.enabled
+  // 先整体重置，再按字段名批量灌入这一行的值：
+  // 这样"表单里有、但这行没给"的字段会回到默认值，而不会残留上一个角色的值
+  resetForm()
+  Object.keys(form).forEach((key) => {
+    if (key !== 'id' && row[key] !== undefined) {
+      form[key] = row[key]
+    }
   })
+  form.id = row.id
+  // 几个需要归一化的字段（空值要回落到默认，而不是把 null 提交上去）
+  form.name = row.name || ''
+  form.title = row.title || ''
+  form.avatar = row.avatar || ''
+  form.appearance = row.appearance || ''
+  form.persona = row.persona || ''
+  form.model = row.model || ''
+  form.temperature = Number(row.temperature || 0.9)
+  form.x = row.x == null ? 50 : row.x
+  form.y = row.y == null ? 50 : row.y
+  form.coins = row.coins == null ? 0 : row.coins
+  form.combatPower = row.combatPower == null ? 10 : row.combatPower
+  form.goal = row.goal || ''
+  form.powerView = row.powerView || ''
+  form.wealthView = row.wealthView || ''
+  form.intervalMin = row.intervalMin || 45
+  form.intervalMax = row.intervalMax || 75
+  form.aiIntervalMin = row.aiIntervalMin == null ? null : row.aiIntervalMin
+  form.aiIntervalMax = row.aiIntervalMax == null ? null : row.aiIntervalMax
+  form.enabled = row.enabled == null ? 1 : row.enabled
   const status = parseStatus(row.statusJson)
   statusForm.体力 = numOr(status['体力'], 100)
   statusForm.魔力 = numOr(status['魔力'], 100)
@@ -640,6 +762,9 @@ function applyDraft(draft) {
   if (draft.coins != null) {
     form.coins = draft.coins
   }
+  // 对实力/财富的态度：AI 生成时一并填充，管理员可以改
+  form.powerView = draft.powerView || form.powerView
+  form.wealthView = draft.wealthView || form.wealthView
   form.locationName = draft.locationName || ''
   form.subLocation = draft.subLocation || ''
   draftPlace.value = draft.locationName
@@ -733,8 +858,23 @@ async function onSave() {
         try {
           const act = await runSandboxCharacter(saved.id)
           firstActSummary = act.summary || act.actions || ''
+          // 第一条行动的结果也写进「最近执行结果」，避免只弹一个一闪而过的提示
+          const fresh = await fetchNewestAct(saved.id)
+          pushRunResult({
+            characterId: saved.id,
+            characterName: saved.name,
+            ok: true,
+            act: fresh || act
+          })
+          lastRunAt[saved.id] = timeText(fresh ? fresh.createTime : act.createTime)
         } catch (e) {
           ElMessage.warning('角色已创建，但第一条行动生成失败，可在列表里点「立即执行」重试')
+          pushRunResult({
+            characterId: saved.id,
+            characterName: saved.name,
+            ok: false,
+            error: (e && e.message) || '第一条行动生成失败'
+          })
         }
       }
     }
@@ -761,10 +901,26 @@ async function onRun(row) {
   runningIds.value = [...runningIds.value, row.id]
   try {
     const act = await runSandboxCharacter(row.id)
-    ElMessage.success(`执行成功：${act.summary || act.actions || '已生成新的行动'}`)
+    // 再取一次这条记录：列表接口会补上「移动 N km」这类服务端算好的字段，展示更完整
+    const fresh = await fetchNewestAct(row.id)
+    pushRunResult({
+      characterId: row.id,
+      characterName: row.name,
+      ok: true,
+      act: fresh || act
+    })
+    lastRunAt[row.id] = timeText(fresh ? fresh.createTime : act.createTime)
+    ElMessage.success(`「${row.name}」执行完成，结果见下方「最近执行结果」`)
     await load()
   } catch (e) {
-    // 失败信息由请求拦截器统一提示，这里只保证按钮状态恢复
+    // 失败也留一条记录，避免只看得到一闪而过的报错提示
+    pushRunResult({
+      characterId: row.id,
+      characterName: row.name,
+      ok: false,
+      error: (e && e.message) || '执行失败'
+    })
+    lastRunAt[row.id] = nowTimeText()
   } finally {
     runningIds.value = runningIds.value.filter((id) => id !== row.id)
   }
@@ -773,6 +929,112 @@ async function onRun(row) {
 /** 某个角色的「立即执行」是否正在运行 */
 function isRunning(id) {
   return runningIds.value.includes(id)
+}
+
+// ============================== 最近执行结果 ==============================
+
+/** 往结果面板顶部插入一条（超过上限就丢掉最旧的） */
+function pushRunResult(entry) {
+  runResults.value.unshift({
+    id: Date.now() + Math.round(Math.random() * 1000),
+    time: nowTimeText(),
+    ...entry
+  })
+  if (runResults.value.length > RUN_RESULT_LIMIT) {
+    runResults.value = runResults.value.slice(0, RUN_RESULT_LIMIT)
+  }
+}
+
+/** 取某角色最新一条行动：列表接口会补上「移动 N km」，比直接用执行返回值更完整 */
+async function fetchNewestAct(characterId) {
+  try {
+    const data = await sandboxActs({ characterId, page: 1, size: 1 })
+    return (data.list || [])[0] || null
+  } catch (e) {
+    return null
+  }
+}
+
+/** 「2026-09-17 12:34:56」→「12:34」；拿不到时间就退回当前时间 */
+function timeText(value) {
+  if (!value) {
+    return nowTimeText()
+  }
+  const text = String(value)
+  const index = text.indexOf(' ')
+  return index > 0 ? text.slice(index + 1, index + 6) : text.slice(0, 5)
+}
+
+function nowTimeText() {
+  const now = new Date()
+  return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
+}
+
+/** 移动距离文案（与前台一致：10 km 内保留一位小数） */
+function formatKm(km) {
+  const value = Number(km) || 0
+  return value < 10 ? value.toFixed(1) + ' km' : Math.round(value) + ' km'
+}
+
+/** 结果里的地点文案：一级地点 + 二级地点 */
+function placeText(act) {
+  if (!act || !act.locationName) {
+    return ''
+  }
+  return act.subLocation ? `${act.locationName} · ${act.subLocation}` : act.locationName
+}
+
+/** 跳到「行动日志」并按该角色筛选，方便看这条行动的完整上下文 */
+function viewInActLog(item) {
+  router.push({ path: '/admin/sandbox/acts', query: { characterId: item.characterId } })
+}
+
+/** 金币对账：按流水重算余额（历史上"整值回写"造成的丢失更新靠这个修复） */
+async function onRepairCoins() {
+  try {
+    await ElMessageBox.confirm(
+      '将按金币流水重算每个角色的余额，并把流水里的「当时余额」也重算一遍。只修数据、不删数据，确定继续吗？',
+      '金币对账',
+      { type: 'warning' }
+    )
+  } catch (e) {
+    return
+  }
+  repairing.value = true
+  try {
+    const report = await repairSandboxCoins(selectedWorldId.value)
+    const details = report.details || []
+    if (!details.length) {
+      ElMessage.success(`检查了 ${report.checked || 0} 个角色，金币都没问题`)
+      return
+    }
+    const lines = details.map((row) => `${row.characterName}：${row.before} → ${row.after}${row.logsFixed ? `（流水修正 ${row.logsFixed} 条）` : ''}`)
+    await ElMessageBox.alert(
+      `修正了 ${report.fixed || 0} 个角色的余额：<br/><br/>${lines.map((line) => `· ${line}`).join('<br/>')}`,
+      '对账结果',
+      { dangerouslyUseHTMLString: true }
+    ).catch(() => {})
+    await load()
+  } finally {
+    repairing.value = false
+  }
+}
+
+/** 解除某个角色的执行锁（行动卡住时的应急出口） */
+async function onUnlock(row) {
+  try {
+    await ElMessageBox.confirm(
+      '解除执行锁只会清掉"正在执行"这个标记，不会中断服务器上可能还在跑的那次调用。'
+        + '仅在角色一直显示正在执行、且你已经确认没有请求在跑时使用。确定吗？',
+      '解除执行锁',
+      { type: 'warning' }
+    )
+  } catch (e) {
+    return
+  }
+  await unlockSandboxCharacter(row.id)
+  ElMessage.success(`已解除「${row.name}」的执行锁`)
+  await load()
 }
 
 /** 一键让所有启用角色各行动一次：多角色可以互相遇见、互动 */
@@ -789,12 +1051,35 @@ async function onRunAll() {
   runningAll.value = true
   try {
     const res = await runAllSandboxCharacters(selectedWorldId.value)
-    const detail = (res.items || []).map((line) => `· ${line}`).join('<br/>') || '没有启用中的角色'
-    await ElMessageBox.alert(
-      `成功 ${res.success} 个，失败 ${res.failed} 个<br/><br/>${detail}`,
-      '本轮行动结果',
-      { dangerouslyUseHTMLString: true }
-    ).catch(() => {})
+    // 结果逐条写进「最近执行结果」面板：成功的取回那条行动（含移动距离），失败的记下原因
+    for (const character of list.value) {
+      const line = (res.items || []).find((text) => text.startsWith(character.name + '：'))
+      if (!line) {
+        continue
+      }
+      const text = line.slice(character.name.length + 1)
+      if (text.startsWith('失败')) {
+        pushRunResult({
+          characterId: character.id,
+          characterName: character.name,
+          ok: false,
+          error: text.replace(/^失败（/, '').replace(/）$/, '')
+        })
+        lastRunAt[character.id] = nowTimeText()
+        continue
+      }
+      const act = await fetchNewestAct(character.id)
+      pushRunResult({
+        characterId: character.id,
+        characterName: character.name,
+        ok: true,
+        act
+      })
+      if (act) {
+        lastRunAt[character.id] = timeText(act.createTime)
+      }
+    }
+    ElMessage.success(`本轮完成：成功 ${res.success} 个，失败 ${res.failed} 个，详见下方「最近执行结果」`)
     await load()
   } finally {
     runningAll.value = false
@@ -903,6 +1188,31 @@ onMounted(async () => {
 .toolbar-right { display: flex; align-items: center; gap: 10px; }
 .tip { margin-left: 8px; color: var(--el-text-color-secondary); font-size: 12px; }
 .range-sep { margin: 0 6px; color: var(--el-text-color-secondary); }
+/* 最近执行结果面板 */
+.run-results { margin-top: 16px; }
+.run-stamp { margin-top: 6px; color: var(--el-text-color-secondary); font-size: 12px; }
+.run-item {
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--el-border-color-lighter);
+  margin-bottom: 10px;
+  background: var(--el-fill-color-blank);
+}
+.run-item.failed { border-color: var(--el-color-danger-light-5); background: var(--el-color-danger-light-9); }
+.run-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.run-head .tip { margin-left: 0; }
+.run-text { margin-top: 6px; white-space: pre-line; line-height: 1.7; font-size: 13px; }
+.run-voice { margin-top: 4px; color: #a4638a; font-size: 13px; font-style: italic; }
+.run-tags { margin-top: 6px; display: flex; gap: 8px; flex-wrap: wrap; }
+.run-tag {
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  color: var(--el-text-color-regular);
+  background: var(--el-fill-color-light);
+  border: 1px solid var(--el-border-color-lighter);
+}
+.run-error { margin-top: 6px; color: var(--el-color-danger); font-size: 13px; }
 .avatar-thumb { width: 44px; height: 44px; border-radius: 10px; object-fit: cover; }
 .avatar-empty {
   width: 44px; height: 44px; border-radius: 10px; display: flex; align-items: center; justify-content: center;
@@ -971,4 +1281,5 @@ onMounted(async () => {
   background: rgba(230, 162, 60, 0.14);
 }
 .combat-cell { color: #b0416b; font-weight: 600; }
+.goal-cell { color: #4f9d8f; }
 </style>

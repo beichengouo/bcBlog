@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { login as loginApi, logout as logoutApi, getInfo } from '@/api/auth'
+import { clearSecurityUnlock } from '@/utils/securityGate'
 
 export const useUserStore = defineStore('user', {
   state: () => ({
@@ -15,9 +16,13 @@ export const useUserStore = defineStore('user', {
       this.token = ''
       this.userInfo = null
       localStorage.removeItem('token')
+      // 退出登录时清空"已通过二次验证的菜单"，下次登录必须重新验证
+      clearSecurityUnlock()
     },
     async login(payload) {
       const data = await loginApi(payload)
+      // 每次新登录都清空"已解锁菜单"，避免上一个会话的解锁记录被沿用
+      clearSecurityUnlock()
       this.setToken(data.token)
       this.userInfo = data.user
       return data

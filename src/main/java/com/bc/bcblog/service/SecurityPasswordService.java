@@ -6,7 +6,7 @@ public interface SecurityPasswordService {
     /** 是否已设置安全密码 */
     boolean hasPassword(Long userId);
 
-    /** 校验安全密码；未设置过安全密码时回退用登录密码校验 */
+    /** 校验安全密码；没设置过安全密码时直接返回 false（不再回退用登录密码，否则等于没有二次验证） */
     boolean verify(Long userId, String password);
 
     /** 设置/修改安全密码（需要先用登录密码确认身份） */

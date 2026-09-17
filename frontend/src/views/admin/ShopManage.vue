@@ -29,12 +29,14 @@
       type="info"
       :closable="false
       "
-      title="集市会按你设置的「间隔 + 起始时间」自动刷新新商品；前台只展示最新一批。用户花积分买下商品后会直接赠送给某个角色（商品进角色背包），角色下一次行动时会收到「来自异世界的礼物」。"
+      title="集市会按你设置的「间隔 + 起始时间」自动刷新新商品；前台只展示最新一批。商品用金币标价：沙盒角色可以自己掏金币购买（每天有件数上限），前台用户购买时按汇率把金币价折算成积分扣款，买下后直接赠送给某个角色（商品进角色背包），角色下一次行动时会收到「来自异世界的礼物」。"
     />
 
     <div class="stat-row">
       <el-tag type="warning" effect="plain">今天卖出 {{ stats.sold || 0 }} 件</el-tag>
       <el-tag type="success" effect="plain">回收积分 {{ stats.points || 0 }}</el-tag>
+      <el-tag type="success" effect="plain">回收金币 {{ stats.coins || 0 }}</el-tag>
+      <el-tag type="info" effect="plain">角色自购 {{ stats.characterBuys || 0 }} 件</el-tag>
       <el-tag effect="plain">当前批次 {{ batchText }}</el-tag>
     </div>
 
@@ -53,8 +55,11 @@
           </div>
         </template>
       </el-table-column>
-      <el-table-column label="价格" width="90">
-        <template #default="{ row }">{{ row.price }} 积分</template>
+      <el-table-column label="价格" width="110">
+        <template #default="{ row }">
+          {{ row.price }} 金币
+          <div class="item-desc">≈ {{ pointsOf(row.price) }} 积分</div>
+        </template>
       </el-table-column>
       <el-table-column label="库存" width="110">
         <template #default="{ row }">
@@ -145,6 +150,19 @@
         <el-input v-model="settings.shopLimitPerCharacter" style="width: 90px" />
         <span class="tip">同一用户对同一商品、每个角色的限购数量（默认 1）</span>
       </el-form-item>
+      <el-form-item label="角色每日自购">
+        <el-input v-model="settings.shopBuyPerDay" style="width: 90px" />
+        <span class="tip">
+          沙盒角色每天最多在集市买几件（默认 2，填 0 不限制）；买到的物品会直接进角色背包
+        </span>
+      </el-form-item>
+      <el-form-item label="积分 → 金币">
+        <el-input v-model="settings.coinRate" style="width: 90px" />
+        <span class="tip">
+          1 积分能换多少金币（默认 1，两种货币等值）。前台用户买商品时按这个汇率把金币价折算成积分扣款，
+          例：汇率 10 时 30 金币的商品收 3 积分；「贡献金币」也用同一个汇率
+        </span>
+      </el-form-item>
       <el-form-item>
         <el-button type="primary" :loading="savingSetting" @click="onSaveSettings">保存设置</el-button>
       </el-form-item>
@@ -155,19 +173,33 @@
       <el-collapse-item name="orders">
         <template #title>
           <span class="collapse-title">购买记录</span>
-          <span class="tip" style="margin-left: 10px">谁把什么送给了哪个角色（默认收起，点击展开）</span>
+          <span class="tip" style="margin-left: 10px">
+            谁买了什么：旅人赠送（花积分折算）/ 角色自购（花自己的金币）（默认收起，点击展开）
+          </span>
         </template>
         <el-table :data="orders" v-loading="loadingOrders" size="small">
           <el-table-column prop="createTime" label="时间" width="170" />
           <el-table-column prop="itemName" label="商品" min-width="140" />
-          <el-table-column label="赠送者" width="140">
-            <template #default="{ row }">{{ row.userName || '—' }}</template>
+          <el-table-column label="来源" width="100">
+            <template #default="{ row }">
+              <el-tag size="small" :type="row.buyerType === 'character' ? 'warning' : 'success'" effect="plain">
+                {{ row.buyerType === 'character' ? '角色自购' : '旅人赠送' }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="购买者" width="140">
+            <template #default="{ row }">
+              {{ row.buyerType === 'character' ? (row.characterName || ('角色#' + row.characterId)) : (row.userName || '—') }}
+            </template>
           </el-table-column>
           <el-table-column label="收礼角色" width="140">
             <template #default="{ row }">{{ row.characterName || ('角色#' + row.characterId) }}</template>
           </el-table-column>
           <el-table-column label="消耗积分" width="100">
             <template #default="{ row }">{{ row.pointsCost || 0 }}</template>
+          </el-table-column>
+          <el-table-column label="消耗金币" width="100">
+            <template #default="{ row }">{{ (row.coinPrice || 0) * (row.quantity || 1) }}</template>
           </el-table-column>
         </el-table>
         <el-pagination
@@ -228,7 +260,7 @@ import {
   sandboxShopOrders,
   sandboxShopStats,
   sandboxWorlds,
-  saveSandboxSettings,
+  saveSandboxShopSettings,
   saveSandboxShopItem
 } from '@/api/sandbox'
 
@@ -262,10 +294,19 @@ const settings = reactive({
   shopProviderId: '',
   shopModel: '',
   shopPromptExtra: '',
-  shopLimitPerCharacter: '1'
+  shopLimitPerCharacter: '1',
+  shopBuyPerDay: '2',
+  coinRate: '1'
 })
 
-const form = reactive({
+// 金币价折算成积分（与后端 shopPointsCost 一致：向上取整，1 金币不能算成 0 积分）
+function pointsOf(coinPrice) {
+  const rate = Math.max(1, Number(settings.coinRate) || 1)
+  return Math.ceil((Number(coinPrice) || 0) / rate)
+}
+
+/** 表单默认值：新增/编辑前都先整体重置，避免上一个商品的值残留（同"角色战斗力串值"的坑） */
+const FORM_DEFAULTS = {
   id: null,
   name: '',
   description: '',
@@ -274,7 +315,9 @@ const form = reactive({
   stock: 2,
   enabled: 1,
   pinned: 0
-})
+}
+
+const form = reactive({ ...FORM_DEFAULTS })
 
 const batchText = computed(() => {
   const first = items.value[0]
@@ -378,21 +421,26 @@ async function onGenerate() {
 }
 
 function openAdd() {
-  Object.assign(form, { id: null, name: '', description: '', rarity: 1, price: 3, stock: 2, enabled: 1, pinned: 0 })
+  Object.assign(form, FORM_DEFAULTS)
   dialogVisible.value = true
 }
 
 function openEdit(row) {
-  Object.assign(form, {
-    id: row.id,
-    name: row.name,
-    description: row.description || '',
-    rarity: row.rarity || 1,
-    price: row.price == null ? 1 : row.price,
-    stock: row.stock == null ? 0 : row.stock,
-    enabled: row.enabled == null ? 1 : row.enabled,
-    pinned: row.pinned == null ? 0 : row.pinned
+  // 先重置再按字段名灌入，避免"表单里有但这行没给"的字段残留上一个商品的值
+  Object.assign(form, FORM_DEFAULTS)
+  Object.keys(form).forEach((key) => {
+    if (key !== 'id' && row[key] !== undefined) {
+      form[key] = row[key]
+    }
   })
+  form.id = row.id
+  form.name = row.name || ''
+  form.description = row.description || ''
+  form.rarity = row.rarity || 1
+  form.price = row.price == null ? 1 : row.price
+  form.stock = row.stock == null ? 0 : row.stock
+  form.enabled = row.enabled == null ? 1 : row.enabled
+  form.pinned = row.pinned == null ? 0 : row.pinned
   dialogVisible.value = true
 }
 
@@ -442,7 +490,8 @@ async function onDelete(row) {
 async function onSaveSettings() {
   savingSetting.value = true
   try {
-    await saveSandboxSettings({ ...settings })
+    // 用集市专用接口：普通管理员只会写集市相关配置，改不到世界运行参数
+    await saveSandboxShopSettings({ ...settings })
     ElMessage.success('设置已保存')
     await load()
   } finally {

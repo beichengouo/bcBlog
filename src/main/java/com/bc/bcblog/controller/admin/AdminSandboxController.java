@@ -151,6 +151,32 @@ public class AdminSandboxController {
         return Result.ok();
     }
 
+    /**
+     * 集市管理页保存设置：只写集市相关配置。
+     * 普通管理员用这个接口（世界运行参数的 /settings 写操作仅超级管理员可用）。
+     */
+    @PutMapping("/shop/settings")
+    public Result<Void> saveShopSettings(@RequestBody SandboxSettingVO vo) {
+        sandboxService.saveShopSettings(vo);
+        return Result.ok();
+    }
+
+    /** 行动日志页保存「旅人纪闻设置」：只写纪闻相关配置 */
+    @PutMapping("/news/settings")
+    public Result<Void> saveNewsSettings(@RequestBody SandboxSettingVO vo) {
+        sandboxService.saveNewsSettings(vo);
+        return Result.ok();
+    }
+
+    /**
+     * 金币对账修复：按金币流水重算余额与流水的"当时余额"。
+     * 只修数据、不删数据，修复前后会在返回结果里逐个角色列出。
+     */
+    @PostMapping("/coins/repair")
+    public Result<Map<String, Object>> repairCoins(@RequestParam(required = false) Long worldId) {
+        return Result.ok(sandboxService.repairCoins(worldId));
+    }
+
     // ---------------- 角色 ----------------
 
     @GetMapping("/characters")
@@ -180,6 +206,13 @@ public class AdminSandboxController {
     @PostMapping("/characters/{id}/run")
     public Result<SandboxAct> run(@PathVariable Long id) {
         return Result.ok(sandboxService.runOnce(id, true));
+    }
+
+    /** 手动解除执行锁：行动卡住（AI 超时/进程重启）时让管理员立刻恢复这个角色 */
+    @PostMapping("/characters/{id}/unlock")
+    public Result<Void> unlock(@PathVariable Long id) {
+        sandboxService.unlockCharacter(id);
+        return Result.ok();
     }
 
     /** 一键让全部启用角色行动一轮：多角色同时行动，便于互相遇见与互动 */

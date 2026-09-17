@@ -481,6 +481,7 @@
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useRoute } from 'vue-router'
 import {
   sandboxCharacters,
   sandboxLocations,
@@ -503,10 +504,11 @@ import {
   deleteSandboxNews,
   generateSandboxNews,
   sandboxSettings,
-  saveSandboxSettings
+  saveSandboxNewsSettings
 } from '@/api/sandbox'
 import { aiProviderList, aiProviderModels } from '@/api/ai'
 import { useSandboxWorld } from '@/composables/useSandboxWorld'
+const route = useRoute()
 
 const tab = ref('acts')
 /** 当前世界（三个沙盒页面共用一个选择） */
@@ -832,7 +834,8 @@ async function loadNewsModels() {
 async function onSaveNewsSetting() {
   savingNewsSetting.value = true
   try {
-    await saveSandboxSettings({ ...newsSetting })
+    // 用纪闻专用接口：只写纪闻相关配置，改不到世界运行参数
+    await saveSandboxNewsSettings({ ...newsSetting })
     ElMessage.success('设置已保存')
     newsSettingVisible.value = false
   } finally {
@@ -1020,13 +1023,18 @@ function coinTypeText(type) {
   if (type === 'contribute') return '旅人贡献'
   if (type === 'earn') return '日常赚取'
   if (type === 'spend') return '日常消耗'
-  return '管理员调整'
+  if (type === 'shop_buy') return '集市购物'
+  if (type === 'init') return '初始金币'
+  if (type === 'admin') return '管理员调整'
+  return '其他变动'
 }
 
 function coinTagType(type) {
   if (type === 'contribute') return 'warning'
   if (type === 'earn') return 'success'
   if (type === 'spend') return 'info'
+  if (type === 'shop_buy') return 'success'
+  if (type === 'init') return 'info'
   return 'primary'
 }
 
@@ -1062,6 +1070,11 @@ async function onDeleteWhisper(row) {
 }
 
 onMounted(async () => {
+  // 支持从其它页面带 ?characterId= 跳进来（例如「沙盒角色」的执行结果点"在行动日志里查看"）
+  const queryCharacter = Number(route.query.characterId)
+  if (queryCharacter) {
+    characterId.value = queryCharacter
+  }
   await initWorld()
   await loadCharacters()
   await loadActs()

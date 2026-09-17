@@ -326,6 +326,36 @@
         </el-table-column>
       </el-table>
       <el-button class="mt" type="primary" plain @click="openAdd">新增地点</el-button>
+
+      <!-- 地点距离对照表：按「地图宽度」把坐标差换算成实际距离，一眼看出地图尺度合不合理 -->
+      <el-collapse class="mt">
+        <el-collapse-item name="distance">
+          <template #title>
+            <span class="collapse-title">地点距离对照表</span>
+            <span class="tip" style="margin-left: 10px">
+              按地图宽 {{ settings.kmMapWidth || 200 }} km 计算（纵轴按 16:9 折算）；
+              可切换成步行/骑乘用时，用来检查 AI 说的"半天路程"是否合理
+            </span>
+          </template>
+          <el-radio-group v-model="distMode" size="small">
+            <el-radio-button label="km">距离（km）</el-radio-button>
+            <el-radio-button v-for="mode in distanceModes" :key="mode.name" :label="mode.name">
+              {{ mode.name }}用时
+            </el-radio-button>
+          </el-radio-group>
+          <el-table :data="distanceRows" size="small" class="mt" max-height="420">
+            <el-table-column prop="name" label="地点" width="140" fixed />
+            <el-table-column
+              v-for="col in distanceCols"
+              :key="'dc-' + col.id"
+              :label="col.name"
+              min-width="92"
+            >
+              <template #default="{ row }">{{ row['c' + col.id] }}</template>
+            </el-table-column>
+          </el-table>
+        </el-collapse-item>
+      </el-collapse>
     </el-card>
 
     <el-card class="mt">
@@ -372,6 +402,27 @@
           <el-input v-model="settings.dailyLimit" style="width: 90px" />
           <span class="tip">每个角色每天的自动调用次数上限，填 0 表示不限制</span>
         </el-form-item>
+        <el-form-item label="地图宽度（km）">
+          <el-input v-model="settings.kmMapWidth" style="width: 90px" />
+          <span class="tip">
+            横向 100 个坐标单位对应多少公里（默认 200）。地图是 16:9，纵向距离会按 9/16 自动折算。
+            提示词里所有"距你约 N km"、赶路时间下限、下方对照表都按这个数算
+          </span>
+        </el-form-item>
+        <el-form-item label="交通方式与速度">
+          <el-input v-model="settings.travelSpeeds" style="width: 380px" placeholder="步行:4,骑乘:20,车船:12,飞行:60" />
+          <span class="tip">
+            格式「名称:km/h」，逗号分隔。会写进提示词让 AI 按距离挑交通方式；
+            其中最快的那种用于服务端兜底（AI 给的间隔不能短于按最快方式赶路所需时间），可按你的世界观命名
+          </span>
+        </el-form-item>
+        <el-form-item label="互动距离上限">
+          <el-input v-model="settings.socialMaxKm" style="width: 90px" />
+          <span class="tip">
+            km。只有实际距离在这个范围内的角色才能写进"同行/好感度"（同一级区域不再算数——区域最大能有 60 多公里，
+            两端的人离得很远）；同一个二级地点的角色无条件算相遇。填 0 表示不限制
+          </span>
+        </el-form-item>
         <el-form-item label="失败退避">
           <el-input v-model="settings.failBackoffBaseMinutes" style="width: 90px" />
           <span class="range-sep">~</span>
@@ -401,25 +452,73 @@
           <span class="tip">刚行动过的角色在这段时间内不再被立即触发回应，避免同一角色连着说话；0 表示不限制</span>
         </el-form-item>
         <el-form-item label="AI 输出自查">
-          <el-switch v-model="settings.verifyEnabled" active-value="1" inactive-value="0" />
+          <el-select v-model="settings.verifyMode" style="width: 240px">
+            <el-option label="仅可疑时查（推荐）" value="suspicious" />
+            <el-option label="每次都查" value="always" />
+            <el-option label="关闭" value="off" />
+          </el-select>
           <span class="tip">
-            开启后每次行动会额外调用一次 AI，只做 JSON 格式与数值自洽的校验修正（不改写剧情），
-            能减少格式/数值错误，但 token 消耗翻倍，建议角色互动频繁时再开
+            行动输出后要不要再调一次 AI 做校验修正（不改写剧情）。
+            「仅可疑时查」只在这几种情况才多花一次调用：物品名混了英文、花费超过单次上限、
+            地点/角色名对不上、状态数值越界；「每次都查」最稳但每次行动都要多一次调用
+          </span>
+        </el-form-item>
+        <el-form-item label="三段式输出">
+          <el-switch v-model="settings.draftMode" active-value="on" inactive-value="off" />
+          <span class="tip">
+            开启后要求 AI 在同一次回复里先写「草稿 → 自审 → 终稿」：先想清楚这一步要做什么，
+            再对照清单自检（地点/间隔/物品来源/花费是否相称/是否重复付款/是否符合人设），最后才给最终 JSON。
+            服务端只取终稿，草稿与自审不会出现在前台；代价是输出变长（免费接口不心疼，按量计费的接口注意成本）
+          </span>
+        </el-form-item>
+        <el-form-item label="文风补充">
+          <el-input
+            v-model="settings.styleExtra"
+            type="textarea"
+            :rows="6"
+            style="width: 620px"
+            maxlength="4000"
+            show-word-limit
+            placeholder="可粘贴酒馆预设里的写作基准段落，例如「活人感与动作塑造」「叙事推进」那些条目；留空则不追加"
+          />
+          <span class="tip">
+            这段文字会拼进行动提示词的末尾（作为【文风补充】），优先级高于默认文风要求。
+            写太长会挤占提示词预算（默认 9000 字），建议控制在 1500 字以内
           </span>
         </el-form-item>
         <el-form-item label="每日记忆总结">
           <el-switch v-model="settings.memoryEnabled" active-value="1" inactive-value="0" />
           <span class="tip">每天到点把角色当天的行动总结成一段长期记忆，后续几天的活动会参考它，日志就不必长期堆积</span>
         </el-form-item>
+        <el-form-item label="系统服务商">
+          <el-select
+            v-model="settings.systemProviderId"
+            clearable
+            placeholder="自动（用角色绑定的系统服务商 / 默认服务商）"
+            style="width: 260px"
+            @change="onSystemProviderChange"
+          >
+            <el-option v-for="p in systemProviders" :key="'sp-' + p.id" :label="p.name" :value="String(p.id)" />
+          </el-select>
+          <span class="tip">定时行动、记忆总结等系统级调用统一用这个服务商；留空则沿用原来的自动规则</span>
+        </el-form-item>
         <el-form-item label="系统调用模型">
-          <el-input
+          <el-select
             v-model="settings.systemModel"
+            filterable
+            allow-create
+            clearable
+            :loading="systemModelLoading"
+            placeholder="选择或输入模型名"
             style="width: 280px"
-            placeholder="留空则用角色自己的模型"
-            maxlength="100"
-          />
+          >
+            <el-option v-for="m in systemModels" :key="'sm-' + m" :label="m" :value="m" />
+          </el-select>
+          <el-button style="margin-left: 8px" :loading="systemModelLoading" @click="loadSystemModels">
+            获取模型
+          </el-button>
           <span class="tip">
-            定时行动、记忆总结等系统级调用回落到系统服务商时使用；请填系统服务商上真实存在的模型名
+            从上面所选服务商拉取模型列表；模型名必须是该系统服务商上真实存在的（也可以直接手填）
           </span>
         </el-form-item>
         <el-form-item label="记忆总结时间">
@@ -462,6 +561,7 @@ import LocationIcon from '@/components/sandbox/LocationIcon.vue'
 import { sandboxIcons } from '@/config/sandboxIcons'
 import { magicWandPolygon } from '@/utils/sandboxTrace'
 import { useSandboxWorld } from '@/composables/useSandboxWorld'
+import { aiProviderList, aiProviderModels } from '@/api/ai'
 import { useUserStore } from '@/store/user'
 import {
   REL_CROSS,
@@ -521,6 +621,9 @@ const settings = reactive({
   dailyLimit: '12',
   whisperPoints: '1',
   verifyEnabled: '0',
+  verifyMode: 'suspicious',
+  draftMode: 'on',
+  styleExtra: '',
   batchWindowMinutes: '5',
   chainMaxDepth: '1',
   chainLimitPerRound: '3',
@@ -533,12 +636,116 @@ const settings = reactive({
   aiIntervalMin: '15',
   aiIntervalMax: '720',
   systemModel: '',
+  systemProviderId: '',
   failBackoffBaseMinutes: '15',
   failBackoffMaxMinutes: '120',
-  whisperEnabled: '1'
+  whisperEnabled: '1',
+  kmMapWidth: '200',
+  travelSpeeds: '步行:4,骑乘:20,车船:12,飞行:60',
+  socialMaxKm: '30'
 })
 
 const loading = ref(false)
+// ---------------- 系统级调用用的服务商与模型 ----------------
+/** 可选服务商：只有 ownerId 为空的是「系统服务商」（定时任务/记忆总结只能用它们） */
+const providers = ref([])
+const systemProviders = computed(() => providers.value.filter((p) => p.ownerId == null))
+const systemModels = ref([])
+const systemModelLoading = ref(false)
+
+async function loadProviders() {
+  try {
+    providers.value = (await aiProviderList()) || []
+  } catch (e) {
+    providers.value = []
+  }
+}
+
+/** 切换系统服务商时清空模型列表，避免选到别的服务商上的模型名 */
+function onSystemProviderChange() {
+  systemModels.value = []
+  if (settings.systemProviderId) {
+    loadSystemModels()
+  }
+}
+
+async function loadSystemModels() {
+  if (!settings.systemProviderId) {
+    ElMessage.warning('请先选择系统服务商')
+    return
+  }
+  systemModelLoading.value = true
+  try {
+    systemModels.value = (await aiProviderModels(Number(settings.systemProviderId))) || []
+    if (!systemModels.value.length) {
+      ElMessage.warning('没有获取到模型，可直接在输入框里手填模型名')
+    } else {
+      ElMessage.success(`已获取 ${systemModels.value.length} 个模型`)
+    }
+  } catch (e) {
+    // 失败原因由请求拦截器提示
+  } finally {
+    systemModelLoading.value = false
+  }
+}
+// ---------------- 地点距离对照表 ----------------
+/** 前台地图容器是 16:9：纵向 1 个坐标单位的实际长度是横向的 9/16（与后端 SandboxGeo.Y_UNIT_RATIO 一致） */
+const Y_UNIT_RATIO = 9 / 16
+const distMode = ref('km')
+/** 解析「步行:4,骑乘:20」形式的交通方式配置 */
+const distanceModes = computed(() => {
+  const list = []
+  for (const part of String(settings.travelSpeeds || '').split(/[,，]/)) {
+    const [name, speed] = part.split(/[:：]/)
+    const kmh = Number(speed)
+    if (name && name.trim() && kmh > 0) {
+      list.push({ name: name.trim(), kmh })
+    }
+  }
+  return list.length ? list : [{ name: '步行', kmh: 4 }]
+})
+/** 地点中心：多边形取标注点，单点地点直接用坐标 */
+function locationCenter(location) {
+  const polygon = polygonOf(location)
+  if (polygon && polygon.length) {
+    const point = labelPoint(polygon)
+    return { x: point[0], y: point[1] }
+  }
+  return { x: Number(location.x) || 0, y: Number(location.y) || 0 }
+}
+function kmBetweenPoints(a, b) {
+  const perUnit = (Number(settings.kmMapWidth) || 200) / 100
+  const dx = (a.x - b.x) * perUnit
+  const dy = (a.y - b.y) * perUnit * Y_UNIT_RATIO
+  return Math.sqrt(dx * dx + dy * dy)
+}
+function formatKm(km) {
+  return km < 10 ? km.toFixed(1) + ' km' : Math.round(km) + ' km'
+}
+function formatMinutes(minutes) {
+  if (minutes < 60) return minutes + ' 分钟'
+  const hours = minutes / 60
+  if (hours < 24) return (Math.round(hours * 10) / 10) + ' 小时'
+  return (Math.round((hours / 24) * 10) / 10) + ' 天'
+}
+const distanceCols = computed(() => locations.value.map((l) => ({ id: l.id, name: l.name })))
+const distanceRows = computed(() => {
+  const list = locations.value.map((l) => ({ id: l.id, name: l.name, ...locationCenter(l) }))
+  const mode = distanceModes.value.find((m) => m.name === distMode.value)
+  return list.map((a) => {
+    const row = { name: a.name }
+    for (const b of list) {
+      if (a.id === b.id) {
+        row['c' + b.id] = '—'
+        continue
+      }
+      const km = kmBetweenPoints(a, b)
+      row['c' + b.id] = mode ? formatMinutes(Math.max(1, Math.ceil((km / mode.kmh) * 60))) : formatKm(km)
+    }
+    return row
+  })
+})
+
 const saving = ref(false)
 const savingWorld = ref(false)
 const savingSetting = ref(false)
@@ -670,6 +877,8 @@ function recomputeConflict() {
 async function loadAll() {
   loading.value = true
   try {
+    // 服务商列表：系统调用模型那里要用它选系统服务商
+    loadProviders()
     // 先取世界列表，确定当前世界（优先用上次选的那个），再加载它名下的地图与地点
     worlds.value = (await sandboxWorlds()) || []
     if (!worlds.value.length) {

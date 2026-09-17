@@ -21,6 +21,15 @@ public final class SandboxGeo {
     public static final double MAP_SIZE = 100d;
 
     /**
+     * 纵向 1 坐标单位的实际长度 = 横向的多少倍。
+     *
+     * 前台地图容器是 16:9（frontend 的 .map-stage），横轴 100 单位铺满宽度、纵轴 100 单位铺满高度，
+     * 所以纵向 1 单位在屏幕上只有横向的 9/16 长。算实际距离（km）时必须按这个比例折算，
+     * 否则南北方向的距离会凭空大出 1.78 倍，AI 会误判"太远不去"或者把赶路时间算爆。
+     */
+    public static final double Y_UNIT_RATIO = 9d / 16d;
+
+    /**
      * 区域重叠容差（绝对量）：手绘压边的误差，10 单位² 以内算「贴边」放行。
      * 相当于一条 10 单位长、1 单位宽的窄缝。
      */
@@ -312,6 +321,79 @@ public final class SandboxGeo {
     }
 
     // ============================== 区域之间 ==============================
+
+    // ============================== 实际距离（km） ==============================
+
+    /**
+     * 地图宽度（km）→ 横向 1 坐标单位等于多少 km。
+     * 例：地图宽 200 km 时，横向 1 单位 = 2 km，纵向 1 单位 = 2 × 9/16 = 1.125 km。
+     */
+    public static double kmPerUnit(double mapWidthKm) {
+        double width = mapWidthKm <= 0 ? 200d : mapWidthKm;
+        return width / MAP_SIZE;
+    }
+
+    /** 两点之间的实际距离（km）：先按 16:9 折算纵轴，再乘单位长度 */
+    public static double kmPointToPoint(double x1, double y1, double x2, double y2, double mapWidthKm) {
+        double perUnit = kmPerUnit(mapWidthKm);
+        double dx = (x1 - x2) * perUnit;
+        double dy = (y1 - y2) * perUnit * Y_UNIT_RATIO;
+        return Math.sqrt(dx * dx + dy * dy);
+    }
+
+    /**
+     * 点到地点区域的实际距离（km）：点在区域内返回 0，否则返回最近的边界距离。
+     * 做法是把坐标整体缩放进"km 空间"，再复用普通的点-多边形距离算法。
+     */
+    public static double kmToPolygon(List<double[]> polygon, double x, double y, double mapWidthKm) {
+        if (polygon == null || polygon.isEmpty()) {
+            return Double.MAX_VALUE;
+        }
+        double perUnit = kmPerUnit(mapWidthKm);
+        List<double[]> scaled = new ArrayList<>(polygon.size());
+        for (double[] point : polygon) {
+            scaled.add(new double[]{point[0] * perUnit, point[1] * perUnit * Y_UNIT_RATIO});
+        }
+        return distanceToPolygon(scaled, x * perUnit, y * perUnit * Y_UNIT_RATIO);
+    }
+
+    /** 距离文本：10 km 以内保留一位小数，超出取整，避免提示词里出现 12.3456789 这种数字 */
+    public static String kmText(double km) {
+        if (km < 0) {
+            return "0 km";
+        }
+        if (km < 10) {
+            return String.format(java.util.Locale.ROOT, "%.1f km", km);
+        }
+        return Math.round(km) + " km";
+    }
+
+    /** 按 speedKmh 的速度走完 km 需要多少分钟（向上取整；速度非法时按步行 4 km/h 处理） */
+    public static int travelMinutes(double km, double speedKmh) {
+        if (km <= 0) {
+            return 0;
+        }
+        double speed = speedKmh <= 0 ? 4d : speedKmh;
+        return (int) Math.ceil(km / speed * 60d);
+    }
+
+    /** 分钟数转成人话：「45 分钟」「5 小时」「1 天 3 小时」 */
+    public static String minutesText(int minutes) {
+        if (minutes <= 0) {
+            return "0 分钟";
+        }
+        if (minutes < 60) {
+            return minutes + " 分钟";
+        }
+        int hours = minutes / 60;
+        int rest = minutes % 60;
+        if (hours < 24) {
+            return rest == 0 ? hours + " 小时" : hours + " 小时 " + rest + " 分钟";
+        }
+        int days = hours / 24;
+        int restHours = hours % 24;
+        return restHours == 0 ? days + " 天" : days + " 天 " + restHours + " 小时";
+    }
 
     /** 外接矩形 [minX, minY, maxX, maxY] */
     public static double[] bbox(List<double[]> polygon) {

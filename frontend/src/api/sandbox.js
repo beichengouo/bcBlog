@@ -77,6 +77,21 @@ export function saveSandboxSettings(data) {
   return request.post('/admin/sandbox/settings', data)
 }
 
+/** 集市管理页保存设置：只写集市相关配置（普通管理员用这个） */
+export function saveSandboxShopSettings(data) {
+  return request.put('/admin/sandbox/shop/settings', data)
+}
+
+/** 行动日志页保存「旅人纪闻设置」：只写纪闻相关配置 */
+export function saveSandboxNewsSettings(data) {
+  return request.put('/admin/sandbox/news/settings', data)
+}
+
+/** 金币对账修复：按金币流水重算角色余额与流水里的"当时余额" */
+export function repairSandboxCoins(worldId) {
+  return request.post('/admin/sandbox/coins/repair', null, { params: { worldId } })
+}
+
 // 角色
 export function sandboxCharacters(worldId) {
   return request.get('/admin/sandbox/characters', { params: { worldId } })
@@ -98,6 +113,11 @@ export function deleteSandboxCharacter(id) {
 // 立即执行一次（AI 调用可能比较慢，单独放宽超时时间）
 export function runSandboxCharacter(id) {
   return request.post(`/admin/sandbox/characters/${id}/run`, null, { timeout: 180000 })
+}
+
+/** 手动解除执行锁：行动卡住（AI 超时 / 进程重启）时用，让这个角色立刻恢复可用 */
+export function unlockSandboxCharacter(id) {
+  return request.post(`/admin/sandbox/characters/${id}/unlock`)
 }
 
 // 一键让全部启用角色行动一轮（多角色依次行动，便于互相遇见，耗时较长）

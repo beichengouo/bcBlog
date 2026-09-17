@@ -49,7 +49,8 @@ INSERT IGNORE INTO `sys_config` (`config_key`, `config_value`, `remark`) VALUES
     ('admin_login_alert_night_start', '00:00', '深夜时段开始（该时段登录视为异常）HH:mm'),
     ('admin_login_alert_night_end', '06:00', '深夜时段结束 HH:mm'),
     ('admin_login_alert_fail_times', '3', '连续登录失败几次触发提醒，0 表示不提醒'),
-    ('admin_single_login', '1', '单点登录：1 同一管理员只允许一处后台在线，新登录踢掉旧会话');
+    ('admin_single_login', '1', '单点登录：1 同一管理员只允许一处后台在线，新登录踢掉旧会话'),
+    ('admin_security_verify_minutes', '30', '安全密码二次验证的有效期（分钟）：超过需重新验证，填 0 表示本次登录内一直有效');
 
 -- 异常登录提醒邮件模板（可在后台「邮件管理」里编辑或新增多套）
 INSERT INTO `sys_email_template`

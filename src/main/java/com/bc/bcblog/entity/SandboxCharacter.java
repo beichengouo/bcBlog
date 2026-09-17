@@ -44,10 +44,18 @@ public class SandboxCharacter {
     private String locationName;
     /** 当前所在的二级地点 */
     private String subLocation;
+    /** 当前目标（AI 维护，管理员可改）：例如「去晨雾森林采药」；目标不同的角色会各自行动 */
+    private String goal;
     /** 当前状态（JSON 字符串，内容由 AI 生成） */
     private String statusJson;
     /** 金币余额：AI 日常活动赚取或消耗，前台用户也可用积分贡献 */
     private Integer coins;
+    /** 对自身实力的看法（AI 生成角色时填充，行动时会参考它决定要不要变强） */
+    private String powerView;
+    /** 对金钱财富的看法（同上） */
+    private String wealthView;
+    /** 正在执行行动的抢锁时间：非空表示有行动在跑，执行结束会清空（并发保护） */
+    private LocalDateTime runningAt;
     /** 战斗力：综合实力（战斗技巧、魔力、装备），默认 10 */
     private Integer combatPower;
     /** 下次 AI 行动时间 */

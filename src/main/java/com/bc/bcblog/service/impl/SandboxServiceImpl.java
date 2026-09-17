@@ -10,10 +10,17 @@ import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.bc.bcblog.common.BusinessException;
+import com.bc.bcblog.common.SandboxBusyException;
 import com.bc.bcblog.common.PageResult;
 import com.bc.bcblog.common.SandboxGeo;
 import com.bc.bcblog.common.SandboxBackoff;
 import com.bc.bcblog.common.SandboxOutputRepair;
+import com.bc.bcblog.common.SandboxShopCoin;
+import com.bc.bcblog.common.SandboxSpendLimit;
+import com.bc.bcblog.common.SandboxItemName;
+import com.bc.bcblog.common.SandboxOutputIssues;
+import com.bc.bcblog.common.SandboxReplyParser;
+import com.bc.bcblog.dto.ChatMessage;
 import com.bc.bcblog.dto.SandboxCharacterGenerateDTO;
 import com.bc.bcblog.component.SensitiveWordFilter;
 import com.bc.bcblog.component.AuditContext;
@@ -82,6 +89,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -128,6 +136,11 @@ public class SandboxServiceImpl implements SandboxService {
     /** 提示词里默认的角色要求，管理员没填人设时使用 */
     private static final String DEFAULT_PERSONA =
             "（管理员暂未填写人设，请根据角色名字与这个世界观，自行合理设定一个性格鲜明的角色）";
+    /**
+     * 默认交通方式与速度（km/h）。格式「名称:速度」逗号分隔，后台可改。
+     * 用途有两个：把速度表念给 AI（让它按距离选交通方式）、服务端按最快方式算赶路时间下限。
+     */
+    private static final String DEFAULT_TRAVEL_SPEEDS = "步行:4,骑乘:20,车船:12,飞行:60";
 
     private static final DateTimeFormatter TIME_FORMATTER = DateTimeFormatter.ofPattern("HH:mm");
     private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
@@ -451,6 +464,9 @@ public class SandboxServiceImpl implements SandboxService {
         vo.setDailyLimit(configService.getConfigValue("sandbox_daily_limit", "12"));
         vo.setWhisperPoints(configService.getConfigValue("sandbox_whisper_points", "1"));
         vo.setVerifyEnabled(configService.getConfigValue("sandbox_verify_enabled", "0"));
+        vo.setVerifyMode(verifyMode());
+        vo.setDraftMode(configService.getConfigValue("sandbox_draft_mode", "on"));
+        vo.setStyleExtra(configService.getConfigValue("sandbox_style_extra", ""));
         vo.setBatchWindowMinutes(configService.getConfigValue("sandbox_batch_window_minutes", "5"));
         vo.setChainMaxDepth(configService.getConfigValue("sandbox_chain_max_depth", "1"));
         vo.setChainLimitPerRound(configService.getConfigValue("sandbox_chain_limit_per_round", "3"));
@@ -471,6 +487,7 @@ public class SandboxServiceImpl implements SandboxService {
         vo.setNewsAutoEnabled(configService.getConfigValue("sandbox_news_auto_enabled", "1"));
         vo.setNewsAutoTime(configService.getConfigValue("sandbox_news_auto_time", "07:00"));
         vo.setSystemModel(configService.getConfigValue("sandbox_system_model", ""));
+        vo.setSystemProviderId(configService.getConfigValue("sandbox_system_provider_id", ""));
         vo.setFailBackoffBaseMinutes(configService.getConfigValue("sandbox_fail_backoff_base_minutes", "15"));
         vo.setFailBackoffMaxMinutes(configService.getConfigValue("sandbox_fail_backoff_max_minutes", "120"));
         vo.setWhisperEnabled(configService.getConfigValue("sandbox_whisper_enabled", "1"));
@@ -485,6 +502,11 @@ public class SandboxServiceImpl implements SandboxService {
         vo.setShopModel(configService.getConfigValue("sandbox_shop_model", ""));
         vo.setShopPromptExtra(configService.getConfigValue("sandbox_shop_prompt_extra", ""));
         vo.setShopLimitPerCharacter(configService.getConfigValue("sandbox_shop_limit_per_character", "1"));
+        vo.setShopBuyPerDay(configService.getConfigValue("sandbox_shop_buy_per_day", "2"));
+        vo.setCoinRate(configService.getConfigValue("sandbox_coin_rate", "1"));
+        vo.setKmMapWidth(configService.getConfigValue("sandbox_km_map_width", "200"));
+        vo.setTravelSpeeds(configService.getConfigValue("sandbox_travel_speeds", DEFAULT_TRAVEL_SPEEDS));
+        vo.setSocialMaxKm(configService.getConfigValue("sandbox_social_max_km", "30"));
         return vo;
     }
 
@@ -498,6 +520,13 @@ public class SandboxServiceImpl implements SandboxService {
         writeSetting("sandbox_daily_limit", vo.getDailyLimit());
         writeSetting("sandbox_whisper_points", vo.getWhisperPoints());
         writeSetting("sandbox_verify_enabled", vo.getVerifyEnabled());
+        writeSetting("sandbox_draft_mode", vo.getDraftMode());
+        writeSetting("sandbox_style_extra", vo.getStyleExtra());
+        // 新的三档自查模式；同时把旧开关写成 1/0，保证还有别的读取者时行为一致
+        writeSetting("sandbox_verify_mode", vo.getVerifyMode());
+        if (notBlank(vo.getVerifyMode())) {
+            writeSetting("sandbox_verify_enabled", "off".equalsIgnoreCase(vo.getVerifyMode().trim()) ? "0" : "1");
+        }
         writeSetting("sandbox_batch_window_minutes", vo.getBatchWindowMinutes());
         writeSetting("sandbox_chain_max_depth", vo.getChainMaxDepth());
         writeSetting("sandbox_chain_limit_per_round", vo.getChainLimitPerRound());
@@ -518,6 +547,7 @@ public class SandboxServiceImpl implements SandboxService {
         writeSetting("sandbox_news_auto_enabled", vo.getNewsAutoEnabled());
         writeSetting("sandbox_news_auto_time", vo.getNewsAutoTime());
         writeSetting("sandbox_system_model", vo.getSystemModel());
+        writeSetting("sandbox_system_provider_id", vo.getSystemProviderId());
         writeSetting("sandbox_fail_backoff_base_minutes", vo.getFailBackoffBaseMinutes());
         writeSetting("sandbox_fail_backoff_max_minutes", vo.getFailBackoffMaxMinutes());
         writeSetting("sandbox_whisper_enabled", vo.getWhisperEnabled());
@@ -531,6 +561,45 @@ public class SandboxServiceImpl implements SandboxService {
         writeSetting("sandbox_shop_model", vo.getShopModel());
         writeSetting("sandbox_shop_prompt_extra", vo.getShopPromptExtra());
         writeSetting("sandbox_shop_limit_per_character", vo.getShopLimitPerCharacter());
+        writeSetting("sandbox_shop_buy_per_day", vo.getShopBuyPerDay());
+        writeSetting("sandbox_coin_rate", vo.getCoinRate());
+        writeSetting("sandbox_km_map_width", vo.getKmMapWidth());
+        writeSetting("sandbox_travel_speeds", vo.getTravelSpeeds());
+        writeSetting("sandbox_social_max_km", vo.getSocialMaxKm());
+    }
+
+    /**
+     * 集市管理页保存设置：只写集市/经济相关的键。
+     * 页面上虽然拿到了整份设置，但普通管理员不该顺手改到世界运行参数（AI 开关、间隔、记忆、系统模型…），
+     * 所以这里做一道作用域收口，配合后端只允许超管写 /sandbox/settings。
+     */
+    @Override
+    public void saveShopSettings(SandboxSettingVO vo) {
+        writeSetting("sandbox_shop_title", vo.getShopTitle());
+        writeSetting("sandbox_shop_enabled", vo.getShopEnabled());
+        writeSetting("sandbox_shop_auto_enabled", vo.getShopAutoEnabled());
+        writeSetting("sandbox_shop_interval_hours", vo.getShopIntervalHours());
+        writeSetting("sandbox_shop_auto_time", vo.getShopAutoTime());
+        writeSetting("sandbox_shop_per_generate", vo.getShopPerGenerate());
+        writeSetting("sandbox_shop_provider_id", vo.getShopProviderId());
+        writeSetting("sandbox_shop_model", vo.getShopModel());
+        writeSetting("sandbox_shop_prompt_extra", vo.getShopPromptExtra());
+        writeSetting("sandbox_shop_limit_per_character", vo.getShopLimitPerCharacter());
+        writeSetting("sandbox_shop_buy_per_day", vo.getShopBuyPerDay());
+        writeSetting("sandbox_coin_rate", vo.getCoinRate());
+    }
+
+    /** 行动日志页保存「旅人纪闻设置」：只写纪闻相关的键 */
+    @Override
+    public void saveNewsSettings(SandboxSettingVO vo) {
+        writeSetting("sandbox_news_title", vo.getNewsTitle());
+        writeSetting("sandbox_news_enabled", vo.getNewsEnabled());
+        writeSetting("sandbox_news_per_generate", vo.getNewsPerGenerate());
+        writeSetting("sandbox_news_provider_id", vo.getNewsProviderId());
+        writeSetting("sandbox_news_model", vo.getNewsModel());
+        writeSetting("sandbox_news_prompt_extra", vo.getNewsPromptExtra());
+        writeSetting("sandbox_news_auto_enabled", vo.getNewsAutoEnabled());
+        writeSetting("sandbox_news_auto_time", vo.getNewsAutoTime());
     }
 
     private void writeSetting(String key, String value) {
@@ -618,6 +687,10 @@ public class SandboxServiceImpl implements SandboxService {
         int coins = Convert.toInt(obj.get("coins"), 10);
         vo.setCoins(Math.max(0, Math.min(100, coins)));
 
+        // 对实力 / 财富的态度：生成时由 AI 填写，管理员也可以在弹窗里改
+        vo.setPowerView(truncate(trimToEmpty(obj.getStr("power_view")), 60));
+        vo.setWealthView(truncate(trimToEmpty(obj.getStr("wealth_view")), 60));
+
         // 初始物品：最多 6 件，数量 1~5，品质按 AI 给的或按名字推断
         List<SandboxItem> items = new ArrayList<>();
         JSONArray itemArray = obj.getJSONArray("items");
@@ -659,15 +732,20 @@ public class SandboxServiceImpl implements SandboxService {
                 .append("\"sub_location\":\"初始所在的小地方，自己创作，4~12 字\",")
                 .append("\"status\":{\"体力\":100,\"魔力\":100,\"饥饿度\":20,\"心情\":\"平静\"},")
                 .append("\"coins\":10,")
+                .append("\"power_view\":\"对自身实力的看法（4~12 字，例如 不甘平庸，想变强 / 够用就行）\",")
+                .append("\"wealth_view\":\"对金钱财富的看法（4~12 字，例如 穷怕了，拼命攒钱 / 钱是身外之物）\",")
                 .append("\"items\":[{\"name\":\"干粮\",\"quantity\":2,\"rarity\":1,\"description\":\"用油纸包着的干粮\"}]}\n")
                 .append("要求：\n")
                 .append("1. 角色名不要与【已有角色】重复，人设也不要去撞已有角色的定位与身份；\n")
                 .append("2. 必须符合【世界观】的风格；location 只能从【地图地点】里挑一个；\n")
                 .append("3. status 里体力、魔力、饥饿度是 0~100 的整数，心情用简短词语；\n")
                 .append("4. coins 是初始金币，0~30 之间的整数；\n")
-                .append("5. items 是背包里的初始物品，2~4 件，都是符合身份的日常小物件；")
+                .append("5. power_view 与 wealth_view 是这名角色对「实力」和「金钱」的态度，必须与身份经历自洽，")
+                .append("并且**每个角色都要有明显差异**：有人想变强、有人只想安稳过日子；有人视钱如命、有人视钱财如粪土。")
+                .append("这两条会写进行动提示词，直接影响角色平时是去修炼/接委托，还是摸鱼、散财；要能一眼看出性格；\n")
+                .append("6. items 是背包里的初始物品，2~4 件，都是符合身份的日常小物件；")
                 .append("rarity 用 1~5（1 普通 / 2 精良 / 3 稀有 / 4 史诗 / 5 传说），不要给神器；\n")
-                .append("6. 不要输出立绘、绘图关键词、英文名或任何与 JSON 无关的内容。");
+                .append("7. 不要输出立绘、绘图关键词、英文名或任何与 JSON 无关的内容。");
         return sb.toString();
     }
 
@@ -761,6 +839,11 @@ public class SandboxServiceImpl implements SandboxService {
             character.setLastError(null);
             character.setNextRunTime(nextRunTime(character, LocalDateTime.now()));
             characterMapper.insert(character);
+            // 新建角色如果自带初始金币，补一条流水：这样"流水合计 = 余额"始终成立，对账修复才有意义
+            int initCoins = character.getCoins() == null ? 0 : character.getCoins();
+            if (initCoins > 0) {
+                addCoinLog(character.getId(), null, null, "init", initCoins, 0, initCoins, "初始金币");
+            }
         } else {
             SandboxCharacter before = characterMapper.selectById(character.getId());
             characterMapper.updateById(character);
@@ -813,7 +896,61 @@ public class SandboxServiceImpl implements SandboxService {
                 .orderByDesc(SandboxAct::getCreateTime)
                 .orderByDesc(SandboxAct::getId);
         IPage<SandboxAct> result = actMapper.selectPage(new Page<>(page, size), wrapper);
+        fillMoveKm(result.getRecords());
         return PageResult.of(result.getTotal(), result.getRecords());
+    }
+
+    /**
+     * 给这一页行动补上「相比上一条移动了多少公里」。
+     *
+     * 为什么放服务端算：分页之后，某条行动的"上一条"不一定在同一页里
+     * （按单个角色看时，每页第一条的上一条就在上一页），前端拿不到就画不出「移动 N km」。
+     * 做法：每个角色在本页最早的那条，回查一条更早的行动当衔接点，然后在本页内两两计算。
+     */
+    private void fillMoveKm(List<SandboxAct> records) {
+        if (records == null || records.isEmpty()) {
+            return;
+        }
+        // 本页里每个角色最早的一条（列表是时间倒序，顺序遍历后写进去的就是最早的）
+        Map<Long, SandboxAct> oldestInPage = new HashMap<>();
+        for (SandboxAct act : records) {
+            if (act.getCharacterId() != null) {
+                oldestInPage.put(act.getCharacterId(), act);
+            }
+        }
+        // 每个角色的"本页之前的那一条"，作为最旧一条的比较对象
+        Map<Long, SandboxAct> neighbor = new HashMap<>();
+        for (Map.Entry<Long, SandboxAct> entry : oldestInPage.entrySet()) {
+            SandboxAct older = actMapper.selectOne(new LambdaQueryWrapper<SandboxAct>()
+                    .eq(SandboxAct::getCharacterId, entry.getKey())
+                    .lt(SandboxAct::getId, entry.getValue().getId())
+                    .orderByDesc(SandboxAct::getId)
+                    .last("limit 1"));
+            if (older != null) {
+                neighbor.put(entry.getKey(), older);
+            }
+        }
+        // 从最旧往最新走：每一步的"上一条"就是刚刚处理过的那条
+        for (int i = records.size() - 1; i >= 0; i--) {
+            SandboxAct act = records.get(i);
+            Long characterId = act.getCharacterId();
+            if (characterId == null) {
+                continue;
+            }
+            act.setMoveKm(moveKmBetween(act, neighbor.get(characterId)));
+            neighbor.put(characterId, act);
+        }
+    }
+
+    /** 两次行动之间换了地点时的实际距离（km）：没换地点、或不到 1 km 时返回 null（前台不显示标签） */
+    private Double moveKmBetween(SandboxAct act, SandboxAct previous) {
+        if (previous == null || !notBlank(act.getLocationName())
+                || act.getLocationName().equals(previous.getLocationName())) {
+            return null;
+        }
+        double km = kmBetween(act.getX() == null ? 50 : act.getX(), act.getY() == null ? 50 : act.getY(),
+                previous.getX() == null ? 50 : previous.getX(), previous.getY() == null ? 50 : previous.getY());
+        return km < 1 ? null : km;
     }
 
     @Override
@@ -832,6 +969,72 @@ public class SandboxServiceImpl implements SandboxService {
     }
 
     /**
+     * 抢「这个角色正在执行」的锁。
+     *
+     * 为什么要锁：一次行动要等 AI 几十秒，期间如果同一个角色又跑了一次（手动点两次、手动碰上定时任务、
+     * 回应回合撞上定时任务），两次都基于各自的旧快照算金币，后写的会把先写的覆盖掉——
+     * 之前「晴少了 10 金币、羽少了 15、灵少了 18」就是这个原因；同时也白烧 token。
+     *
+     * 实现：running_at 置为当前时间；超过 sandbox_run_lock_minutes 分钟的老锁视为失效（进程崩过），允许抢占。
+     */
+    private boolean acquireRunLock(Long characterId) {
+        int lockMinutes = Math.max(1, intConfig("sandbox_run_lock_minutes", 5));
+        LocalDateTime expireAt = LocalDateTime.now().minusMinutes(lockMinutes);
+        int updated = characterMapper.update(null, new LambdaUpdateWrapper<SandboxCharacter>()
+                .eq(SandboxCharacter::getId, characterId)
+                .and(w -> w.isNull(SandboxCharacter::getRunningAt)
+                        .or().lt(SandboxCharacter::getRunningAt, expireAt))
+                .set(SandboxCharacter::getRunningAt, LocalDateTime.now()));
+        return updated > 0;
+    }
+
+    /**
+     * 释放执行锁（无论成功失败都必须调用）。
+     *
+     * 这里用 setSql("running_at = NULL") 而不是 .set(...) ：
+     * 清空字段只走 SQL 最直接，也避免"传 null 被当成不更新"这类坑；
+     * 一旦释放失败必须打 error 日志（锁没清掉会让角色一直显示"正在执行中"）。
+     */
+    private void releaseRunLock(Long characterId) {
+        try {
+            characterMapper.update(null, new LambdaUpdateWrapper<SandboxCharacter>()
+                    .eq(SandboxCharacter::getId, characterId)
+                    .setSql("running_at = NULL"));
+        } catch (Throwable t) {
+            log.error("释放沙盒执行锁失败（角色 #{}），该角色会一直显示「正在执行中」直到锁超时：{}",
+                    characterId, t.getMessage(), t);
+        }
+    }
+
+    /** 管理员手动解除执行锁：锁超时是 5 分钟，这个是给卡住的角色一个立刻可用的出口 */
+    @Override
+    public void unlockCharacter(Long characterId) {
+        releaseRunLock(characterId);
+        log.info("管理员手动解除了沙盒角色 #{} 的执行锁", characterId);
+    }
+
+    /**
+     * 记录一次行动失败：写 last_error、连续失败次数，并把下次行动时间往后推（失败退避）。
+     * AI 调用失败与"AI 成功但落库失败"都走这里，保证任何失败在后台都能看到原因。
+     */
+    private void recordRunFailure(Long characterId, String msg) {
+        SandboxCharacter current = characterMapper.selectById(characterId);
+        int failCount = (current == null || current.getFailCount() == null ? 0 : current.getFailCount()) + 1;
+        int backoffMinutes = SandboxBackoff.minutes(failCount,
+                intConfig("sandbox_fail_backoff_base_minutes", SandboxBackoff.DEFAULT_BASE_MINUTES),
+                intConfig("sandbox_fail_backoff_max_minutes", SandboxBackoff.DEFAULT_MAX_MINUTES));
+        LocalDateTime retryAt = LocalDateTime.now().plusMinutes(backoffMinutes);
+        characterMapper.update(null, new LambdaUpdateWrapper<SandboxCharacter>()
+                .eq(SandboxCharacter::getId, characterId)
+                .set(SandboxCharacter::getLastError,
+                        truncate(SandboxBackoff.describeError(failCount, backoffMinutes, msg), 480))
+                .set(SandboxCharacter::getFailCount, failCount)
+                .set(SandboxCharacter::getNextRunTime, retryAt));
+        log.warn("沙盒角色 #{} 行动失败（连续第 {} 次），已退避 {} 分钟，下次尝试 {}：{}",
+                characterId, failCount, backoffMinutes, retryAt, msg);
+    }
+
+    /**
      * 执行一次行动并处理回应链（调度用：单个角色失败只记日志，不影响其他角色）。
      */
     private SandboxAct runWithChain(Long characterId, boolean manual, boolean reaction, SandboxAct trigger,
@@ -839,6 +1042,10 @@ public class SandboxServiceImpl implements SandboxService {
         SandboxAct act;
         try {
             act = runOnce(characterId, manual, reaction, trigger);
+        } catch (SandboxBusyException e) {
+            // 角色正在执行中：跳过就好，既不算失败也不触发失败退避
+            log.info("沙盒角色 #{} 正在执行中，本次跳过", characterId);
+            return null;
         } catch (Exception e) {
             log.warn("沙盒角色 #{} 行动失败：{}", characterId, e.getMessage());
             return null;
@@ -911,6 +1118,29 @@ public class SandboxServiceImpl implements SandboxService {
      * @param trigger  触发这次回应的那条行动记录，会作为上下文写进提示词
      */
     private SandboxAct runOnce(Long characterId, boolean manual, boolean reaction, SandboxAct trigger) {
+        // 并发保护：同一个角色同一时刻只允许一个行动在跑（见 acquireRunLock 的注释）
+        if (!acquireRunLock(characterId)) {
+            throw new SandboxBusyException("该角色正在执行中，请稍候再试");
+        }
+        try {
+            return runOnceLocked(characterId, manual, reaction, trigger);
+        } catch (BusinessException e) {
+            // AI 调用失败等已经在里面记过原因与退避了，直接往外抛
+            throw e;
+        } catch (Throwable t) {
+            // 兜底：AI 已经返回、但后续计算/落库抛错。以前这种失败既不记原因也不退避，
+            // 管理员只会看到「没生成记录」，排查无从下手（本次「创建角色后第一次行动没记录」就是这一类）。
+            String msg = t.getMessage() == null ? t.getClass().getSimpleName() : t.getMessage();
+            log.error("沙盒角色 #{} 行动落库失败", characterId, t);
+            recordRunFailure(characterId, "生成行动记录失败：" + msg);
+            throw new BusinessException("生成行动记录失败：" + msg);
+        } finally {
+            releaseRunLock(characterId);
+        }
+    }
+
+    /** 真正执行一次行动（调用前必须已经持有执行锁） */
+    private SandboxAct runOnceLocked(Long characterId, boolean manual, boolean reaction, SandboxAct trigger) {
         SandboxCharacter character = characterMapper.selectById(characterId);
         if (character == null) {
             throw new BusinessException("角色不存在");
@@ -952,7 +1182,7 @@ public class SandboxServiceImpl implements SandboxService {
             // 手动执行用发起人自己的服务商，定时执行用系统服务商
             AiProvider provider = manual
                     ? aiProviderService.resolveManualProvider(character.getProviderId())
-                    : aiProviderService.resolveSystemProvider(character.getProviderId());
+                    : sandboxSystemProvider(character);
             if (manual) {
                 AuditContext.manual(reaction ? "沙盒·回应回合" : "沙盒·立即执行一次");
             } else {
@@ -970,19 +1200,7 @@ public class SandboxServiceImpl implements SandboxService {
             // 失败时只记录原因，不生成记录，避免接口异常时时间线被刷屏；
             // 同时做失败退避：把 next_run_time 往后推，别让角色一直「逾期」被每 5 分钟重试一次
             String msg = e.getMessage() == null ? "AI 调用失败" : e.getMessage();
-            int failCount = (character.getFailCount() == null ? 0 : character.getFailCount()) + 1;
-            int backoffMinutes = SandboxBackoff.minutes(failCount,
-                    intConfig("sandbox_fail_backoff_base_minutes", SandboxBackoff.DEFAULT_BASE_MINUTES),
-                    intConfig("sandbox_fail_backoff_max_minutes", SandboxBackoff.DEFAULT_MAX_MINUTES));
-            LocalDateTime retryAt = LocalDateTime.now().plusMinutes(backoffMinutes);
-            characterMapper.update(null, new LambdaUpdateWrapper<SandboxCharacter>()
-                    .eq(SandboxCharacter::getId, characterId)
-                    .set(SandboxCharacter::getLastError,
-                            truncate(SandboxBackoff.describeError(failCount, backoffMinutes, msg), 480))
-                    .set(SandboxCharacter::getFailCount, failCount)
-                    .set(SandboxCharacter::getNextRunTime, retryAt));
-            log.warn("沙盒角色「{}」AI 调用失败（连续第 {} 次），已退避 {} 分钟，下次尝试 {}：{}",
-                    character.getName(), failCount, backoffMinutes, retryAt, msg);
+            recordRunFailure(characterId, msg);
             throw e instanceof BusinessException ? (BusinessException) e : new BusinessException(msg);
         }
 
@@ -1001,7 +1219,11 @@ public class SandboxServiceImpl implements SandboxService {
         String subLocation = character.getSubLocation();
         String statusJson = character.getStatusJson();
         int coins = character.getCoins() == null ? 0 : character.getCoins();
+        // 当前目标：AI 没给就沿用上一次的，避免目标凭空丢失
+        String goal = character.getGoal();
         int coinChange = 0;
+        /** 花费被上限截断时的说明，会附在金币流水后面 */
+        String spendNote = "";
         // 战斗力：默认 10，只有 AI 明确给出变化时才动，单次幅度限制在 ±COMBAT_STEP_MAX
         int combatPower = character.getCombatPower() == null ? COMBAT_POWER_DEFAULT : character.getCombatPower();
         int combatChange = 0;
@@ -1009,11 +1231,15 @@ public class SandboxServiceImpl implements SandboxService {
         String aiNextReason = null;
 
         JSONObject obj = parseJson(raw);
-        if (obj == null) {
+        // 兜底校验：解析结果必须有 actions（哪怕空数组）才算"按格式返回"。
+        // 解析器曾经误取到内层小对象（例如 {"delta":-1}），那种对象能解析、但字段全空，
+        // 就会写成一条"空白行动"；现在这类情况统一按"没按格式返回"处理，交给补救流程。
+        if (obj == null || obj.get("actions") == null) {
             // AI 没有按格式返回：原文保存下来，方便管理员在后台看到并调整提示词
             act.setFromAi(0);
-            // 注意：沙盒角色的 AI 回复不做敏感词过滤，保持原文（过滤会误伤正常词汇）
-            act.setActions(truncate(trimToEmpty(raw), 1000));
+            // 注意：沙盒角色的 AI 回复不做敏感词过滤，保持原文（过滤会误伤正常词汇）。
+            // 但解析失败时前台会看到这段内容，所以要用 displayText 去掉 <draft>/<review> 这些标记
+            act.setActions(truncate(trimToEmpty(SandboxReplyParser.displayText(raw)), 1000));
             act.setSummary("AI 返回内容不是约定的 JSON，已原样保存");
         } else {
             act.setFromAi(1);
@@ -1068,12 +1294,12 @@ public class SandboxServiceImpl implements SandboxService {
             act.setActions(truncate(joinActions(obj.getJSONArray("actions")), 1000));
             act.setInnerVoice(truncate(trimToEmpty(obj.getStr("inner_voice")), 1000));
             act.setSummary(truncate(trimToEmpty(obj.getStr("summary")), 280));
+            // 互动只认"真的在附近"的角色：以前只按名字匹配，AI 能让相隔几百公里的人隔空聊天、还会加好感度
+            List<SandboxCharacter> nearby = nearbyCompanions(character, companions, x, y, locationName);
             // 这一步和哪些角色互动了（只保留世界里真实存在的角色名）
-            act.setCompanions(matchCompanions(obj.getJSONArray("companions"), companions));
+            act.setCompanions(matchCompanions(obj.getJSONArray("companions"), nearby));
             // 好感度变化：AI 返回 { "角色名": 3 }，服务端累加到对应关系上
-            act.setFavorChange(applyFavorChanges(character, obj.get("favor_changes"), companions));
-            // 物品变化：AI 返回 { "物品名": 1 }，正为获得、负为消耗
-            act.setItemChange(applyItemChanges(character, obj.get("items_change")));
+            act.setFavorChange(applyFavorChanges(character, obj.get("favor_changes"), nearby));
             // 由 AI 决定下一次隔多久再行动（例如睡一觉就是几小时）
             aiNextMinutes = Convert.toInt(obj.get("next_after_minutes"), null);
             aiNextReason = truncate(trimToEmpty(obj.getStr("next_after_reason")), 40);
@@ -1090,14 +1316,64 @@ public class SandboxServiceImpl implements SandboxService {
             statusJson = mergeStatus(character.getStatusJson(), obj.get("status"));
             act.setStatusJson(statusJson);
 
+            // 当前目标：AI 每步维护；没给或给空就沿用上一次
+            String aiGoal = truncate(trimToEmpty(obj.getStr("goal")), 100);
+            if (!aiGoal.isEmpty()) {
+                goal = aiGoal;
+            }
+
             // 金币变化：赚取为正、消耗为负，余额不允许变成负数
             coinChange = Convert.toInt(obj.get("coins_change"), 0);
-            coins = Math.max(0, coins + coinChange);
+            // 原子增减：这一步先把自己赚/花的钱落到库里，后面扣集市购买时才看得到真实余额。
+            // 这样即使同时有别的写入（用户贡献金币、别的行动），也不会互相覆盖。
+            if (coinChange > 0) {
+                coins = addCoins(characterId, coinChange);
+            } else if (coinChange < 0) {
+                // 花费上限：AI 常常随口写个大额支出（例如第一次行动就 -15，而 actions 里只买了浆果和火把）。
+                // 按「余额分档 + 后台配置」取上限，超出就截断，并在流水里注明原因，方便事后核对。
+                int spendLimit = SandboxSpendLimit.maxSpend(coins, intConfig("sandbox_max_spend_per_act", 10));
+                if (-coinChange > spendLimit) {
+                    log.info("沙盒角色 #{} 本次花费 {} 金币超过上限 {}，已按上限截断",
+                            characterId, -coinChange, spendLimit);
+                    spendNote = "（原花费 " + (-coinChange) + " 金币，已按单次上限 " + spendLimit + " 截断）";
+                    coinChange = -spendLimit;
+                }
+                Integer balance = trySpendCoins(characterId, -coinChange);
+                if (balance == null) {
+                    // 余额不够（AI 给的花费超过身上金币，或被并发花掉了）：这一步就当没花钱
+                    coins = currentCoins(characterId);
+                    coinChange = 0;
+                } else {
+                    coins = balance;
+                }
+            } else {
+                coins = currentCoins(characterId);
+            }
+            // 金币流水就写在这里（而不是等行动记录落库之后）：
+            // 集市购买会在后面扣款，如果这条流水写到那时候，它的"当时余额"就会用最终余额，看起来像没扣钱
+            if (coinChange != 0) {
+                addCoinLog(characterId, null, null, coinChange > 0 ? "earn" : "spend", coinChange, 0, coins,
+                        truncate(blankToDefault(act.getSummary(), coinChange > 0 ? "日常赚取" : "日常花销") + spendNote, 190));
+            }
 
             // 战斗力变化：与金币一样是可选项，没给就按 0 处理
             combatChange = Math.max(-COMBAT_STEP_MAX, Math.min(COMBAT_STEP_MAX,
                     Convert.toInt(obj.get("combat_change"), 0)));
             combatPower = Math.max(COMBAT_POWER_MIN, combatPower + combatChange);
+
+            // 旅人集市自购：AI 返回 shop_buy 时，用角色自己的金币结算（扣库存、进背包、写流水）
+            // 注意顺序：先把这一步赚到的钱算进来，再扣购买花费，余额不足就买不成
+            int[] coinsHolder = new int[]{coins};
+            Set<String> boughtNames = new HashSet<>();
+            String shopChange = applyShopPurchases(character, obj.get("shop_buy"), coinsHolder, boughtNames);
+            coins = coinsHolder[0];
+            // 物品变化：AI 返回 { "物品名": 1 }，正为获得、负为消耗
+            // 刚在集市买到的物品要排除掉，避免 AI 同时写进 items_change 造成重复计数
+            String itemChange = applyItemChanges(character, obj.get("items_change"), boughtNames);
+            if (shopChange != null) {
+                itemChange = itemChange == null ? shopChange : truncate(itemChange + "、" + shopChange, 290);
+            }
+            act.setItemChange(itemChange);
         }
 
         if (act.getLocationName() == null) {
@@ -1110,6 +1386,8 @@ public class SandboxServiceImpl implements SandboxService {
         act.setCoinChange(coinChange);
         act.setCombatChange(combatChange);
 
+        // 赶路时间兜底：防止 AI 让角色"一步跨过 80 km 却只花 30 分钟"
+        aiNextMinutes = applyTravelFloor(character, x, y, locationName, aiNextMinutes);
         LocalDateTime next = resolveNextRunTime(character, now, aiNextMinutes);
         characterMapper.update(null, new LambdaUpdateWrapper<SandboxCharacter>()
                 .eq(SandboxCharacter::getId, characterId)
@@ -1117,8 +1395,9 @@ public class SandboxServiceImpl implements SandboxService {
                 .set(SandboxCharacter::getY, y)
                 .set(SandboxCharacter::getLocationName, locationName)
                 .set(SandboxCharacter::getSubLocation, subLocation)
+                .set(SandboxCharacter::getGoal, goal)
                 .set(SandboxCharacter::getStatusJson, statusJson)
-                .set(SandboxCharacter::getCoins, coins)
+                // 金币不在这里整值写回：前面已经用原子增减落到库里了（见 addCoins / trySpendCoins）
                 .set(SandboxCharacter::getCombatPower, combatPower)
                 .set(SandboxCharacter::getLastRunTime, now)
                 .set(SandboxCharacter::getNextRunTime, next)
@@ -1128,11 +1407,7 @@ public class SandboxServiceImpl implements SandboxService {
                 .set(SandboxCharacter::getFailCount, 0));
 
         actMapper.insert(act);
-        // 有金币变化时记一笔流水，前台和后台都能看到角色是怎么赚钱花钱的
-        if (coinChange != 0) {
-            addCoinLog(characterId, null, null, coinChange > 0 ? "earn" : "spend", coinChange, 0, coins,
-                    blankToDefault(act.getSummary(), coinChange > 0 ? "日常赚取" : "日常花销"));
-        }
+        // 金币流水已在上面（金币落库时）写过：那时余额才是这一步真实的余额
         return act;
     }
 
@@ -1155,7 +1430,7 @@ public class SandboxServiceImpl implements SandboxService {
     private String callAiWithInterval(SandboxCharacter character, AiProvider provider,
                                       String systemPrompt, String userPrompt, double temperature,
                                       List<SandboxLocation> locations, List<SandboxCharacter> companions) {
-        boolean verifyEnabled = "1".equals(configService.getConfigValue("sandbox_verify_enabled", "0"));
+        String verifyMode = verifyMode();
         // 记下主调用的审计标签，自查/补全时临时换掉，保证日志能区分不同类型的调用
         String mainAction = AuditContext.action();
         boolean mainScheduled = AuditContext.isSchedule();
@@ -1171,8 +1446,8 @@ public class SandboxServiceImpl implements SandboxService {
         for (int attempt = 1; attempt <= 3; attempt++) {
             String produced;
             if (attempt == 1) {
-                // 第一次：完整提示词正常生成
-                produced = aiProviderService.chat(provider, character.getModel(), systemPrompt, userPrompt, temperature);
+                // 第一次：完整提示词正常生成（开启三段式时走"预填充 + 草稿/自审/终稿"）
+                produced = chatWithOptionalDraft(provider, character.getModel(), systemPrompt, userPrompt, temperature);
             } else if (SandboxOutputRepair.hasUsableContent(current)) {
                 // 掉格式但手上有原文 → 只补缺的字段（便宜、保原文）
                 produced = repairOutput(character, provider, current, repairContext, missing, temperature,
@@ -1180,15 +1455,35 @@ public class SandboxServiceImpl implements SandboxService {
                 produced = mergeRepair(current, produced);
             } else {
                 // 主调用什么都没给（空响应 / 太短），没有原文可补，只能带着提示重跑
-                produced = aiProviderService.chat(provider, character.getModel(),
+                produced = chatWithOptionalDraft(provider, character.getModel(),
                         systemPrompt + buildRetrySystemSuffix(missing), buildRetryUserPrompt(userPrompt, missing), temperature);
             }
             String candidate = produced;
-            if (verifyEnabled) {
+            // 输出自查有三种模式（后台「世界与地图」可切换）：
+            //   off        关闭
+            //   suspicious 仅可疑时查（默认）：命中规则才多花一次调用
+            //   always     每次都查
+            List<String> verifyIssues = Collections.emptyList();
+            boolean needVerify = "always".equals(verifyMode);
+            if ("suspicious".equals(verifyMode)) {
+                verifyIssues = SandboxOutputIssues.find(parseJson(candidate), locationNames(locations),
+                        characterNames(companions),
+                        SandboxSpendLimit.maxSpend(character.getCoins() == null ? 0 : character.getCoins(),
+                                intConfig("sandbox_max_spend_per_act", 10)));
+                needVerify = !verifyIssues.isEmpty();
+                if (needVerify) {
+                    log.info("沙盒角色「{}」输出可疑（{}），触发一次自查", character.getName(),
+                            String.join("；", verifyIssues));
+                }
+            }
+            if (needVerify) {
                 // 自查单独打审计标签，方便和主调用区分
                 applyAudit(mainAction, mainScheduled, "沙盒·输出自查");
                 try {
-                    candidate = verifyOutput(character, candidate, locations, companions);
+                    // 只把最终的 JSON 交给自查：三段式回复里还夹着草稿与自审，整段发过去会干扰判断
+                    String finalJson = SandboxReplyParser.extractFinalJson(candidate);
+                    candidate = verifyOutput(character, finalJson == null ? candidate : finalJson,
+                            locations, companions, verifyIssues);
                 } finally {
                     // 还原主调用的审计标签，避免后续调用被记成自查
                     applyAudit(mainAction, mainScheduled, mainAction);
@@ -1214,6 +1509,34 @@ public class SandboxServiceImpl implements SandboxService {
             }
         }
         return best == null ? current : best;
+    }
+
+    /**
+     * 角色行动的主调用：开启三段式时用「预填充 + 草稿/自审/终稿」。
+     *
+     * 预填充的意义：把 assistant 消息预置成 `&lt;draft&gt;` 的开头，模型只能"接着写"，
+     * 于是几乎不可能跑成散文、也不会忘记先写草稿；返回内容不带预填充部分，所以要 manually 拼回去。
+     *
+     * 注意：三段式的输出不是纯 JSON，所以这里**不能**要求 response_format=json_object
+     * （否则上游会强制纯 JSON，草稿段直接被判违规）。
+     */
+    private String chatWithOptionalDraft(AiProvider provider, String model, String systemPrompt,
+                                        String userPrompt, Double temperature) {
+        if (!draftModeOn()) {
+            return aiProviderService.chat(provider, model, systemPrompt, userPrompt, temperature);
+        }
+        String prefill = "<draft>\n";
+        List<ChatMessage> messages = new ArrayList<>();
+        messages.add(ChatMessage.system(systemPrompt));
+        messages.add(ChatMessage.user(userPrompt));
+        messages.add(ChatMessage.assistant(prefill));
+        String content = aiProviderService.chatMessages(provider, model, messages, temperature, false);
+        return prefill + (content == null ? "" : content);
+    }
+
+    /** 三段式（草稿→自审→终稿）是否开启；默认开启 */
+    private boolean draftModeOn() {
+        return !"off".equalsIgnoreCase(configService.getConfigValue("sandbox_draft_mode", "on").trim());
     }
 
     /** 按「手动 / 定时」还原审计标签 */
@@ -1510,6 +1833,9 @@ public class SandboxServiceImpl implements SandboxService {
                 SandboxAct act = runOnce(character.getId(), true, false, null);
                 vo.setSuccess(vo.getSuccess() + 1);
                 vo.getItems().add(character.getName() + "：" + blankToDefault(act.getSummary(), "已行动"));
+            } catch (SandboxBusyException e) {
+                // 这个角色正在执行（手动点了、或上一轮还没跑完）：不算失败，只是跳过
+                vo.getItems().add(character.getName() + "：正在执行中，本轮已跳过");
             } catch (Exception e) {
                 vo.setFailed(vo.getFailed() + 1);
                 vo.getItems().add(character.getName() + "：失败（" + e.getMessage() + "）");
@@ -1637,10 +1963,8 @@ public class SandboxServiceImpl implements SandboxService {
                     "给「" + character.getName() + "」贡献 " + gained + " 金币");
         }
 
-        int coins = (character.getCoins() == null ? 0 : character.getCoins()) + gained;
-        characterMapper.update(null, new LambdaUpdateWrapper<SandboxCharacter>()
-                .eq(SandboxCharacter::getId, characterId)
-                .set(SandboxCharacter::getCoins, coins));
+        // 原子加钱：不能用"读出来加完再整值写回"，否则会覆盖掉同时进行的角色行动赚到的金币
+        int coins = addCoins(characterId, gained);
         addCoinLog(characterId, userId, user.getNickname() == null ? user.getUsername() : user.getNickname(),
                 "contribute", gained, admin ? 0 : points, coins,
                 admin ? "管理员贡献金币" : "旅人用积分贡献金币");
@@ -1655,6 +1979,145 @@ public class SandboxServiceImpl implements SandboxService {
     }
 
     /** 记录一条金币流水 */
+    // ============================== 金币（原子增减 + 对账修复） ==============================
+
+    /** 当前金币余额（直接读库，避免用快照） */
+    private int currentCoins(Long characterId) {
+        SandboxCharacter fresh = characterMapper.selectById(characterId);
+        return fresh == null || fresh.getCoins() == null ? 0 : fresh.getCoins();
+    }
+
+    /**
+     * 原子增加金币（正数）并返回新的余额。
+     * 用 SQL 里的 coins = coins + delta，而不是"读出来加完再整值写回"——
+     * 否则一次几十秒的 AI 行动期间，用户贡献金币、集市购买、另一个行动的改动都会被覆盖。
+     */
+    private int addCoins(Long characterId, int delta) {
+        if (delta > 0) {
+            characterMapper.update(null, new LambdaUpdateWrapper<SandboxCharacter>()
+                    .eq(SandboxCharacter::getId, characterId)
+                    .setSql("coins = coins + " + delta));
+        }
+        return currentCoins(characterId);
+    }
+
+    /**
+     * 尝试原子扣款：余额够才扣，返回扣完的余额；余额不足返回 null（调用方当作"买不起"处理）。
+     * 条件更新保证不会扣成负数，也不会和其它并发写互相覆盖。
+     */
+    private Integer trySpendCoins(Long characterId, int amount) {
+        if (amount <= 0) {
+            return currentCoins(characterId);
+        }
+        int updated = characterMapper.update(null, new LambdaUpdateWrapper<SandboxCharacter>()
+                .eq(SandboxCharacter::getId, characterId)
+                .ge(SandboxCharacter::getCoins, amount)
+                .setSql("coins = coins - " + amount));
+        if (updated <= 0) {
+            return null;
+        }
+        return currentCoins(characterId);
+    }
+
+    /**
+     * 金币对账修复：以金币流水为准重算每个角色的余额，并把每条流水的"当时余额"按顺序重算。
+     *
+     * 前提：所有金币变动都会写流水（角色行动、集市自购、旅人贡献、管理员调整、初始金币），
+     * 所以 SUM(coins) 就是真实余额。没有流水的角色不参与修复（可能是历史数据或刚建的角色）。
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public Map<String, Object> repairCoins(Long worldId) {
+        Long wid = worldId(worldId);
+        List<Map<String, Object>> details = new ArrayList<>();
+        int fixed = 0;
+        for (SandboxCharacter character : characters(wid)) {
+            List<SandboxCoinLog> logs = coinLogMapper.selectList(new LambdaQueryWrapper<SandboxCoinLog>()
+                    .eq(SandboxCoinLog::getCharacterId, character.getId())
+                    .orderByAsc(SandboxCoinLog::getId));
+            if (logs.isEmpty()) {
+                continue;
+            }
+            int before = character.getCoins() == null ? 0 : character.getCoins();
+            int running = 0;
+            int logsFixed = 0;
+            for (SandboxCoinLog log : logs) {
+                int delta = log.getCoins() == null ? 0 : log.getCoins();
+                running += delta;
+                if (log.getBalance() == null || log.getBalance() != running) {
+                    coinLogMapper.update(null, new LambdaUpdateWrapper<SandboxCoinLog>()
+                            .eq(SandboxCoinLog::getId, log.getId())
+                            .set(SandboxCoinLog::getBalance, running));
+                    logsFixed++;
+                }
+            }
+            if (before != running) {
+                characterMapper.update(null, new LambdaUpdateWrapper<SandboxCharacter>()
+                        .eq(SandboxCharacter::getId, character.getId())
+                        .set(SandboxCharacter::getCoins, running));
+                fixed++;
+            }
+            if (before != running || logsFixed > 0) {
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("characterId", character.getId());
+                row.put("characterName", character.getName());
+                row.put("before", before);
+                row.put("after", running);
+                row.put("logsFixed", logsFixed);
+                details.add(row);
+            }
+        }
+        Map<String, Object> report = new LinkedHashMap<>();
+        report.put("checked", characters(wid).size());
+        report.put("fixed", fixed);
+        report.put("details", details);
+        log.info("沙盒金币对账完成（世界 {}）：修正 {} 个角色", wid, fixed);
+        return report;
+    }
+
+    /**
+     * 输出自查模式：off（关闭）/ suspicious（仅可疑时查，默认）/ always（每次都查）。
+     *
+     * 新配置 sandbox_verify_mode 优先；没配时兼容旧开关 sandbox_verify_enabled
+     * （1 = 每次都查，0 = 关闭）；两个都没有就用默认的「仅可疑时查」。
+     */
+    private String verifyMode() {
+        String mode = configService.getConfigValue("sandbox_verify_mode", "").trim().toLowerCase();
+        if ("off".equals(mode) || "always".equals(mode) || "suspicious".equals(mode)) {
+            return mode;
+        }
+        String legacy = configService.getConfigValue("sandbox_verify_enabled", "").trim();
+        if ("1".equals(legacy)) {
+            return "always";
+        }
+        if ("0".equals(legacy)) {
+            return "off";
+        }
+        return "suspicious";
+    }
+
+    /** 可用地点名列表（输出自查 / 可疑判定用） */
+    private List<String> locationNames(List<SandboxLocation> locations) {
+        List<String> names = new ArrayList<>();
+        for (SandboxLocation location : locations) {
+            if (notBlank(location.getName())) {
+                names.add(location.getName());
+            }
+        }
+        return names;
+    }
+
+    /** 可用角色名列表（输出自查 / 可疑判定用） */
+    private List<String> characterNames(List<SandboxCharacter> companions) {
+        List<String> names = new ArrayList<>();
+        for (SandboxCharacter other : companions) {
+            if (notBlank(other.getName())) {
+                names.add(other.getName());
+            }
+        }
+        return names;
+    }
+
     private void addCoinLog(Long characterId, Long userId, String userName, String type,
                             int coins, int pointsCost, int balance, String remark) {
         SandboxCoinLog log = new SandboxCoinLog();
@@ -1690,6 +2153,8 @@ public class SandboxServiceImpl implements SandboxService {
         boolean shopEnabled = "1".equals(configService.getConfigValue("sandbox_shop_enabled", "1"));
         vo.setShopTitle(configService.getConfigValue("sandbox_shop_title", "旅人集市"));
         vo.setShopEnabled(shopEnabled);
+        vo.setShopBuyPerDay(intConfig("sandbox_shop_buy_per_day", 2));
+        vo.setKmMapWidth((int) mapWidthKm());
         vo.setShopItems(shopEnabled ? shopItems(world.getId()) : new ArrayList<>());
         vo.setWorld(world);
         vo.setLocations(locations(world.getId()));
@@ -1716,6 +2181,9 @@ public class SandboxServiceImpl implements SandboxService {
         vo.setStatus(parseStatus(character.getStatusJson()));
         vo.setCoins(character.getCoins() == null ? 0 : character.getCoins());
         vo.setCombatPower(character.getCombatPower() == null ? COMBAT_POWER_DEFAULT : character.getCombatPower());
+        vo.setGoal(character.getGoal());
+        vo.setPowerView(character.getPowerView());
+        vo.setWealthView(character.getWealthView());
         vo.setNextRunTime(character.getNextRunTime());
         vo.setNextReason(character.getNextReason());
         vo.setLastRunTime(character.getLastRunTime());
@@ -1788,24 +2256,53 @@ public class SandboxServiceImpl implements SandboxService {
     }
 
     /** 把一天切成几个时段，让 AI 更容易写出符合时间的行为 */
-    /** 事件与角色的距离描述，用自然语言表达，避免生硬数字 */
+    /**
+     * 事件与角色的距离描述：先算实际公里数，再翻译成自然语言（并带上 km，避免 AI 又想自己换算）。
+     */
     private String distanceText(int x1, int y1, int x2, int y2) {
-        double dx = x1 - x2;
-        double dy = (y1 - y2) * 9.0 / 16.0;
-        double distance = Math.sqrt(dx * dx + dy * dy);
-        if (distance <= 6) {
-            return "就在同一个地区";
+        double km = kmBetween(x1, y1, x2, y2);
+        if (km <= 3) {
+            return "就在附近（约 " + SandboxGeo.kmText(km) + "）";
         }
-        if (distance <= 20) {
-            return "大约半天路程";
+        if (km <= 15) {
+            return "半天内能到（约 " + SandboxGeo.kmText(km) + "）";
         }
-        if (distance <= 40) {
-            return "大约一两天路程";
+        if (km <= 60) {
+            return "大约一天路程（约 " + SandboxGeo.kmText(km) + "）";
         }
-        return "非常遥远";
+        if (km <= 200) {
+            return "要走两三天（约 " + SandboxGeo.kmText(km) + "）";
+        }
+        return "非常遥远（约 " + SandboxGeo.kmText(km) + "）";
     }
 
+    /** 一天的时段名称（清晨/上午/中午/下午/傍晚/晚上/深夜） */
     private String periodOfDay(LocalTime time) {
+        return periodOfDayBody(time);
+    }
+
+    /**
+     * 附带在「现在时间」后面的作息提示。
+     * 白天到傍晚明确提示"还不到睡觉时间"，深夜则提示"该休息了"，让作息更像真人。
+     */
+    private String sleepHint(LocalDateTime now) {
+        int hour = now.getHour();
+        if (hour >= 5 && hour < 9) {
+            return "（清晨，适合起床、准备或早市）";
+        }
+        if (hour >= 9 && hour < 17) {
+            return "（白天，还远不到睡觉的时间）";
+        }
+        if (hour >= 17 && hour < 21) {
+            return "（傍晚，通常还在活动：吃饭、收尾、赶路或待在酒馆；除非很累或受伤，不要这会儿就睡下）";
+        }
+        if (hour >= 21 && hour < 23) {
+            return "（晚上，准备休息也算合理，但也可以再活动一会儿）";
+        }
+        return "（深夜，正常情况下应该在休息或守夜）";
+    }
+
+    private String periodOfDayBody(LocalTime time) {
         int hour = time.getHour();
         if (hour < 5) {
             return "深夜";
@@ -1893,19 +2390,32 @@ public class SandboxServiceImpl implements SandboxService {
                 .append("\"sub_location\":\"这一步具体所在的小地方（自己创作）\",\"x\":35,\"y\":62,")
                 .append("\"actions\":[\"具体动作一\",\"具体动作二\"],\"inner_voice\":\"角色此刻的心里话（第一人称，一句话）\",")
                 .append("\"status\":{\"体力\":80,\"魔力\":45,\"饥饿度\":30,\"心情\":\"平静\"},")
+                .append("\"goal\":\"当前要去做的事（10 字以内，例如 去森林采药）\",")
                 .append("\"coins_change\":0,\"combat_change\":0,\"companions\":[],\"favor_changes\":{\"角色名\":3},")
                 .append("\"items_change\":{\"物品名\":{\"delta\":1,\"description\":\"6~20 字说明它是什么、有什么用\"}},")
+                .append("\"shop_buy\":[{\"name\":\"旅人集市里的商品名\",\"quantity\":1,\"reason\":\"为什么买\"}],")
                 .append("\"news_refs\":[],\"summary\":\"30 字以内概括这一步\"}\n")
                 .append("要求：\n")
                 .append("1. actions 写 1~3 条具体、有画面感的动作。\n")
                 .append("2. status 必须包含体力、魔力、饥饿度（0~100 的整数）与心情（简短词语），可以再补充其它状态项；")
                 .append("体力与魔力会随活动增减，饥饿度随时间上升、吃东西后下降。\n")
                 .append("3. 两类数值变化项，没有变化都填 0：\n")
-                .append("   · coins_change 金币（整数）：赚钱填正数、花钱填负数，不能超过身上的余额；\n")
+                .append("   · coins_change 金币（整数）：赚钱填正数、花钱填负数，不能超过身上的余额；")
+                .append("但「打工、接委托、摆摊卖采集物」这类收入必须写在这里、并在 actions 里说明做了什么；\n")
+                .append("   · **花钱必须与 actions 相称，金额要说得通**：一顿饭 1~3 金币、普通住宿 2~5、")
+                .append("短途车马 2~6、长途车马 8~20、情报或打点 1~5、普通日用品 1~5；")
+                .append("别为了「买了几颗浆果和一支火把」就写 -15，那种东西两三金币就够了；")
+                .append("单次行动的非集市花费不允许超过系统上限（超了会被自动截断），身上钱少时更要省着花。\n")
+                .append("   · **同一件东西不要重复付钱**：在旅人集市买的东西只写进 shop_buy（服务端按标价扣款），")
+                .append("**绝对不要再把它算进 coins_change**；集市里没有、但你确实买了的小东西才写进 items_change，")
+                .append("并按上面的参考价在 coins_change 里扣钱；\n")
                 .append("   · combat_change 战斗力（整数，综合实力）：只有学会新魔法、得到强力装备（+1~+3）、")
                 .append("受伤或力量受损（-1~-3）这类才给非 0，日常行动一律 0，且原因必须写进 actions。\n")
-                .append("4. 行动必须符合当前时间与时段：深夜多是休息或守夜，清晨适合起床准备，用餐时间可以吃饭，")
-                .append("白天适合赶路、做工或交易；不要让角色在深夜做白天才合理的事。\n")
+                .append("4. 行动必须符合当前时间与时段，作息要像真人：清晨 5~8 点起床准备，上午到下午适合赶路、做工或交易，")
+                .append("傍晚 18~21 点适合吃饭、收尾、闲逛、赶路或去酒馆坐坐，23 点以后多是休息或守夜。")
+                .append("**晚上 21 点之前一般不要进入整夜睡眠**——除非有明确理由：体力低于 30、受伤或生病、")
+                .append("前一天熬夜没睡好、外面风雨太大无处可去；否则会显得作息不真实。")
+                .append("如果确实要睡，就按「睡到第二天早上 6~8 点」来设置 next_after_minutes，不要出现「傍晚六点睡下、凌晨两点醒来」这种时间。\n")
                 .append("5. companions 是角色名数组：如果这一步你与【世界里的其他居民】在同一地点相遇、交谈、")
                 .append("同行或互相影响，就把他们的名字填进去（名字必须与上面列出的完全一致），没有就填 []。\n")
                 .append("6. favor_changes 表示这一步你对某个角色的好感度变化，格式是 {\"角色名\": 变化量}：")
@@ -1940,7 +2450,9 @@ public class SandboxServiceImpl implements SandboxService {
         sb.append("\n    这两个字段都是**必填项**：next_after_minutes 必须大于 0，next_after_reason 必须填写，")
                 .append("并且间隔要和行动相符。参考：睡觉/过夜 360~600（午睡 30~90）、长途赶路 120~240、")
                 .append("专注做事 60~180、吃饭逛街 15~45、短暂交谈 10~30、警戒守夜 30~90；")
-                .append("不要给与行动无关的短间隔（例如「睡觉」却只隔 15 分钟）。");
+                .append("不要给与行动无关的短间隔（例如「睡觉」却只隔 15 分钟）；")
+                .append("**睡觉要把间隔算到第二天早上 6~8 点**（例如 22:30 睡下就是 450~570 分钟），")
+                .append("不允许「睡 8 小时却在凌晨 2 点醒来」这种与时段的矛盾。");
         sb.append("\n13. news_refs 是数组：如果你这一步听说了、议论了或关注了【今日要闻】里的某条事件，")
                 .append("就把那条事件的原句填进去（必须与上面列出的标题完全一致），没有就填 []；")
                 .append("听说并不代表一定要参与。");
@@ -1952,7 +2464,194 @@ public class SandboxServiceImpl implements SandboxService {
                 .append("每一步尽量让位置发生变化——可以换一个新的二级地点、在地区内走动，")
                 .append("也可以动身去别的地区（路远就分几步赶路，不要一步跳过去）；")
                 .append("同一地区最多连着停留 2~3 次，就该考虑换个地方了。");
+        sb.append("\n16. 同行是暂时的，要有自己的事做：goal 是你当前要去做的事（10 字以内），")
+                .append("每一步都要维护它——做完了就换一个符合人设与当前处境的新目标。")
+                .append("和别的角色一起行动最多持续 2~3 次：除非你们正在做**同一件事**（一起赶路去同一个地方、")
+                .append("组队做同一件委托、并肩守夜），否则就该各自去办自己的事。")
+                .append("分开要自然：可以说一句「我先去办点事」、约定回头见，或者因为目标不同而各走各的；")
+                .append("不要为了黏在一起而给两个人硬编同一个目标。");
+        sb.append("\n17. 要像过日子一样有收入：每天安排 1~2 次能挣到钱的活动（接委托、打零工、")
+                .append("摆摊卖掉采来的东西、帮人跑腿、表演等），**单次收入 5~25 金币、整天合计 5~40 金币**，")
+                .append("金额写进 coins_change 并在 actions 里说清是靠什么赚的；")
+                .append("不要凭空变出钱财，也不要一天赚几百金币。")
+                .append("夜里睡觉、休息、受伤时不要赚钱，也不要干活。");
+        sb.append("\n18. 旅人集市（商队每天摆摊）：如果【旅人集市】里列出了商品，你可以按需购买——")
+                .append("确实需要、且身上金币足够时，把要买的东西写进 shop_buy（name 必须与商品名完全一致），")
+                .append("并把这笔花费在 actions 里说清楚（例如「在商队摊子上买下一包干粮」）；")
+                .append("没钱、不需要、正在睡觉赶路时就不要买，shop_buy 填 []。")
+                .append("买到的物品服务端会自动放进背包，所以**不要再把这些物品写进 items_change**，")
+                .append("也不要再写金币变化——重复写会导致算重。");
+        sb.append("\n19. 赶路要挑交通方式，别一律走路：【从这里出发的距离】里已经给出每个地方离你多少公里、")
+                .append("步行要多久。距离超过几公里时，请结合世界观选一种合理的方式前往——")
+                .append("参考速度 ").append(travelSpeedsText()).append("，")
+                .append("可以是花钱搭商队的货车、租一匹马、坐船、雇车、用飞行坐骑或魔法捷径等等，")
+                .append("具体叫什么由你按世界观命名，并在 actions 里写清是怎么去的（例如「搭上南下的盐商货车」）；")
+                .append("**next_after_minutes 不能小于路上时间**，否则等于瞬移，系统会按最快方式把间隔抬到合理值。")
+                .append("反过来，就在同一片区域、几十米到一两公里内走动时，步行最自然，不要动不动就雇车。");
+        sb.append("\n20. 按自己的态度过日子：提示词里给了你对「实力」与「财富」的态度，请让它体现在行动里——")
+                .append("想变强的人会找机会修炼、拜师、挑战强敌、攒钱买装备；")
+                .append("看重钱的人会主动接委托、摆摊、做买卖；")
+                .append("不在意实力或财富的人就别为了它们违背人设（可以安稳过日子、散财、拒绝危险委托）。")
+                .append("战斗力提升通常需要付出代价（时间、金钱、受伤风险），不要每天都涨。");
+        appendStyleExtra(sb);
+        appendDraftFlow(sb);
         return sb.toString();
+    }
+
+    /** 管理员自定义文风补充（后台可编辑，可以粘贴酒馆预设里的写作基准段落） */
+    private void appendStyleExtra(StringBuilder sb) {
+        String extra = configService.getConfigValue("sandbox_style_extra", "");
+        if (!notBlank(extra)) {
+            return;
+        }
+        sb.append("\n【文风补充（管理员设置，优先遵守）】\n")
+                .append(truncate(extra.trim(), 4000)).append("\n");
+    }
+
+    /**
+     * 三段式输出流程：先写草稿、再自审、最后给终稿 JSON。
+     *
+     * 为什么这样设计：用的多是免费接口（输出 token 不心疼），与其在容易掉字段之后补救
+     * （补全/重跑要再花一次调用），不如在同一次输出里让它先想清楚、再自检一遍。
+     * 服务端只认 &lt;final&gt; 里的 JSON，草稿与自审不会进任何业务字段。
+     */
+    private void appendDraftFlow(StringBuilder sb) {
+        if (!draftModeOn()) {
+            return;
+        }
+        sb.append("\n【本次输出流程·必须严格遵守】\n");
+        sb.append("请按顺序输出三段，一个都不能少，并且不要在段外写任何解释：\n");
+        sb.append("第一段 <draft>：用 2~5 句白话打草稿——这一步打算做什么、为什么（结合当前状态/目标/记忆）、");
+        sb.append("会涉及哪些字段、金币与物品的收支是怎么来的。这一段不要写 JSON，控制在 200 字以内。\n");
+        sb.append("第二段 <review>：对照下面的清单自检草稿，并写出你打算怎么改（200 字以内）：\n");
+        sb.append("· 地点与坐标是否落在【地图地点】的范围内；\n");
+        sb.append("· 下一步间隔是否和做的事相符、是否符合当前时间与作息；\n");
+        sb.append("· 物品是否有合理来源、名称是否为纯中文（不得出现 of / the / and 这类英文）；\n");
+        sb.append("· 金币收支是否与 actions 里真正买的东西相称（参考价），有没有把集市买的东西重复算进 coins_change；\n");
+        sb.append("· 是否符合人设、态度、记忆与当前目标，有没有和上一轮矛盾。\n");
+        sb.append("第三段 <final>：给出修正后的最终 JSON，必须完整、合法、字段齐全（结构见【输出要求】），");
+        sb.append("而且只有这一段是 JSON。\n");
+        sb.append("注意：草稿与自审只是给你自己用的思考过程，绝不能把里面的内容写进 final 的 actions、");
+        sb.append("inner_voice 或 summary；也不要在这两段里输出 JSON 或代码块标记。\n");
+    }
+
+    /**
+     * 往用户提示词里追加【旅人集市】。
+     *
+     * 省 token 的三条原则：
+     *   1. 集市关闭、身上没钱、今天买够了、买得起的东西为空 → 整段不注入；
+     *   2. 只列「金币价 ≤ 身上金币」的商品，最多 8 件，贵的看了也买不起；
+     *   3. 描述截断到 18 字，够模型判断是什么东西就行。
+     */
+    private void appendShopPrompt(StringBuilder sb, SandboxCharacter c) {
+        if (!"1".equals(configService.getConfigValue("sandbox_shop_enabled", "1"))) {
+            return;
+        }
+        int coins = c.getCoins() == null ? 0 : c.getCoins();
+        if (coins <= 0) {
+            return;
+        }
+        List<SandboxShopItem> affordable = new ArrayList<>();
+        for (SandboxShopItem item : latestShopBatch(c.getWorldId(), true)) {
+            int price = item.getPrice() == null ? 0 : item.getPrice();
+            int stock = item.getStock() == null ? 0 : item.getStock();
+            if (price > 0 && price <= coins && stock > 0) {
+                affordable.add(item);
+            }
+        }
+        if (affordable.isEmpty()) {
+            return;
+        }
+        int perDay = intConfig("sandbox_shop_buy_per_day", 2);
+        if (perDay > 0) {
+            Long bought = shopOrderMapper.selectCount(new LambdaQueryWrapper<SandboxShopOrder>()
+                    .eq(SandboxShopOrder::getCharacterId, c.getId())
+                    .eq(SandboxShopOrder::getBuyerType, "character")
+                    .ge(SandboxShopOrder::getCreateTime, LocalDate.now().atStartOfDay()));
+            int left = perDay - (bought == null ? 0 : bought.intValue());
+            if (left <= 0) {
+                // 今天已经买够了，不再注入，免得 AI 白写 shop_buy
+                return;
+            }
+        }
+        affordable.sort(Comparator.comparingInt(item -> item.getPrice() == null ? 0 : item.getPrice()));
+        sb.append("\n【").append(configService.getConfigValue("sandbox_shop_title", "旅人集市"))
+                .append("】商队今天摆出来的东西（你身上有 ").append(coins).append(" 金币）：\n");
+        int shown = 0;
+        for (SandboxShopItem item : affordable) {
+            if (shown >= 8) {
+                break;
+            }
+            sb.append("- ").append(item.getName()).append("：").append(item.getPrice()).append(" 金币");
+            if (notBlank(item.getDescription())) {
+                sb.append("（").append(truncate(item.getDescription(), 18)).append("）");
+            }
+            sb.append("，剩 ").append(item.getStock()).append(" 件\n");
+            shown++;
+        }
+        sb.append("（想买就把商品名写进 shop_buy，钱会自动从你的 ").append(coins).append(" 金币里扣；不需要就别买）\n");
+    }
+
+    /**
+     * 往用户提示词里追加【从这里出发的距离】。
+     *
+     * 以前只给坐标数字，AI 根本算不出"多远"：实测出现过 39 个坐标单位（约 78 km）
+     * 只花 180 分钟、8 个单位也花 120 分钟这种自相矛盾。这里直接把
+     * "距离多少 km + 步行多久 + 最快方式多久"算好给它，AI 只负责按结果选目的地和交通方式。
+     *
+     * 放在用户提示词而不是系统提示词：它随角色位置变化，放前面会破坏系统提示词的稳定前缀（上下文缓存）。
+     */
+    private void appendDistancePrompt(StringBuilder sb, SandboxCharacter c) {
+        List<SandboxLocation> locations = locations(c.getWorldId());
+        if (locations.isEmpty()) {
+            return;
+        }
+        int x = c.getX() == null ? 50 : c.getX();
+        int y = c.getY() == null ? 50 : c.getY();
+        List<String[]> modes = travelSpeeds();
+        String fastestName = "步行";
+        double fastestKmh = 0;
+        for (String[] speed : modes) {
+            double modeSpeed = Convert.toDouble(speed[1], 0d);
+            if (modeSpeed > fastestKmh) {
+                fastestKmh = modeSpeed;
+                fastestName = speed[0];
+            }
+        }
+        if (fastestKmh <= 0) {
+            fastestKmh = 4d;
+        }
+        double walkKmh = walkSpeedKmh();
+        sb.append("\n【从这里出发的距离】（地图宽 ").append((int) mapWidthKm())
+                .append(" km；交通方式参考：").append(travelSpeedsText()).append("）\n");
+        // 按距离从近到远排，AI 通常更愿意去近的地方
+        List<Object[]> rows = new ArrayList<>();
+        for (SandboxLocation location : locations) {
+            double km = kmToLocation(x, y, location);
+            if (km > 900) {
+                continue;
+            }
+            rows.add(new Object[]{location, km});
+        }
+        rows.sort(Comparator.comparingDouble(row -> (double) row[1]));
+        for (Object[] row : rows) {
+            SandboxLocation location = (SandboxLocation) row[0];
+            double km = (double) row[1];
+            sb.append("- ").append(location.getName()).append("：");
+            if (km <= 0.05) {
+                sb.append("就在这里（同一片区域内）");
+            } else {
+                sb.append("约 ").append(SandboxGeo.kmText(km))
+                        .append("（").append(travelTimeText(km, "步行", walkKmh));
+                if (fastestKmh > walkKmh && !fastestName.contains("步行")) {
+                    sb.append("；").append(travelTimeText(km, fastestName, fastestKmh));
+                }
+                sb.append("）");
+            }
+            sb.append("\n");
+        }
+        sb.append("（距离超过几公里就别硬走：结合世界观挑个交通方式，例如花钱搭商队的货车、租马、坐船，")
+                .append("把路上时间如实写进 next_after_minutes；短距离或就在附近时步行更自然）\n");
     }
 
     /** 用户提示词：当前状态 + 最近记忆 + 其他居民的动静 + 旅人的话 + 本次指令 */
@@ -1964,13 +2663,32 @@ public class SandboxServiceImpl implements SandboxService {
         StringBuilder sb = new StringBuilder();
         LocalDateTime now = LocalDateTime.now();
         sb.append("【当前状态】\n")
-                .append("现在时间：").append(timeText(now)).append("\n")
+                .append("现在时间：").append(timeText(now)).append(sleepHint(now)).append("\n")
                 .append("当前位置：").append(blankToDefault(placeText(c.getLocationName(), c.getSubLocation()), "尚未确定"))
                 .append("（x=").append(c.getX() == null ? 50 : c.getX())
                 .append(", y=").append(c.getY() == null ? 50 : c.getY()).append("）\n")
-                .append("身上金币：").append(c.getCoins() == null ? 0 : c.getCoins()).append(" 枚\n")
+                .append("身上金币：").append(c.getCoins() == null ? 0 : c.getCoins())
+                .append(" 枚（本次非集市花费请不要超过 ")
+                .append(SandboxSpendLimit.maxSpend(c.getCoins() == null ? 0 : c.getCoins(),
+                        intConfig("sandbox_max_spend_per_act", 10)))
+                .append(" 金币）\n")
                 .append("战斗力：").append(c.getCombatPower() == null ? COMBAT_POWER_DEFAULT : c.getCombatPower())
-                .append("（只有真正影响实力的事情才需要改：学会新魔法、得到强力装备、受伤等；日常行动填 0）\n");
+                .append("（只有真正影响实力的事情才需要改：学会新魔法、得到强力装备、受伤等；日常行动填 0）\n")
+                .append("当前目标：").append(blankToDefault(c.getGoal(), "（还没有明确目标，可以自己定一个要去做的事）")).append("\n");
+        // 对实力 / 财富的态度：让"战斗力"与"金币"的变化带着性格走，而不是谁都拼命变强、拼命攒钱
+        if (notBlank(c.getPowerView()) || notBlank(c.getWealthView())) {
+            sb.append("你的态度：");
+            if (notBlank(c.getPowerView())) {
+                sb.append("对实力——").append(truncate(c.getPowerView(), 60));
+            }
+            if (notBlank(c.getWealthView())) {
+                if (notBlank(c.getPowerView())) {
+                    sb.append("；");
+                }
+                sb.append("对财富——").append(truncate(c.getWealthView(), 60));
+            }
+            sb.append("（按这个态度决定要不要变强、要不要为钱奔波，也会影响你的心情）\n");
+        }
         Map<String, Object> status = parseStatus(c.getStatusJson());
         if (!status.isEmpty()) {
             sb.append("当前状态：").append(JSONUtil.toJsonStr(status)).append("\n");
@@ -1990,6 +2708,10 @@ public class SandboxServiceImpl implements SandboxService {
                         .append(" 种物品，比较满了：这一步可以顺手用掉、送人或丢掉一些不常用的东西）\n");
             }
         }
+        // 旅人集市：只列「今天买得起」的商品，控制 token（名称 + 金币价 + 库存 + 极短描述）
+        appendShopPrompt(sb, c);
+        // 各地点的实际距离（km）：坐标对 AI 没有意义，给它"多远、要多久"才用得上
+        appendDistancePrompt(sb, c);
         // 其他居民（含此刻位置）：这部分每次都可能变，放在用户提示词里，让系统提示词保持稳定前缀
         sb.append("\n【世界里的其他居民】你们生活在同一个世界里，可能在同一地点相遇、交谈、同行或互相影响：\n");
         if (companions.isEmpty()) {
@@ -2005,6 +2727,26 @@ public class SandboxServiceImpl implements SandboxService {
                         .append(", y=").append(other.getY() == null ? 50 : other.getY()).append("）");
                 if (notBlank(other.getAppearance())) {
                     sb.append("；").append(truncate(other.getAppearance(), 60));
+                }
+                // 实际距离：AI 判断"要不要去找他 / 算不算相遇"全靠这个，光给坐标它算不明白
+                double km = kmBetween(c.getX() == null ? 50 : c.getX(), c.getY() == null ? 50 : c.getY(),
+                        other.getX() == null ? 50 : other.getX(), other.getY() == null ? 50 : other.getY());
+                boolean sameSpot = sameSpot(c.getLocationName(), c.getSubLocation(),
+                        other.getLocationName(), other.getSubLocation());
+                // 不管是不是同一个区域，都给实际距离：区域大的时候，同区域也可能相距几十公里
+                sb.append("，距你约 ").append(SandboxGeo.kmText(km))
+                        .append("（").append(travelTimeText(km, "步行", walkSpeedKmh())).append("）");
+                if (sameSpot) {
+                    sb.append("，就在同一个地方");
+                }
+                // 明确告诉 AI 这一步能不能相遇：否则它会写出"碰了面"，而同行/好感度会被服务端丢掉
+                double socialMaxKm = intConfig("sandbox_social_max_km", 30);
+                if (sameSpot || socialMaxKm <= 0 || km <= socialMaxKm) {
+                    sb.append("，这一步可以相遇、一起行动");
+                } else if (km <= socialMaxKm * 2) {
+                    sb.append("，稍远：这一步赶过去只能赶路，很难同时做别的事");
+                } else {
+                    sb.append("，太远了，这一步不可能相遇");
                 }
                 sb.append("\n");
             }
@@ -2054,6 +2796,8 @@ public class SandboxServiceImpl implements SandboxService {
             sb.append("除非有明确理由（正在睡觉或养伤、专心研究或看守某个东西、被人缠住脱不开身），")
                     .append("这一步请换个地方：可以换一个二级地点，也可以动身去别的地区（路远就分几步赶路）。\n");
         }
+        // 同行统计：和同一个人连续一起行动太久时点名提醒（和「别一直待着」同一套思路）
+        appendTogethernessHint(sb, c, recent, companions);
         if (!companionActs.isEmpty()) {
             sb.append("\n【其他居民最近的动静】\n");
             List<SandboxAct> ordered = new ArrayList<>(companionActs);
@@ -2155,6 +2899,90 @@ public class SandboxServiceImpl implements SandboxService {
      * 用来在提示词里提醒 AI「你该动一动了」——比笼统地要求"多走动"有效得多。
      */
     private int stayStreak(List<SandboxAct> recent) {
+        return stayStreakReal(recent);
+    }
+
+    /**
+     * 同行统计与冷却提示：
+     *   1. 和同一个角色连续一起行动 ≥3 次 → 点名提醒"该各自去办自己的事了"；
+     *   2. 上一轮刚分开、这一轮又碰面 → 提示"你们刚分开，各自在忙自己的事"，避免分开又立刻重逢。
+     * 数据直接来自行动记录的 companions 字段，不需要新表。
+     */
+    private void appendTogethernessHint(StringBuilder sb, SandboxCharacter c, List<SandboxAct> recent,
+                                        List<SandboxCharacter> companions) {
+        if (companions.isEmpty() || recent.isEmpty()) {
+            return;
+        }
+        // 连续同行次数：从最近一条往前数，看某个名字是否一直出现
+        Map<String, Integer> streaks = new LinkedHashMap<>();
+        for (SandboxAct act : recent) {
+            String joined = act.getCompanions();
+            for (SandboxCharacter other : companions) {
+                boolean with = joined != null && joined.contains(other.getName());
+                if (!with) {
+                    // 这条没在一起：streak 到此结束（没记录过就是 0）
+                    streaks.putIfAbsent(other.getName(), 0);
+                    continue;
+                }
+                int current = streaks.getOrDefault(other.getName(), -1);
+                if (current < 0) {
+                    streaks.put(other.getName(), 1);
+                }
+            }
+        }
+        // 上面只统计了"最近一段"，这里重新用更直观的方式算：从最近一条开始连续包含
+        List<String> longTogether = new ArrayList<>();
+        List<String> justParted = new ArrayList<>();
+        for (SandboxCharacter other : companions) {
+            int streak = 0;
+            boolean broken = false;
+            for (SandboxAct act : recent) {
+                String joined = act.getCompanions();
+                boolean with = joined != null && joined.contains(other.getName());
+                if (with && !broken) {
+                    streak++;
+                } else {
+                    broken = true;
+                }
+            }
+            if (streak >= 3) {
+                longTogether.add(other.getName() + "（" + streak + " 次）");
+            } else if (streak == 0 && recentlyTogether(recent, other.getName())) {
+                // 最近这条没在一起，但更早的两条里有 → 属于"刚分开"
+                justParted.add(other.getName());
+            }
+        }
+        if (!longTogether.isEmpty()) {
+            sb.append("\n【别总黏在一起】你和 ").append(String.join("、", longTogether))
+                    .append(" 已经连续一起行动很久了。\n");
+            sb.append("除非你们正在做同一件事（一起赶路去同一个地方、组队做同一件委托、并肩守夜），")
+                    .append("这一步请分开各自去办自己的事——可以约定回头见，也可以因为目标不同而各走各的；")
+                    .append("不要为了待在一起给两个人硬编同一个目标。\n");
+        }
+        if (!justParted.isEmpty()) {
+            sb.append("\n【刚分开不久】你和 ").append(String.join("、", justParted))
+                    .append(" 上一轮刚分开，各自正在忙自己的事。\n");
+            sb.append("除非有正当理由（正好顺路、临时求助、约好了见面），否则不要立刻又凑到一起。\n");
+        }
+    }
+
+    /** 更早的两条行动里是否有过同行（用于判断"刚分开"） */
+    private boolean recentlyTogether(List<SandboxAct> recent, String name) {
+        int checked = 0;
+        for (SandboxAct act : recent) {
+            checked++;
+            if (checked > 3) {
+                break;
+            }
+            String joined = act.getCompanions();
+            if (joined != null && joined.contains(name)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private int stayStreakReal(List<SandboxAct> recent) {
         int streak = 0;
         String place = null;
         for (SandboxAct act : recent) {
@@ -2524,7 +3352,8 @@ public class SandboxServiceImpl implements SandboxService {
         if (item.getName() == null || item.getName().trim().isEmpty()) {
             throw new BusinessException("物品名称不能为空");
         }
-        item.setName(item.getName().trim());
+        // 物品名规范化（中英混排统一成中文），避免同一种东西因为名字不同各占一格
+        item.setName(SandboxItemName.normalize(item.getName()));
         if (item.getQuantity() == null || item.getQuantity() < 1) {
             item.setQuantity(1);
         }
@@ -2856,6 +3685,16 @@ public class SandboxServiceImpl implements SandboxService {
 
     /** 应用 AI 返回的物品变化，返回给前台展示的文字，例如「获得 干粮 +1、用掉 面包 -1」 */
     private String applyItemChanges(SandboxCharacter character, Object itemObj) {
+        return applyItemChanges(character, itemObj, Collections.emptySet());
+    }
+
+    /**
+     * 应用 AI 给的物品变化。
+     *
+     * @param ignoreNames 本次已经在集市买到的物品名：这些上面已经入过包，这里跳过，
+     *                    避免 AI 把「买到的物品」同时写进 items_change 造成数量翻倍
+     */
+    private String applyItemChanges(SandboxCharacter character, Object itemObj, Set<String> ignoreNames) {
         if (!(itemObj instanceof JSONObject)) {
             return null;
         }
@@ -2867,8 +3706,12 @@ public class SandboxServiceImpl implements SandboxService {
         LocalDateTime now = LocalDateTime.now();
         List<SandboxItem> current = items(character.getId());
         for (String key : obj.keySet()) {
-            String name = key == null ? "" : key.trim();
+            // 物品名规范化：模型偶尔中英混排（「晨雾森林 of 野浆果」），统一成中文后才能和已有物品合并
+            String name = SandboxItemName.normalize(key);
             if (name.isEmpty() || name.length() > 60) {
+                continue;
+            }
+            if (ignoreNames.contains(name)) {
                 continue;
             }
             // 兼容新旧两种写法：{"物品名": 2} 与 {"物品名": {"delta": 2, "description": "..."}}
@@ -3159,7 +4002,7 @@ public class SandboxServiceImpl implements SandboxService {
         // 记忆总结属于系统级调用：如果实际使用的是系统服务商（与角色绑定的不同），
         // 角色自己的模型名在系统服务商上通常不存在，这里改用配置的系统模型
         AiProvider provider = AuditContext.isSchedule()
-                ? aiProviderService.resolveSystemProvider(character.getProviderId())
+                ? sandboxSystemProvider(character)
                 : aiProviderService.resolveManualProvider(character.getProviderId());
         String model = character.getModel();
         if (provider != null && !provider.getId().equals(character.getProviderId())) {
@@ -3225,20 +4068,30 @@ public class SandboxServiceImpl implements SandboxService {
      * 除了提示词，这里还加了一层服务端兜底：只要自查结果丢了原 JSON 的字段，就直接丢弃它。
      */
     private String verifyOutput(SandboxCharacter character, String raw, List<SandboxLocation> locations,
-                                List<SandboxCharacter> companions) {
+                                List<SandboxCharacter> companions, List<String> issues) {
         if (raw == null || raw.trim().isEmpty()) {
             return raw;
         }
         try {
             StringBuilder sys = new StringBuilder();
-            sys.append("你是一个 JSON 校验器，只做校验与数值修正，不改写故事内容，也不新增剧情。\n")
+            // 提示词要点：以前这里写得太"照抄"，模型连「晨雾森林 of 野浆果」这种错名、以及不合理的
+            // 花费都会原样复制；现在改成"除下列必须纠正的点外，其余一个字都不许改"。
+            sys.append("你是一个 JSON 校验器：只做校验与修正，不改写故事内容，也不新增剧情。\n")
                     .append("输入是某个角色扮演输出的 JSON。请**原样保留输入中的每一个字段**（键名一个都不能少），")
-                    .append("只修正其中的数值和名字，然后输出完整的 JSON：\n")
+                    .append("然后输出完整的 JSON：\n")
                     .append("- 不允许删除、省略、改名字段，特别是 sub_location、items_change、news_refs、")
-                    .append("next_after_minutes、next_after_reason 这些字段必须原样保留；\n")
+                    .append("shop_buy、next_after_minutes、next_after_reason 这些字段必须原样保留；\n")
                     .append("- 不允许新增输入里没有的字段；\n")
-                    .append("- 不允许改写或缩写 actions、inner_voice、summary 的文字内容；\n")
+                    .append("- 不允许改写或缩写 actions、inner_voice、summary 的文字内容（错别字也保持原样）；\n")
                     .append("- 即使某个字段看起来多余，也要照抄，不要自作主张删掉。\n")
+                    .append("**必须纠正的地方（只有这些可以改，别的地方一个字都不许动）**：\n")
+                    .append("A. 物品名必须是纯中文：出现 of / and / the 这类英文连接词，要改成中文")
+                    .append("（of→的、and→和、the 直接去掉，例如「晨雾森林 of 野浆果」改成「晨雾森林的野浆果」）；\n")
+                    .append("B. coins_change 必须与 actions 里真正买的东西/服务相称，参考价：一顿饭 1~3、")
+                    .append("普通住宿 2~5、短途车马 2~6、长途车马 8~20、情报或打点 1~5、日用品 1~5；")
+                    .append("如果 actions 里买的东西明显不值这个价（例如两颗浆果和一支火把却写了 -15），")
+                    .append("就改成与参考价相符的金额；没写清用途的大额支出直接调小或改成 0；\n")
+                    .append("C. 在旅人集市买的东西只能出现在 shop_buy 里，不能同时算进 coins_change（否则等于重复付款）；\n")
                     .append("校验规则：\n")
                     .append("1. location 必须是【可用地点】里的名字，x/y 为 0~100 的整数；\n")
                     .append("2. actions 至少保留 1 条，条目内容不要改动；\n")
@@ -3253,6 +4106,7 @@ public class SandboxServiceImpl implements SandboxService {
                     .append("7. next_after_minutes 必须是大于 0 的整数，next_after_reason 必须是 2~6 个字，")
                     .append("这两个字段绝对不能删除；\n")
                     .append("8. 不要编造任何角色名或地点名。\n")
+                    .append("9. shop_buy 是集市购物清单，商品名与数量一律照抄，不要新增、不要改写、不要清空；\n")
                     .append("只输出这一段完整的 JSON，不要输出解释文字，也不要使用 Markdown 代码块标记。\n");
 
             StringBuilder user = new StringBuilder();
@@ -3273,6 +4127,13 @@ public class SandboxServiceImpl implements SandboxService {
             user.append("\n【当前好感度】");
             List<String> lines = relationLines(character.getId(), companions);
             user.append(lines.isEmpty() ? "（暂无记录，均为 0）" : String.join("；", lines));
+            // 把系统检测到的问题点名列出：比让模型自己找有效得多
+            if (issues != null && !issues.isEmpty()) {
+                user.append("\n【系统检测到的问题（必须逐条修正）】\n");
+                for (String issue : issues) {
+                    user.append("- ").append(issue).append("\n");
+                }
+            }
             user.append("\n【角色输出】\n").append(raw);
 
             String content = aiProviderService.chat(character.getProviderId(), character.getModel(),
@@ -3339,27 +4200,9 @@ public class SandboxServiceImpl implements SandboxService {
         if (raw == null) {
             return null;
         }
-        String text = raw.trim();
-        if (text.startsWith("```")) {
-            int firstLine = text.indexOf('\n');
-            if (firstLine >= 0) {
-                text = text.substring(firstLine + 1);
-            }
-            if (text.endsWith("```")) {
-                text = text.substring(0, text.length() - 3);
-            }
-            text = text.trim();
-        }
-        int start = text.indexOf('{');
-        int end = text.lastIndexOf('}');
-        if (start < 0 || end <= start) {
-            return null;
-        }
-        try {
-            return JSONUtil.parseObj(text.substring(start, end + 1));
-        } catch (Exception e) {
-            return null;
-        }
+        // 解析交给 SandboxReplyParser：它会优先取 <final> 里的 JSON，
+        // 也兼容"模型把 JSON 包在代码块里 / 前后夹了草稿自审 / 直接就是纯 JSON"这些情况
+        return SandboxReplyParser.parse(raw);
     }
 
     private String joinActions(JSONArray actions) {
@@ -3647,6 +4490,176 @@ public class SandboxServiceImpl implements SandboxService {
                 timeConfig("sandbox_night_end", LocalTime.of(7, 0)));
     }
 
+    // ============================== 距离与交通方式（km） ==============================
+
+    /** 地图宽度（km）：横向 100 个坐标单位对应多少公里，默认 200 km */
+    private double mapWidthKm() {
+        int width = intConfig("sandbox_km_map_width", 200);
+        return width <= 0 ? 200d : width;
+    }
+
+    /** 交通方式与速度（km/h），形如「步行:4,骑乘:20」；配置被改坏时兜底步行 */
+    private List<String[]> travelSpeeds() {
+        String text = configService.getConfigValue("sandbox_travel_speeds", DEFAULT_TRAVEL_SPEEDS);
+        List<String[]> list = new ArrayList<>();
+        for (String part : text.split("[,，]")) {
+            String item = part.trim();
+            if (item.isEmpty()) {
+                continue;
+            }
+            String[] pair = item.split("[:：]");
+            String name = pair[0].trim();
+            double speed = pair.length > 1 ? Convert.toDouble(pair[1].trim(), 0d) : 0d;
+            if (!name.isEmpty() && speed > 0) {
+                list.add(new String[]{name, String.valueOf(speed)});
+            }
+        }
+        if (list.isEmpty()) {
+            list.add(new String[]{"步行", "4"});
+        }
+        return list;
+    }
+
+    /** 最快交通方式的速度（km/h）：赶路时间下限按它算，别把有马有船的世界当成只能走路 */
+    private double fastestSpeedKmh() {
+        double fastest = 0;
+        for (String[] speed : travelSpeeds()) {
+            fastest = Math.max(fastest, Convert.toDouble(speed[1], 0d));
+        }
+        return fastest <= 0 ? 4d : fastest;
+    }
+
+    /** 「步行 4 km/h、骑乘 20 km/h」这样一段文字，直接写进提示词给 AI 参考 */
+    private String travelSpeedsText() {
+        List<String> parts = new ArrayList<>();
+        for (String[] speed : travelSpeeds()) {
+            parts.add(speed[0] + " " + speed[1] + " km/h");
+        }
+        return String.join("、", parts);
+    }
+
+    /** 步行速度（km/h）：配置里的「步行」，没配就按 4 km/h */
+    private double walkSpeedKmh() {
+        for (String[] speed : travelSpeeds()) {
+            if ("步行".equals(speed[0])) {
+                return Convert.toDouble(speed[1], 4d);
+            }
+        }
+        return 4d;
+    }
+
+    /** 两点之间的实际距离（km），内部已按地图 16:9 折算纵轴 */
+    private double kmBetween(int x1, int y1, int x2, int y2) {
+        return SandboxGeo.kmPointToPoint(x1, y1, x2, y2, mapWidthKm());
+    }
+
+    /** 某个坐标到地点区域的距离（km）：已经在这个地点范围内时为 0 */
+    private double kmToLocation(int x, int y, SandboxLocation location) {
+        List<double[]> polygon = polygonOf(location);
+        if (polygon == null) {
+            return kmBetween(x, y, centerX(location), centerY(location));
+        }
+        return SandboxGeo.kmToPolygon(polygon, x, y, mapWidthKm());
+    }
+
+    /** 走完这段距离按最快交通方式至少要多少分钟（服务端兜底：不允许 390 km 只走 3 小时） */
+    private int minTravelMinutes(double km) {
+        return SandboxGeo.travelMinutes(km, fastestSpeedKmh());
+    }
+
+    /**
+     * 系统级调用（定时行动、记忆总结）用哪个服务商。
+     *
+     * 优先用后台「世界与地图 → 系统服务商」里配置的那个；没配（或配的服务商被删了）就沿用原来的规则：
+     * 角色绑定的服务商如果是系统服务商就用它，否则回落到默认服务商。
+     */
+    private AiProvider sandboxSystemProvider(SandboxCharacter character) {
+        Long configured = Convert.toLong(configService.getConfigValue("sandbox_system_provider_id", ""), null);
+        if (configured != null) {
+            try {
+                return aiProviderService.resolveSystemProvider(configured);
+            } catch (Exception e) {
+                log.warn("系统服务商 id={} 不可用，回落到自动规则：{}", configured, e.getMessage());
+            }
+        }
+        return aiProviderService.resolveSystemProvider(character.getProviderId());
+    }
+
+    /**
+     * 这一步"能不能和别人互动"的角色清单。
+     *
+     * 规则（一级区域名相同**不再**算数：区域最大能有 60 多公里，两端的人其实离得很远）：
+     *   1. 同一个"具体地点"（一级地点 + 二级地点都相同）→ 直接算相遇；
+     *   2. 其余按实际距离判断，默认阈值 30 km（后台可改成 0 = 不限制）。
+     * 远在天边的人仍会出现在提示词里（AI 可以"听说"），但不允许写进 companions / favor_changes，
+     * 否则会出现"隔着一个王国互相请喝酒还涨好感度"。
+     */
+    private List<SandboxCharacter> nearbyCompanions(SandboxCharacter self, List<SandboxCharacter> companions,
+                                                    int x, int y, String locationName) {
+        double maxKm = intConfig("sandbox_social_max_km", 30);
+        List<SandboxCharacter> list = new ArrayList<>();
+        for (SandboxCharacter other : companions) {
+            if (other.getId() != null && other.getId().equals(self.getId())) {
+                continue;
+            }
+            // 同一个二级地点（AI 自创的小地点）才算"就在一起"，比一级区域精确得多
+            if (sameSpot(locationName, self.getSubLocation(), other.getLocationName(), other.getSubLocation())) {
+                list.add(other);
+                continue;
+            }
+            double km = kmBetween(x, y, other.getX() == null ? 50 : other.getX(),
+                    other.getY() == null ? 50 : other.getY());
+            if (maxKm <= 0 || km <= maxKm) {
+                list.add(other);
+            }
+        }
+        return list;
+    }
+
+    /**
+     * 是否在同一个"具体地点"：一级地点与二级地点都相同。
+     * 只用一级区域判断是不准的——像「霜白王国」横跨 50 km，两端的人根本见不到面；
+     * 而二级地点是 AI 当场自创的小地方（「城郊的碎石分岔口」），相同就意味着真的在同一处。
+     */
+    private boolean sameSpot(String locationA, String subA, String locationB, String subB) {
+        if (!notBlank(locationA) || !notBlank(subA)) {
+            return false;
+        }
+        return locationA.equals(locationB) && subA.equals(subB);
+    }
+
+    /**
+     * 赶路时间下限：AI 说从 A 到 B 只花 30 分钟，但两地相距 80 km 时，
+     * 把间隔抬到「距离 ÷ 最快交通方式」所需的时间（正常情况提示词已经让它自己算好了，这里只是兜底）。
+     */
+    private Integer applyTravelFloor(SandboxCharacter character, int x, int y, String locationName, Integer aiMinutes) {
+        if (aiMinutes == null || aiMinutes <= 0) {
+            return aiMinutes;
+        }
+        boolean moved = locationName != null && !locationName.equals(character.getLocationName());
+        double km = kmBetween(character.getX() == null ? 50 : character.getX(),
+                character.getY() == null ? 50 : character.getY(), x, y);
+        // 没换地区、又只是就近走动，就不用管
+        if (!moved && km < 5) {
+            return aiMinutes;
+        }
+        int floor = minTravelMinutes(km);
+        if (floor > aiMinutes) {
+            log.info("沙盒角色「{}」这一步移动约 {}，AI 只给了 {} 分钟，按最快交通方式抬到 {} 分钟",
+                    character.getName(), SandboxGeo.kmText(km), aiMinutes, floor);
+            return floor;
+        }
+        return aiMinutes;
+    }
+
+    /** 「步行约 5 小时」这种时间描述，避免提示词里出现 320 分钟这类不好读的数字 */
+    private String travelTimeText(double km, String mode, double speedKmh) {
+        if (km <= 0 || speedKmh <= 0) {
+            return "";
+        }
+        return mode + "约 " + SandboxGeo.minutesText(SandboxGeo.travelMinutes(km, speedKmh));
+    }
+
     private int intConfig(String key, int defaultValue) {
         try {
             return Integer.parseInt(configService.getConfigValue(key, String.valueOf(defaultValue)).trim());
@@ -3674,7 +4687,8 @@ public class SandboxServiceImpl implements SandboxService {
 
     // ============================== 旅人集市 ==============================
 
-    /** 各品质对应的价格区间（积分），防止 AI 给出「传说品质卖 1 积分」这种离谱定价 */
+    /** 各品质对应的价格区间（金币），防止 AI 给出「传说品质卖 1 金币」这种离谱定价。
+     *  汇率默认 1 积分 = 1 金币，所以这份区间同时也就是前台用户要付的积分量级。 */
     private static final int[][] SHOP_PRICE_RANGE = {{1, 5}, {3, 10}, {6, 18}, {12, 30}, {25, 50}};
     /** 单件商品的库存上限 */
     private static final int SHOP_STOCK_MAX = 5;
@@ -3721,7 +4735,8 @@ public class SandboxServiceImpl implements SandboxService {
         if (item.getName() == null || item.getName().trim().isEmpty()) {
             throw new BusinessException("商品名称不能为空");
         }
-        item.setName(item.getName().trim());
+        // 集市商品名也做同样的规范化，保证"背包名 = 商品名 = 购买记录名"
+        item.setName(SandboxItemName.normalize(item.getName()));
         if (item.getRarity() == null || item.getRarity() < 1 || item.getRarity() > 5) {
             item.setRarity(1);
         }
@@ -3809,7 +4824,8 @@ public class SandboxServiceImpl implements SandboxService {
                 .append("1. 商品必须符合这个世界观（技术水平、魔法程度、风俗），不要出现现代物品；\n")
                 .append("2. 每件商品给一句 15~40 字的描述，最好带一点来源或用途的故事感（例如「上个旅人当掉的旧罗盘」）；\n")
                 .append("3. rarity 是品质：1 普通 / 2 精良 / 3 稀有 / 4 史诗 / 5 传说，大多数应该是 1~2，偶尔才有 3~4；\n")
-                .append("4. price 是售价（积分），要和品质相称：普通 1~5、精良 3~10、稀有 6~18、史诗 12~30、传说 25~50；\n")
+                .append("4. price 是售价（金币，世界里的通用货币），要和品质相称：")
+                .append("普通 1~5、精良 3~10、稀有 6~18、史诗 12~30、传说 25~50；\n")
                 .append("5. stock 是今天的库存：1~5 件，越是好东西越少；\n")
                 .append("6. 只输出一个 JSON 数组，不要解释、不要 Markdown 代码块。\n")
                 .append("输出格式：[{\"name\":\"商品名\",\"description\":\"描述\",\"rarity\":1,\"price\":3,\"stock\":2}]\n");
@@ -3872,7 +4888,8 @@ public class SandboxServiceImpl implements SandboxService {
             if (item == null) {
                 continue;
             }
-            String name = truncate(trimToEmpty(item.getStr("name")), 60);
+            // AI 生成的商品名同样规范化（防止出现「晨雾森林 of 野浆果」这种混排名字）
+            String name = truncate(SandboxItemName.normalize(item.getStr("name")), 60);
             if (name.isEmpty()) {
                 continue;
             }
@@ -3950,7 +4967,7 @@ public class SandboxServiceImpl implements SandboxService {
     }
 
     /**
-     * 购买并赠送给角色：扣积分（管理员免费）→ 扣库存（条件更新，防超卖）→
+     * 前台用户购买并赠送给角色：商品按金币标价，这里按汇率折算成积分扣款（管理员免费）→ 扣库存（条件更新，防超卖）→
      * 礼物进角色背包 → 写礼物记录（角色提示词里只说「来自异世界的礼物」）→ 写购买记录。
      */
     @Override
@@ -3985,7 +5002,9 @@ public class SandboxServiceImpl implements SandboxService {
         }
         // 先确认背包收得下（新物品且背包已满时直接拒绝，避免扣了库存又塞不进去）
         checkBackpackCanAccept(character, item.getName());
-        int cost = admin ? 0 : Math.max(0, item.getPrice() == null ? 0 : item.getPrice());
+        int coinPrice = Math.max(0, item.getPrice() == null ? 0 : item.getPrice());
+        // 商品用金币标价，用户掏的是积分：按汇率折算并向上取整（例如 3 金币按 1:10 折算 = 1 积分）
+        int cost = admin ? 0 : shopPointsCost(coinPrice);
         if (cost > 0) {
             pointService.deductPoints(userId, cost, "sandbox_shop",
                     "旅人集市：把「" + item.getName() + "」送给「" + character.getName() + "」");
@@ -4006,6 +5025,7 @@ public class SandboxServiceImpl implements SandboxService {
         gift.setItemDescription(truncate(item.getDescription(), 300));
         gift.setQuantity(1);
         gift.setPointsCost(cost);
+        gift.setCoinPrice(coinPrice);
         gift.setCreateTime(now);
         giftMapper.insert(gift);
 
@@ -4019,9 +5039,16 @@ public class SandboxServiceImpl implements SandboxService {
         order.setCharacterName(character.getName());
         order.setQuantity(1);
         order.setPointsCost(cost);
+        order.setCoinPrice(coinPrice);
+        order.setBuyerType("user");
         order.setCreateTime(now);
         shopOrderMapper.insert(order);
         return order;
+    }
+
+    /** 金币价折算成积分：按 sandbox_coin_rate 换算并向上取整（1 金币不能算成 0 积分） */
+    private int shopPointsCost(int coinPrice) {
+        return SandboxShopCoin.pointsOf(coinPrice, intConfig("sandbox_coin_rate", 1));
     }
 
     /** 背包能不能收下这件礼物：已有同名物品都能收（只加数量），新物品要看种类上限 */
@@ -4037,15 +5064,21 @@ public class SandboxServiceImpl implements SandboxService {
         }
     }
 
-    /** 礼物进角色背包：已有就加数量，没有就新建一件 */
+    /** 礼物进角色背包（数量固定 1 件） */
     private void addGiftToBackpack(SandboxCharacter character, SandboxShopItem item) {
+        addToBackpack(character, item.getName(), 1, item.getRarity(), item.getIcon(), item.getDescription());
+    }
+
+    /** 物品进角色背包：已有就加数量，没有就新建一件 */
+    private void addToBackpack(SandboxCharacter character, String name, int quantity,
+                              Integer rarity, String icon, String description) {
         LocalDateTime now = LocalDateTime.now();
         for (SandboxItem owned : items(character.getId())) {
-            if (owned.getName() != null && owned.getName().equals(item.getName())) {
-                int quantity = (owned.getQuantity() == null ? 1 : owned.getQuantity()) + 1;
+            if (owned.getName() != null && owned.getName().equals(name)) {
+                int total = (owned.getQuantity() == null ? 1 : owned.getQuantity()) + quantity;
                 itemMapper.update(null, new LambdaUpdateWrapper<SandboxItem>()
                         .eq(SandboxItem::getId, owned.getId())
-                        .set(SandboxItem::getQuantity, quantity)
+                        .set(SandboxItem::getQuantity, total)
                         .set(SandboxItem::getUpdateTime, now));
                 return;
             }
@@ -4053,14 +5086,138 @@ public class SandboxServiceImpl implements SandboxService {
         SandboxItem created = new SandboxItem();
         created.setWorldId(character.getWorldId());
         created.setCharacterId(character.getId());
-        created.setName(item.getName());
-        created.setQuantity(1);
-        created.setRarity(item.getRarity());
-        created.setIcon(item.getIcon());
-        created.setDescription(truncate(item.getDescription(), 300));
+        created.setName(name);
+        created.setQuantity(quantity);
+        created.setRarity(rarity);
+        created.setIcon(icon);
+        created.setDescription(truncate(description, 300));
         created.setCreateTime(now);
         created.setUpdateTime(now);
         itemMapper.insert(created);
+    }
+
+    /**
+     * 角色自己在旅人集市买东西（AI 在行动里返回 shop_buy 时调用）。
+     *
+     * 规则：
+     *   1. 商品必须来自当前这一批（前台只展示最新一批），且没有售罄、没有下架；
+     *   2. 用**角色自己的金币**结算，余额不足就买不成（不会扣成负数）；
+     *   3. 每天最多买 sandbox_shop_buy_per_day 件（默认 2），防止 AI 每步都去集市；
+     *   4. 买到的东西进背包；库存用条件更新扣减，和前台用户抢购天然互斥。
+     *
+     * @param coinsRef 长度 1 的数组，回传扣款后的金币余额（金币是本方法算出、随后统一落库的）
+     * @return 买到的东西的文字说明（追加进行动的物品变化里，前台时间线能看到），没买到返回 null
+     */
+    private String applyShopPurchases(SandboxCharacter character, Object shopBuy, int[] coinsRef, Set<String> boughtNames) {
+        if (!(shopBuy instanceof JSONArray) || ((JSONArray) shopBuy).isEmpty()) {
+            return null;
+        }
+        if (!"1".equals(configService.getConfigValue("sandbox_shop_enabled", "1"))) {
+            return null;
+        }
+        int perDay = intConfig("sandbox_shop_buy_per_day", 2);
+        int boughtCount = 0;
+        if (perDay > 0) {
+            Long boughtToday = shopOrderMapper.selectCount(new LambdaQueryWrapper<SandboxShopOrder>()
+                    .eq(SandboxShopOrder::getCharacterId, character.getId())
+                    .eq(SandboxShopOrder::getBuyerType, "character")
+                    .ge(SandboxShopOrder::getCreateTime, LocalDate.now().atStartOfDay()));
+            boughtCount = boughtToday == null ? 0 : boughtToday.intValue();
+            if (boughtCount >= perDay) {
+                return null;
+            }
+        }
+        List<SandboxShopItem> batch = latestShopBatch(character.getWorldId(), true);
+        if (batch.isEmpty()) {
+            return null;
+        }
+        List<String> changes = new ArrayList<>();
+        for (Object raw : (JSONArray) shopBuy) {
+            String name;
+            int quantity = 1;
+            if (raw instanceof JSONObject) {
+                name = SandboxItemName.normalize(((JSONObject) raw).getStr("name"));
+                quantity = Math.max(1, Math.min(3, Convert.toInt(((JSONObject) raw).get("quantity"), 1)));
+            } else {
+                name = SandboxItemName.normalize(Convert.toStr(raw));
+            }
+            if (name.isEmpty()) {
+                continue;
+            }
+            SandboxShopItem item = null;
+            for (SandboxShopItem candidate : batch) {
+                if (candidate.getName() != null && candidate.getName().equals(name)) {
+                    item = candidate;
+                    break;
+                }
+            }
+            // 没在当天这批商品里（AI 编的名字）直接忽略，不做任何扣款
+            if (item == null) {
+                continue;
+            }
+            int price = Math.max(0, item.getPrice() == null ? 0 : item.getPrice());
+            int stock = item.getStock() == null ? 0 : item.getStock();
+            quantity = Math.min(quantity, stock);
+            if (quantity <= 0) {
+                continue;
+            }
+            if (perDay > 0 && boughtCount >= perDay) {
+                break;
+            }
+            if (perDay > 0) {
+                quantity = Math.min(quantity, perDay - boughtCount);
+            }
+            int total = price * quantity;
+            // 背包收不下就不买（避免扣了钱塞不进背包）
+            List<SandboxItem> backpack = items(character.getId());
+            boolean owned = false;
+            for (SandboxItem ownedItem : backpack) {
+                if (ownedItem.getName() != null && ownedItem.getName().equals(item.getName())) {
+                    owned = true;
+                    break;
+                }
+            }
+            if (!owned && backpack.size() >= ITEM_KIND_MAX) {
+                continue;
+            }
+            // 条件更新扣库存：和前台用户抢购同一个商品时谁先到谁买到
+            int updated = shopItemMapper.update(null, new LambdaUpdateWrapper<SandboxShopItem>()
+                    .eq(SandboxShopItem::getId, item.getId())
+                    .ge(SandboxShopItem::getStock, quantity)
+                    .setSql("stock = stock - " + quantity));
+            if (updated <= 0) {
+                continue;
+            }
+            // 原子扣款：余额够才买（读快照会因为并发而不准）；扣不动就把刚扣的库存还回去
+            Integer balance = trySpendCoins(character.getId(), total);
+            if (balance == null) {
+                shopItemMapper.update(null, new LambdaUpdateWrapper<SandboxShopItem>()
+                        .eq(SandboxShopItem::getId, item.getId())
+                        .setSql("stock = stock + " + quantity));
+                continue;
+            }
+            coinsRef[0] = balance;
+            boughtCount += quantity;
+            boughtNames.add(item.getName());
+            addToBackpack(character, item.getName(), quantity, item.getRarity(), item.getIcon(), item.getDescription());
+            LocalDateTime now = LocalDateTime.now();
+            SandboxShopOrder order = new SandboxShopOrder();
+            order.setWorldId(item.getWorldId());
+            order.setItemId(item.getId());
+            order.setItemName(item.getName());
+            order.setCharacterId(character.getId());
+            order.setCharacterName(character.getName());
+            order.setQuantity(quantity);
+            order.setPointsCost(0);
+            order.setCoinPrice(price);
+            order.setBuyerType("character");
+            order.setCreateTime(now);
+            shopOrderMapper.insert(order);
+            addCoinLog(character.getId(), null, null, "shop_buy", -total, 0, balance,
+                    "在旅人集市买下「" + item.getName() + "」");
+            changes.add("在旅人集市买下 " + item.getName() + " -" + total + " 金币");
+        }
+        return changes.isEmpty() ? null : truncate(String.join("、", changes), 200);
     }
 
     @Override
@@ -4072,7 +5229,7 @@ public class SandboxServiceImpl implements SandboxService {
         return PageResult.of(result.getTotal(), result.getRecords());
     }
 
-    /** 集市今日统计：卖出多少件、回收多少积分（后台观察积分经济用） */
+    /** 集市今日统计：卖出多少件、回收多少积分与金币、角色自购几件（后台观察经济用） */
     @Override
     public Map<String, Object> shopStats(Long worldId) {
         List<SandboxShopOrder> today = shopOrderMapper.selectList(new LambdaQueryWrapper<SandboxShopOrder>()
@@ -4080,13 +5237,22 @@ public class SandboxServiceImpl implements SandboxService {
                 .ge(SandboxShopOrder::getCreateTime, LocalDate.now().atStartOfDay()));
         int sold = 0;
         int points = 0;
+        int coins = 0;
+        int characterBuys = 0;
         for (SandboxShopOrder order : today) {
-            sold += order.getQuantity() == null ? 1 : order.getQuantity();
+            int quantity = order.getQuantity() == null ? 1 : order.getQuantity();
+            sold += quantity;
             points += order.getPointsCost() == null ? 0 : order.getPointsCost();
+            coins += (order.getCoinPrice() == null ? 0 : order.getCoinPrice()) * quantity;
+            if ("character".equals(order.getBuyerType())) {
+                characterBuys += quantity;
+            }
         }
         Map<String, Object> stats = new LinkedHashMap<>();
         stats.put("sold", sold);
         stats.put("points", points);
+        stats.put("coins", coins);
+        stats.put("characterBuys", characterBuys);
         return stats;
     }
 
@@ -4358,6 +5524,41 @@ public class SandboxServiceImpl implements SandboxService {
     }
 
     /** 把 /uploads/xxx 这类路径收集起来（去重），用于打进 zip */
+    /** 随机挑一个地点（每个角色各自随机，尽量分散到不同地区） */
+    private SandboxLocation randomLocation(List<SandboxLocation> locations, Random random) {
+        if (locations == null || locations.isEmpty()) {
+            return null;
+        }
+        return locations.get(random.nextInt(locations.size()));
+    }
+
+    /**
+     * 在地点范围内随机取一个落点：
+     *   矩形区域直接在外接矩形内随机；套索画的多边形用「随机取点 + 判断是否在区域内」的方式（最多试 40 次）；
+     *   都取不到时退回区域标注点（形心 / 内部点），单点地点就是它本身。
+     */
+    private int[] randomPointIn(SandboxLocation location, Random random) {
+        if (location == null) {
+            return new int[]{50, 50};
+        }
+        List<double[]> polygon = polygonOf(location);
+        if (polygon == null) {
+            return new int[]{clamp(areaX(location)), clamp(areaY(location))};
+        }
+        double[] box = SandboxGeo.bbox(polygon);
+        double width = Math.max(1, box[2] - box[0]);
+        double height = Math.max(1, box[3] - box[1]);
+        for (int i = 0; i < 40; i++) {
+            double x = box[0] + random.nextDouble() * width;
+            double y = box[1] + random.nextDouble() * height;
+            if (SandboxGeo.contains(polygon, x, y)) {
+                return new int[]{clamp((int) Math.round(x)), clamp((int) Math.round(y))};
+            }
+        }
+        double[] fallback = SandboxGeo.labelPoint(polygon);
+        return new int[]{clamp((int) Math.round(fallback[0])), clamp((int) Math.round(fallback[1]))};
+    }
+
     /**
      * 导入存档：支持 zip（world.json + 图片）或纯 world.json。
      * 覆盖模式会先清空目标世界的进度；新建模式会另起一个世界。
@@ -4916,22 +6117,24 @@ public class SandboxServiceImpl implements SandboxService {
         stats.put("shopItems", shopItemMapper.delete(new LambdaQueryWrapper<SandboxShopItem>()
                 .eq(SandboxShopItem::getWorldId, worldId)));
 
-        // 位置回到第一个地点的中心；没有地点就回地图中央
+        // 位置：每个角色随机分配到一个地点、并在该地点范围内随机落点（避免清空后全挤在同一个地方）
         List<SandboxLocation> locations = locations(worldId);
-        SandboxLocation first = locations.isEmpty() ? null : locations.get(0);
-        int x = first == null ? 50 : centerX(first);
-        int y = first == null ? 50 : centerY(first);
+        Random random = new Random();
         // 下次行动时间：给一个间隔之后再开始，避免清空瞬间所有角色一起调用 AI
         int delay = Math.max(15, intConfig("sandbox_interval_max", 75));
         LocalDateTime next = LocalDateTime.now().plusMinutes(delay);
         int count = 0;
         for (SandboxCharacter character : characters(worldId)) {
+            SandboxLocation spot = randomLocation(locations, random);
+            int[] point = randomPointIn(spot, random);
             characterMapper.update(null, new LambdaUpdateWrapper<SandboxCharacter>()
                     .eq(SandboxCharacter::getId, character.getId())
-                    .set(SandboxCharacter::getX, x)
-                    .set(SandboxCharacter::getY, y)
-                    .set(SandboxCharacter::getLocationName, first == null ? null : first.getName())
+                    .set(SandboxCharacter::getX, point[0])
+                    .set(SandboxCharacter::getY, point[1])
+                    .set(SandboxCharacter::getLocationName, spot == null ? null : spot.getName())
                     .set(SandboxCharacter::getSubLocation, null)
+                    // 清空「当前目标」：新的一局让 AI 自己重新立一个目标
+                    .set(SandboxCharacter::getGoal, null)
                     .set(SandboxCharacter::getStatusJson, RESET_STATUS_JSON)
                     .set(SandboxCharacter::getCoins, 0)
                     .set(SandboxCharacter::getCombatPower, COMBAT_POWER_DEFAULT)
