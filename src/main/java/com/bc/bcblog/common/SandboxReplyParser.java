@@ -25,10 +25,11 @@ public final class SandboxReplyParser {
     private static final Pattern FINAL_BLOCK = Pattern.compile("(?is)<final>(.*?)(?:</final>|$)");
     private static final Pattern DRAFT_BLOCK = Pattern.compile("(?is)<draft>.*?</draft>");
     private static final Pattern REVIEW_BLOCK = Pattern.compile("(?is)<review>.*?</review>");
+    private static final Pattern THINK_BLOCK = Pattern.compile("(?is)<think>.*?</think>");
     /** 代码块围栏（有的模型爱把 JSON 包在 ```json 里） */
     private static final Pattern CODE_FENCE = Pattern.compile("(?is)```[a-zA-Z]*\\s*(.*?)```");
     /** 残留的三段标记 */
-    private static final Pattern MARKER_TAG = Pattern.compile("(?i)</?(draft|review|final)>");
+    private static final Pattern MARKER_TAG = Pattern.compile("(?i)</?(think|draft|review|final)>");
 
     private SandboxReplyParser() {
     }
@@ -87,6 +88,7 @@ public final class SandboxReplyParser {
         }
         text = DRAFT_BLOCK.matcher(text).replaceAll("");
         text = REVIEW_BLOCK.matcher(text).replaceAll("");
+        text = THINK_BLOCK.matcher(text).replaceAll("");
         text = MARKER_TAG.matcher(text).replaceAll("");
         return text.trim();
     }

@@ -466,6 +466,7 @@ public class SandboxServiceImpl implements SandboxService {
         vo.setVerifyEnabled(configService.getConfigValue("sandbox_verify_enabled", "0"));
         vo.setVerifyMode(verifyMode());
         vo.setDraftMode(configService.getConfigValue("sandbox_draft_mode", "on"));
+        vo.setThinkStage(configService.getConfigValue("sandbox_think_stage", "on"));
         vo.setStyleExtra(configService.getConfigValue("sandbox_style_extra", ""));
         vo.setBatchWindowMinutes(configService.getConfigValue("sandbox_batch_window_minutes", "5"));
         vo.setChainMaxDepth(configService.getConfigValue("sandbox_chain_max_depth", "1"));
@@ -521,6 +522,7 @@ public class SandboxServiceImpl implements SandboxService {
         writeSetting("sandbox_whisper_points", vo.getWhisperPoints());
         writeSetting("sandbox_verify_enabled", vo.getVerifyEnabled());
         writeSetting("sandbox_draft_mode", vo.getDraftMode());
+        writeSetting("sandbox_think_stage", vo.getThinkStage());
         writeSetting("sandbox_style_extra", vo.getStyleExtra());
         // 新的三档自查模式；同时把旧开关写成 1/0，保证还有别的读取者时行为一致
         writeSetting("sandbox_verify_mode", vo.getVerifyMode());
@@ -1525,7 +1527,9 @@ public class SandboxServiceImpl implements SandboxService {
         if (!draftModeOn()) {
             return aiProviderService.chat(provider, model, systemPrompt, userPrompt, temperature);
         }
-        String prefill = "<draft>\n";
+        // 预填充必须和提示词里的"第一段"一致：开了思考阶段就先写 <think>，否则先写 <draft>。
+        // （以前写死 <draft>，模型被逼着先写草稿，<think> 只能排到后面，段落顺序就乱了）
+        String prefill = thinkStageOn() ? "<think>\n" : "<draft>\n";
         List<ChatMessage> messages = new ArrayList<>();
         messages.add(ChatMessage.system(systemPrompt));
         messages.add(ChatMessage.user(userPrompt));
@@ -2509,30 +2513,46 @@ public class SandboxServiceImpl implements SandboxService {
     }
 
     /**
-     * 三段式输出流程：先写草稿、再自审、最后给终稿 JSON。
+     * 输出流程（三段式 / 四段式）：思考（可选）→ 草稿 → 自审 → 终稿 JSON。
      *
      * 为什么这样设计：用的多是免费接口（输出 token 不心疼），与其在容易掉字段之后补救
      * （补全/重跑要再花一次调用），不如在同一次输出里让它先想清楚、再自检一遍。
-     * 服务端只认 &lt;final&gt; 里的 JSON，草稿与自审不会进任何业务字段。
+     * 服务端只认 &lt;final&gt; 里的 JSON，前面几段不会进任何业务字段、也不会出现在前台。
      */
     private void appendDraftFlow(StringBuilder sb) {
         if (!draftModeOn()) {
             return;
         }
         sb.append("\n【本次输出流程·必须严格遵守】\n");
-        sb.append("请按顺序输出三段，一个都不能少，并且不要在段外写任何解释：\n");
-        sb.append("第一段 <draft>：用 2~5 句白话打草稿——这一步打算做什么、为什么（结合当前状态/目标/记忆）、");
-        sb.append("会涉及哪些字段、金币与物品的收支是怎么来的。这一段不要写 JSON，控制在 200 字以内。\n");
-        sb.append("第二段 <review>：对照下面的清单自检草稿，并写出你打算怎么改（200 字以内）：\n");
+        sb.append("请按顺序输出").append(thinkStageOn() ? "四段" : "三段").append("，一个都不能少，段外不要写任何解释。");
+        sb.append("这几段只是给你自己想清楚用的，篇幅不限，但**最后一段必须是完整的 JSON**。\n");
+        if (thinkStageOn()) {
+            sb.append("第一段 <think>：先想清楚再动笔。写下你现在的处境（时间/位置/体力魔力/金币/背包）、");
+            sb.append("有哪几种可选做法（列出 2~3 个）、你为什么选这一个、这么做的代价与风险是什么");
+            sb.append("（会不会累垮、钱够不够、赶不赶得上、是否偏离目标或与记忆矛盾）。");
+            sb.append("这一段允许写长，鼓励真正权衡；但不要在这里排演具体动作台词。\n");
+            sb.append("写法上用角色名或第三人称来写取舍，**不要出现「我打算让她…」「我决定让他…」这类作者口吻**。\n");
+        }
+        sb.append("【草稿】<draft>：用 2~5 句白话写这一步具体做什么——动作顺序、");
+        sb.append("会涉及哪些字段、金币与物品的收支是怎么来的。这一段不要写 JSON。\n");
+        sb.append("【自审】<review>：对照下面的清单自检草稿，并写出你打算怎么改：\n");
         sb.append("· 地点与坐标是否落在【地图地点】的范围内；\n");
         sb.append("· 下一步间隔是否和做的事相符、是否符合当前时间与作息；\n");
         sb.append("· 物品是否有合理来源、名称是否为纯中文（不得出现 of / the / and 这类英文）；\n");
         sb.append("· 金币收支是否与 actions 里真正买的东西相称（参考价），有没有把集市买的东西重复算进 coins_change；\n");
         sb.append("· 是否符合人设、态度、记忆与当前目标，有没有和上一轮矛盾。\n");
-        sb.append("第三段 <final>：给出修正后的最终 JSON，必须完整、合法、字段齐全（结构见【输出要求】），");
-        sb.append("而且只有这一段是 JSON。\n");
-        sb.append("注意：草稿与自审只是给你自己用的思考过程，绝不能把里面的内容写进 final 的 actions、");
-        sb.append("inner_voice 或 summary；也不要在这两段里输出 JSON 或代码块标记。\n");
+        sb.append("自审的最后一行必须给出**最终决定**（后面 JSON 要照着它写）：地点与二级地点、");
+        sb.append("下一步间隔多少分钟、物品变化、金币变化各是什么。**如果中途改了主意，就在这里写清新结论**，");
+        sb.append("不要让 final 与这里的结论不一致。\n");
+        sb.append("【终稿】<final>：给出修正后的最终 JSON，必须完整、合法、字段齐全（结构见【输出要求】），");
+        sb.append("而且只有这一段是 JSON。**<final> 必须是整段回复的最后内容，后面不允许再有任何文字**。\n");
+        sb.append("注意：前面几段都是给你自己用的思考过程，绝不能把里面的内容写进 final 的 actions、");
+        sb.append("inner_voice 或 summary；也不要在那几段里输出 JSON 或代码块标记。\n");
+    }
+
+    /** 思考阶段（四段式的最前面一段）是否开启；默认开启，仅在三段式开启时生效 */
+    private boolean thinkStageOn() {
+        return !"off".equalsIgnoreCase(configService.getConfigValue("sandbox_think_stage", "on").trim());
     }
 
     /**

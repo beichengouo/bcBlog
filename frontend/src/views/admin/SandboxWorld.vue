@@ -466,9 +466,17 @@
         <el-form-item label="三段式输出">
           <el-switch v-model="settings.draftMode" active-value="on" inactive-value="off" />
           <span class="tip">
-            开启后要求 AI 在同一次回复里先写「草稿 → 自审 → 终稿」：先想清楚这一步要做什么，
-            再对照清单自检（地点/间隔/物品来源/花费是否相称/是否重复付款/是否符合人设），最后才给最终 JSON。
-            服务端只取终稿，草稿与自审不会出现在前台；代价是输出变长（免费接口不心疼，按量计费的接口注意成本）
+            开启后要求 AI 在同一次回复里先写「思考 → 草稿 → 自审 → 终稿」：先权衡处境与可选做法，
+            再写这一步具体做什么，然后对照清单自检（地点/间隔/物品来源/花费是否相称/是否重复付款/是否符合人设），
+            最后才给最终 JSON。服务端只取终稿，前面几段不会出现在前台；
+            代价是输出变长（免费接口不心疼，按量计费的接口注意成本）
+          </span>
+        </el-form-item>
+        <el-form-item label="思考阶段">
+          <el-switch v-model="settings.thinkStage" active-value="on" inactive-value="off" />
+          <span class="tip">
+            三段式最前面的 &lt;think&gt; 段：让 AI 先写下处境、2~3 种可选做法、为什么选这一个、代价与风险。
+            篇幅不限，不在这里排演动作。只有三段式开启时才生效；如果某个接口吃不住长输出，可以只关这一段
           </span>
         </el-form-item>
         <el-form-item label="文风补充">
@@ -623,6 +631,7 @@ const settings = reactive({
   verifyEnabled: '0',
   verifyMode: 'suspicious',
   draftMode: 'on',
+  thinkStage: 'on',
   styleExtra: '',
   batchWindowMinutes: '5',
   chainMaxDepth: '1',

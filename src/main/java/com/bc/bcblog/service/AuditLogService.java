@@ -12,6 +12,9 @@ public interface AuditLogService {
     /** 记录一次调用（动作/来源取自 AuditContext） */
     void record(String target, boolean success, String message, Long costMs);
 
+    /** 记录一次调用，并带上模型返回内容的字符数（仅 AI 调用会用到） */
+    void record(String target, boolean success, String message, Long costMs, Integer outputChars);
+
     /** 记录一次被拒绝的越权尝试 */
     void recordDenied(String action, String target);
 

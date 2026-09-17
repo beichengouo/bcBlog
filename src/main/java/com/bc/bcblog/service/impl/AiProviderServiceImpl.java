@@ -378,7 +378,8 @@ public class AiProviderServiceImpl implements AiProviderService {
         long start = System.currentTimeMillis();
         try {
             String result = doChat(p, model, messages, temperature, jsonMode);
-            auditLogService.record(p.getName() + " / " + model, true, null, System.currentTimeMillis() - start);
+            auditLogService.record(p.getName() + " / " + model, true, null, System.currentTimeMillis() - start,
+                    result == null ? 0 : result.length());
             return result;
         } catch (Exception e) {
             auditLogService.record(p.getName() + " / " + model, false, e.getMessage(),

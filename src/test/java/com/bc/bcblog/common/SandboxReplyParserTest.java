@@ -104,4 +104,21 @@ class SandboxReplyParserTest {
         String onlyDraft = SandboxReplyParser.displayText("<draft>只是草稿</draft>");
         assertTrue(!onlyDraft.contains("draft"));
     }
+
+    @Test
+    @DisplayName("思考阶段：四段式能解析，且 <think> 也不会漏到前台")
+    void testThinkStage() {
+        String raw = "<think>处境：金币只有 3 枚。可选做法：A 走路上路 14 小时；B 搭商队顺风车；C 先打工。"
+                + "选 B+C：先打听顺风车，同时打点零工攒钱。代价：今晚不能赶路。</think>\n"
+                + "<draft>在酒馆打工、问明天的商队。</draft>\n"
+                + "<review>地点与间隔都合理，物品只有吃掉浆果 -1。</review>\n"
+                + "<final>" + JSON + "</final>";
+        JSONObject obj = SandboxReplyParser.parse(raw);
+        assertNotNull(obj);
+        assertEquals("晨雾森林", obj.getStr("location"));
+
+        // 解析失败时的前台兜底文本里，thinking 内容与标记都要清掉
+        String text = SandboxReplyParser.displayText("<think>内部权衡过程</think><draft>草稿</draft>");
+        assertTrue(!text.contains("think") && !text.contains("内部权衡过程"));
+    }
 }

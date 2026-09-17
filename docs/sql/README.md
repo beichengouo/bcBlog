@@ -142,6 +142,7 @@ mysql --default-character-set=utf8mb4 -uroot -p bc_blog < upgrade_20260916_batch
 | `upgrade_046_sandbox_spend_limit.sql` | 沙盒单次花费上限配置（余额分档 + 上限截断，防 AI 随口写大额支出） |
 | `upgrade_047_sandbox_verify_mode.sql` | 沙盒输出自查模式三档（默认「仅可疑时查」）+ 可疑判定规则 |
 | `upgrade_048_sandbox_draft_mode.sql` | 沙盒三段式输出（草稿→自审→终稿，默认开）+ 文风补充配置 |
+| `upgrade_049_sandbox_think_stage.sql` | 沙盒思考阶段（四段式 `<think>`，默认开）+ 审计日志记录输出字数 |
 | `upgrade_20260916_batch.sql` | **以上全部合并版（推荐，只用这一份）** |
 
 > 说明：旧的 `upgrade_20260915_batch.sql` 已经把内容并入 `upgrade_20260916_batch.sql`，

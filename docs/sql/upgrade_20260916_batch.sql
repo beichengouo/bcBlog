@@ -1861,6 +1861,26 @@ INSERT IGNORE INTO `sys_config` (`config_key`, `config_value`, `remark`) VALUES
     ('sandbox_style_extra', '', '行动提示词的【文风补充】（可粘贴酒馆预设里的写作基准段落，留空不追加）');
 
 
+-- 沙盒思考阶段（四段式）+ 审计日志输出字数（upgrade_049）
+INSERT IGNORE INTO `sys_config` (`config_key`, `config_value`, `remark`) VALUES
+    ('sandbox_think_stage', 'on', '沙盒行动提示词的思考阶段（四段式的 <think>）：on 开启（默认）/ off 关闭；仅在三段式开启时生效');
+
+DROP PROCEDURE IF EXISTS `bcblog_add_col`;
+DELIMITER //
+CREATE PROCEDURE `bcblog_add_col`(IN p_table VARCHAR(64), IN p_col VARCHAR(64), IN p_def TEXT)
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS
+                   WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = p_table AND COLUMN_NAME = p_col) THEN
+        SET @ddl = CONCAT('ALTER TABLE `', p_table, '` ADD COLUMN `', p_col, '` ', p_def);
+        PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+    END IF;
+END //
+DELIMITER ;
+CALL bcblog_add_col('admin_api_log', 'output_chars',
+    'int DEFAULT NULL COMMENT ''模型返回内容的字符数（观察输出长度与耗时用）'' AFTER `cost_ms`');
+DROP PROCEDURE IF EXISTS `bcblog_add_col`;
+
+
 -- ============================================================================
 -- 收尾 1. 清理临时存储过程
 -- ============================================================================

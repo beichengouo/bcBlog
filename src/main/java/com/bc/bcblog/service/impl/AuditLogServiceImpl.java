@@ -36,6 +36,11 @@ public class AuditLogServiceImpl implements AuditLogService {
 
     @Override
     public void record(String target, boolean success, String message, Long costMs) {
+        record(target, success, message, costMs, null);
+    }
+
+    @Override
+    public void record(String target, boolean success, String message, Long costMs, Integer outputChars) {
         try {
             AdminApiLog entity = new AdminApiLog();
             entity.setAction(AuditContext.action());
@@ -44,6 +49,7 @@ public class AuditLogServiceImpl implements AuditLogService {
             entity.setSuccess(success ? 1 : 0);
             entity.setMessage(truncate(message, 290));
             entity.setCostMs(costMs == null ? null : (int) Math.min(Integer.MAX_VALUE, costMs));
+            entity.setOutputChars(outputChars);
             entity.setCreateTime(LocalDateTime.now());
             fillCaller(entity);
             logMapper.insert(entity);

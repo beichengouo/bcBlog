@@ -63,6 +63,10 @@
       <el-table-column prop="costMs" label="耗时" width="90">
         <template #default="{ row }">{{ row.costMs ? row.costMs + ' ms' : '—' }}</template>
       </el-table-column>
+      <!-- 输出字数：配合上面的耗时，能看出放开篇幅后有没有变慢 / 撞到接口隐形上限 -->
+      <el-table-column prop="outputChars" label="输出字数" width="100">
+        <template #default="{ row }">{{ row.outputChars == null ? '—' : row.outputChars + ' 字' }}</template>
+      </el-table-column>
       <el-table-column prop="message" label="失败原因" min-width="180" show-overflow-tooltip />
       <el-table-column prop="ip" label="IP" width="130" />
     </el-table>

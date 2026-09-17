@@ -25,6 +25,8 @@ public class SandboxSettingVO {
     private String verifyMode;
     /** 三段式输出（草稿→自审→终稿）：on 开启（默认）/ off 关闭 */
     private String draftMode;
+    /** 思考阶段（四段式最前面那段 <think>）：on 开启（默认）/ off 关闭；仅在三段式开启时生效 */
+    private String thinkStage;
     /** 文风补充：管理员可粘贴酒馆预设里的写作基准段落，会拼进行动提示词 */
     private String styleExtra;
     /** 同一轮行动的时间窗（分钟） */

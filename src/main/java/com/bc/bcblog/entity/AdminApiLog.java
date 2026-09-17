@@ -30,6 +30,8 @@ public class AdminApiLog {
     private String message;
     /** 耗时毫秒 */
     private Integer costMs;
+    /** 模型返回内容的字符数（用于观察输出长度：放开篇幅后是不是变慢、有没有撞到接口隐形上限） */
+    private Integer outputChars;
     /** 调用方 IP */
     private String ip;
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
