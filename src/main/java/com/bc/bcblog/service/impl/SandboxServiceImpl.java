@@ -2497,6 +2497,11 @@ public class SandboxServiceImpl implements SandboxService {
                 .append("看重钱的人会主动接委托、摆摊、做买卖；")
                 .append("不在意实力或财富的人就别为了它们违背人设（可以安稳过日子、散财、拒绝危险委托）。")
                 .append("战斗力提升通常需要付出代价（时间、金钱、受伤风险），不要每天都涨。");
+        sb.append("\n21. 这一步的时间跨度：你写的是「从现在开始，到下一次行动为止」这段时间里发生的事。")
+                .append("位置与坐标请写**这段时间结束时**你所在的地方；")
+                .append("如果这一步花了很久（连夜赶路、睡一觉），actions 要让人看出时间跨度")
+                .append("（例如「连夜赶路，天蒙蒙亮才看见城门」），但**不要写成「已经在那里做完了下一件事」**——")
+                .append("真正抵达、开始新活动，留给下一次行动去写。");
         appendStyleExtra(sb);
         appendDraftFlow(sb);
         return sb.toString();

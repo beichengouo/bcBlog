@@ -220,7 +220,12 @@
             <div class="detail-title">
               <h2>{{ active.name }}</h2>
               <p class="title">{{ active.title || '旅行者' }}</p>
-              <p class="muted">当前位置：{{ characterPlace(active) }}</p>
+              <p class="muted">
+                <template v-if="activeTravel">
+                  正在前往 {{ placeText(activeTravel.location, activeTravel.subLocation) }}（预计 {{ activeTravel.arriveAt }} 抵达）
+                </template>
+                <template v-else>当前位置：{{ characterPlace(active) }}</template>
+              </p>
               <p class="muted">下次行动：{{ nextRunText(active) }}</p>
             </div>
             <div class="status">
@@ -390,6 +395,8 @@
           </div>
           <div v-if="!timeline.length" class="muted">还没有行动记录</div>
           <div v-for="act in timeline" :key="act.id" class="timeline-item">
+            <!-- 行动记录里仍按"这一条是什么时候生成的"显示：
+                 管理员点「立即执行」时会让下一条行动提前发生，用时段表示会重叠、反而更乱 -->
             <div class="timeline-time">{{ act.createTime }}</div>
             <div class="timeline-content">
               <div class="timeline-title">
@@ -938,6 +945,67 @@ function characterPlace(character) {
   if (!character.locationName && !character.subLocation) return '尚未行动'
   return placeText(character.locationName, character.subLocation)
 }
+
+// ============================== 「正在前往某地」的判断 ==============================
+//
+// 语义：一条行动代表「从 createTime 到 createTime + nextAfterMinutes」的这段时间，
+// 位置/坐标是这段时间**结束时**所在地。所以当角色还在这一步的时段内、并且这一步换了地点时，
+// 角色档案里显示「正在前往 X（预计 HH:mm 抵达）」，避免"人还没到、看起来却已经在那儿"。
+//
+// 注意：行动记录列表里**不**显示时段（仍按生成时刻显示）——管理员点「立即执行」会让下一条提前发生，
+// 用时段表示会重叠，反而更乱。
+
+/** 解析后端时间字符串（"2026-09-17 21:08:52"） */
+function parseActTime(text) {
+  if (!text) return null
+  const normalized = String(text).replace(' ', 'T')
+  const date = new Date(normalized)
+  return isNaN(date.getTime()) ? null : date
+}
+
+/** 只显示时:分 */
+function clockText(date) {
+  const hh = String(date.getHours()).padStart(2, '0')
+  const mm = String(date.getMinutes()).padStart(2, '0')
+  return `${hh}:${mm}`
+}
+
+/** 这一步是否还在进行中（还没到 next_after_minutes 的结束时间） */
+function actOngoing(act) {
+  const start = parseActTime(act && act.createTime)
+  const minutes = Number(act && act.nextAfterMinutes) || 0
+  if (!start || minutes <= 0) {
+    return false
+  }
+  return start.getTime() + minutes * 60000 > Date.now()
+}
+
+/** 正在赶路时返回目的地与预计抵达时间；否则 null（用角色最近的行动判断） */
+function travelingInfo(character) {
+  const acts = (character && character.recentActs) || []
+  if (acts.length === 0) {
+    return null
+  }
+  const latest = acts[0]
+  if (!actOngoing(latest)) {
+    return null
+  }
+  // 只有"这一步换了地点"才叫赶路（日常在原地活动不算）
+  const previous = acts[1]
+  if (!previous || !latest.locationName || previous.locationName === latest.locationName) {
+    return null
+  }
+  const start = parseActTime(latest.createTime)
+  const arrive = start ? new Date(start.getTime() + (Number(latest.nextAfterMinutes) || 0) * 60000) : null
+  return {
+    location: latest.locationName,
+    subLocation: latest.subLocation,
+    arriveAt: arrive ? clockText(arrive) : ''
+  }
+}
+
+/** 当前选中角色是否正在赶路（模板里用 computed，避免重复计算） */
+const activeTravel = computed(() => travelingInfo(active.value))
 
 /**
  * 初始化世界列表与当前世界。
