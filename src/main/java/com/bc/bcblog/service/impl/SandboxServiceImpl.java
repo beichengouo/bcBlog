@@ -20,6 +20,8 @@ import com.bc.bcblog.common.SandboxSpendLimit;
 import com.bc.bcblog.common.SandboxItemName;
 import com.bc.bcblog.common.SandboxOutputIssues;
 import com.bc.bcblog.common.SandboxReplyParser;
+import com.bc.bcblog.common.SandboxDeathGuard;
+import com.bc.bcblog.common.SandboxNewsMatcher;
 import com.bc.bcblog.dto.ChatMessage;
 import com.bc.bcblog.dto.SandboxCharacterGenerateDTO;
 import com.bc.bcblog.component.SensitiveWordFilter;
@@ -32,6 +34,7 @@ import com.bc.bcblog.entity.SandboxInteraction;
 import com.bc.bcblog.entity.SandboxItem;
 import com.bc.bcblog.entity.SandboxLocation;
 import com.bc.bcblog.entity.SandboxMemory;
+import com.bc.bcblog.entity.SandboxAttitudeLog;
 import com.bc.bcblog.entity.SandboxNews;
 import com.bc.bcblog.entity.SandboxRelation;
 import com.bc.bcblog.entity.SandboxWorld;
@@ -43,6 +46,7 @@ import com.bc.bcblog.mapper.SandboxInteractionMapper;
 import com.bc.bcblog.mapper.SandboxItemMapper;
 import com.bc.bcblog.mapper.SandboxLocationMapper;
 import com.bc.bcblog.mapper.SandboxMemoryMapper;
+import com.bc.bcblog.mapper.SandboxAttitudeLogMapper;
 import com.bc.bcblog.mapper.SandboxNewsMapper;
 import com.bc.bcblog.mapper.SandboxRelationMapper;
 import com.bc.bcblog.mapper.SandboxWorldMapper;
@@ -123,6 +127,19 @@ public class SandboxServiceImpl implements SandboxService {
     private static final int PORTAL_COIN_LOG_LIMIT = 5;
     /** 前台角色档案面板展示的最近记忆条数 */
     private static final int PORTAL_MEMORY_LIMIT = 3;
+    /** 前台角色档案面板展示的最近「想法变化」条数 */
+    private static final int PORTAL_ATTITUDE_LIMIT = 3;
+    /** 触发「对实力的看法」变化的相关词：出现这类经历才允许 AI 改态度 */
+    private static final List<String> POWER_TRIGGER_WORDS = Arrays.asList(
+            "战斗", "厮杀", "搏斗", "切磋", "比试", "较量", "袭击", "伏击", "追捕", "逃命", "逃跑",
+            "受伤", "重伤", "濒死", "挨打", "被打", "惨败", "输", "打赢", "击败", "战胜", "压制",
+            // 带伤反思：实测「重伤躺在床上想事情」这类行动不会出现"受伤/重伤"字面，容易漏判
+            "伤口", "伤势", "养伤", "疗伤", "流血", "被咬", "爪伤", "骨折", "虚弱", "奄奄一息",
+            "劫匪", "强盗", "魔物", "野兽", "魔兽", "狼群", "怪物", "险境", "九死一生");
+    /** 触发「对财富的看法」变化的相关词 */
+    private static final List<String> WEALTH_TRIGGER_WORDS = Arrays.asList(
+            "没钱", "缺钱", "穷", "欠债", "还债", "借钱", "被抢", "被偷", "扒手", "赔偿", "破产",
+            "典当", "赊账", "报酬", "赏金", "工钱", "攒钱", "赚钱", "发财", "暴富", "意外之财");
     /** 单次行动物品数量变化上限 */
     private static final int ITEM_STEP_MAX = 9;
     /** 背包最多保留的物品种类 */
@@ -146,6 +163,8 @@ public class SandboxServiceImpl implements SandboxService {
     private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
     /** 需要统一成 0~100 数值的标准状态项 */
     private static final List<String> STANDARD_STATUS_KEYS = Arrays.asList("体力", "魔力", "饥饿度", "饱食度");
+    /** 状态里的「伤势」项：固定四档 无恙/轻伤/重伤/濒死，由 SandboxDeathGuard 做白名单归一 */
+    private static final String INJURY_KEY = "伤势";
     /** 好感度上下限 */
     private static final int FAVOR_MIN = -100;
     private static final int FAVOR_MAX = 100;
@@ -177,6 +196,7 @@ public class SandboxServiceImpl implements SandboxService {
     private final SandboxCoinLogMapper coinLogMapper;
     private final SandboxRelationMapper relationMapper;
     private final SandboxMemoryMapper memoryMapper;
+    private final SandboxAttitudeLogMapper attitudeLogMapper;
     private final SandboxItemMapper itemMapper;
     private final SandboxNewsMapper newsMapper;
     private final AiProviderService aiProviderService;
@@ -615,9 +635,14 @@ public class SandboxServiceImpl implements SandboxService {
 
     @Override
     public List<SandboxCharacter> characters(Long worldId) {
-        return characterMapper.selectList(new LambdaQueryWrapper<SandboxCharacter>()
+        List<SandboxCharacter> list = characterMapper.selectList(new LambdaQueryWrapper<SandboxCharacter>()
                 .eq(worldId != null, SandboxCharacter::getWorldId, worldId)
                 .orderByAsc(SandboxCharacter::getId));
+        // 位置是延迟一拍落地的：返回前先结算已经到点的行程，避免调用方拿到"还在路上却显示已到达"的数据
+        for (SandboxCharacter character : list) {
+            settlePosition(character);
+        }
+        return list;
     }
 
     @Override
@@ -689,6 +714,10 @@ public class SandboxServiceImpl implements SandboxService {
         int coins = Convert.toInt(obj.get("coins"), 10);
         vo.setCoins(Math.max(0, Math.min(100, coins)));
 
+        // 战斗力：由 AI 按角色描述与世界观评估；AI 没给才回落到系统默认值（不再一律 10）
+        Integer combatPower = Convert.toInt(obj.get("combat_power"), null);
+        vo.setCombatPower(combatPower == null ? COMBAT_POWER_DEFAULT : Math.max(1, Math.min(9999, combatPower)));
+
         // 对实力 / 财富的态度：生成时由 AI 填写，管理员也可以在弹窗里改
         vo.setPowerView(truncate(trimToEmpty(obj.getStr("power_view")), 60));
         vo.setWealthView(truncate(trimToEmpty(obj.getStr("wealth_view")), 60));
@@ -734,6 +763,7 @@ public class SandboxServiceImpl implements SandboxService {
                 .append("\"sub_location\":\"初始所在的小地方，自己创作，4~12 字\",")
                 .append("\"status\":{\"体力\":100,\"魔力\":100,\"饥饿度\":20,\"心情\":\"平静\"},")
                 .append("\"coins\":10,")
+                .append("\"combat_power\":10,")
                 .append("\"power_view\":\"对自身实力的看法（4~12 字，例如 不甘平庸，想变强 / 够用就行）\",")
                 .append("\"wealth_view\":\"对金钱财富的看法（4~12 字，例如 穷怕了，拼命攒钱 / 钱是身外之物）\",")
                 .append("\"items\":[{\"name\":\"干粮\",\"quantity\":2,\"rarity\":1,\"description\":\"用油纸包着的干粮\"}]}\n")
@@ -742,12 +772,22 @@ public class SandboxServiceImpl implements SandboxService {
                 .append("2. 必须符合【世界观】的风格；location 只能从【地图地点】里挑一个；\n")
                 .append("3. status 里体力、魔力、饥饿度是 0~100 的整数，心情用简短词语；\n")
                 .append("4. coins 是初始金币，0~30 之间的整数；\n")
-                .append("5. power_view 与 wealth_view 是这名角色对「实力」和「金钱」的态度，必须与身份经历自洽，")
+                .append("5. combat_power 是这名角色的综合战斗力：由战斗技巧、魔力、装备、种族天赋共同决定。")
+                .append("必须结合角色描述、身份经历与【世界观】的力量体系评估，不要一律给 10，也不要人人都很强。参考档位：\n")
+                .append("   1~5 完全不会战斗的人（孩童、文弱学者、纯商人）；\n")
+                .append("   6~15 有基本自保能力的普通人（10 是成年人的基线）；\n")
+                .append("   16~30 受过训练的士兵、学徒级冒险者；\n")
+                .append("   31~60 老练的冒险者、精锐士兵、小有名气的法师；\n")
+                .append("   61~100 一国顶尖（圣殿骑士团长、资深大魔导师这一档）；\n")
+                .append("   101~200 传奇级，整个大陆都听说过的人物；\n")
+                .append("   200 以上 神话级（巨龙、远古魔物、圣者），只有世界观支持时才给。\n")
+                .append("   可以比照【已有角色】的战斗力取值：别让新角色一登场就压过所有老人，也别和自身人设矛盾；\n")
+                .append("6. power_view 与 wealth_view 是这名角色对「实力」和「金钱」的态度，必须与身份经历自洽，")
                 .append("并且**每个角色都要有明显差异**：有人想变强、有人只想安稳过日子；有人视钱如命、有人视钱财如粪土。")
                 .append("这两条会写进行动提示词，直接影响角色平时是去修炼/接委托，还是摸鱼、散财；要能一眼看出性格；\n")
-                .append("6. items 是背包里的初始物品，2~4 件，都是符合身份的日常小物件；")
+                .append("7. items 是背包里的初始物品，2~4 件，都是符合身份的日常小物件；")
                 .append("rarity 用 1~5（1 普通 / 2 精良 / 3 稀有 / 4 史诗 / 5 传说），不要给神器；\n")
-                .append("7. 不要输出立绘、绘图关键词、英文名或任何与 JSON 无关的内容。");
+                .append("8. 不要输出立绘、绘图关键词、英文名或任何与 JSON 无关的内容。");
         return sb.toString();
     }
 
@@ -770,16 +810,16 @@ public class SandboxServiceImpl implements SandboxService {
             }
             sb.append(String.join("、", names));
         }
-        sb.append("\n【已有角色】");
+        // 已有角色带上战斗力：让 AI 有个相对尺度，新角色不会一登场就压过所有老人
+        sb.append("\n【已有角色】（括号里是称号与当前战斗力，可作参照）");
         if (exists.isEmpty()) {
             sb.append("（暂无）");
         } else {
             List<String> characters = new ArrayList<>();
             for (SandboxCharacter character : exists) {
                 String text = character.getName();
-                if (notBlank(character.getTitle())) {
-                    text += "（" + character.getTitle() + "）";
-                }
+                int power = character.getCombatPower() == null ? COMBAT_POWER_DEFAULT : character.getCombatPower();
+                text += "（" + blankToDefault(character.getTitle(), "无称号") + "，战斗力 " + power + "）";
                 characters.add(text);
             }
             sb.append(String.join("、", characters));
@@ -800,6 +840,18 @@ public class SandboxServiceImpl implements SandboxService {
         }
         if (character.getY() != null) {
             character.setY(clamp(character.getY()));
+        }
+        // 新建时先把世界定位好：下面按坐标校正一级地点时要用到它
+        if (character.getId() == null && character.getWorldId() == null) {
+            character.setWorldId(worldId(character.getWorldId()));
+        }
+        // 坐标与一级地点必须自洽，否则「地图按地点名归类、距离按坐标计算」会互相打架
+        if (character.getX() != null && character.getY() != null) {
+            alignPlaceByPoint(character);
+        }
+        // 状态里的「伤势」统一成四档：后台手填、历史数据都不会留下"死亡"这类值
+        if (notBlank(character.getStatusJson())) {
+            character.setStatusJson(normalizeStatusJson(character.getStatusJson()));
         }
         if (character.getTemperature() != null) {
             if (character.getTemperature().compareTo(BigDecimal.ZERO) < 0) {
@@ -823,9 +875,6 @@ public class SandboxServiceImpl implements SandboxService {
             if (character.getCombatPower() == null) {
                 character.setCombatPower(COMBAT_POWER_DEFAULT);
             }
-            if (character.getWorldId() == null) {
-                character.setWorldId(worldId(character.getWorldId()));
-            }
             if (character.getTemperature() == null) {
                 character.setTemperature(new BigDecimal("0.90"));
             }
@@ -839,7 +888,10 @@ public class SandboxServiceImpl implements SandboxService {
                 character.setEnabled(1);
             }
             character.setLastError(null);
-            character.setNextRunTime(nextRunTime(character, LocalDateTime.now()));
+            // 管理员手工指定了「下次行动时间」就尊重它（用于删日志后手工回退），否则按间隔算
+            if (character.getNextRunTime() == null) {
+                character.setNextRunTime(nextRunTime(character, clock()));
+            }
             characterMapper.insert(character);
             // 新建角色如果自带初始金币，补一条流水：这样"流水合计 = 余额"始终成立，对账修复才有意义
             int initCoins = character.getCoins() == null ? 0 : character.getCoins();
@@ -857,8 +909,73 @@ public class SandboxServiceImpl implements SandboxService {
                             character.getCoins() - oldCoins, 0, character.getCoins(), "管理员调整金币");
                 }
             }
+            // 管理员手工改了位置：把最新一条行动记录的落点也同步过去。
+            // 否则等那条行动的时段走完，settlePosition() 会把他刚改的位置覆盖回去（表现为"改了没用"）。
+            if (before != null && positionChanged(before, character)) {
+                SandboxAct last = latestAct(character.getId());
+                if (last != null) {
+                    actMapper.update(null, new LambdaUpdateWrapper<SandboxAct>()
+                            .eq(SandboxAct::getId, last.getId())
+                            .set(SandboxAct::getX, character.getX())
+                            .set(SandboxAct::getY, character.getY())
+                            .set(SandboxAct::getLocationName, character.getLocationName())
+                            .set(SandboxAct::getSubLocation, character.getSubLocation()));
+                    log.info("管理员手工调整了角色「{}」的位置，已把最新一条行动记录的落点同步为 {}",
+                            character.getName(), character.getLocationName());
+                }
+            }
         }
         return character;
+    }
+
+    /**
+     * 让「一级地点名」和「坐标」保持自洽。
+     *
+     * 角色的位置由两个字段共同表示：locationName（一级地点，决定归属哪个区域、能不能相遇）
+     * 和 x / y（坐标，决定距离）。两者一旦矛盾（例如只改坐标、没改地点名），就会出现
+     * 「地图上还画在旧地方、距离却按新坐标算」，而且 AI 下次行动会把坐标夹回旧地点区域，
+     * 管理员看起来就像"改了没用"。所以保存时统一按坐标校正地点名。
+     *
+     * 规则：
+     *   1. 坐标落在某个区域里 → 地点名跟着坐标走；换了一级地点就清掉旧的二级地点。
+     *   2. 坐标不在任何区域里（地图空白处）→ 指定了地点就把坐标吸回该区域；
+     *      没指定就用离得最近的区域兜底，避免角色"站在没有地区的荒地上"。
+     */
+    private void alignPlaceByPoint(SandboxCharacter character) {
+        Long worldId = character.getWorldId();
+        if (worldId == null && character.getId() != null) {
+            SandboxCharacter before = characterMapper.selectById(character.getId());
+            worldId = before == null ? null : before.getWorldId();
+        }
+        if (worldId == null) {
+            return;
+        }
+        List<SandboxLocation> locations = locations(worldId);
+        if (locations.isEmpty()) {
+            return;
+        }
+        int x = character.getX();
+        int y = character.getY();
+        SandboxLocation hit = locationAtPoint(locations, x, y);
+        if (hit == null) {
+            SandboxLocation target = matchLocation(locations, character.getLocationName());
+            if (target == null) {
+                target = nearestLocation(locations, x, y);
+            }
+            if (target == null) {
+                return;
+            }
+            int[] fixed = clampToArea(target, x, y);
+            character.setX(clamp(fixed[0]));
+            character.setY(clamp(fixed[1]));
+            hit = target;
+        }
+        if (!hit.getName().equals(character.getLocationName())) {
+            character.setLocationName(hit.getName());
+            // 二级地点是属于旧的一级地点的，换地方后作废；
+            // 这里用空串而不是 null，因为 updateById 会忽略 null 字段、清不掉旧值
+            character.setSubLocation("");
+        }
     }
 
     @Override
@@ -877,6 +994,9 @@ public class SandboxServiceImpl implements SandboxService {
         // 背包物品与每日记忆一起清理
         itemMapper.delete(new LambdaQueryWrapper<SandboxItem>().eq(SandboxItem::getCharacterId, id));
         memoryMapper.delete(new LambdaQueryWrapper<SandboxMemory>().eq(SandboxMemory::getCharacterId, id));
+        // 想法变化记录一并清理
+        attitudeLogMapper.delete(new LambdaQueryWrapper<SandboxAttitudeLog>()
+                .eq(SandboxAttitudeLog::getCharacterId, id));
         characterMapper.deleteById(id);
     }
 
@@ -1080,7 +1200,10 @@ public class SandboxServiceImpl implements SandboxService {
         int limit = Math.max(1, intConfig("sandbox_chain_limit_per_round", 3));
         int cooldown = Math.max(0, intConfig("sandbox_reaction_cooldown_minutes", 15));
         List<SandboxCharacter> worldCharacters = otherCharacters(act.getCharacterId());
-        LocalDateTime now = LocalDateTime.now();
+        // 用沙盒时钟：行动时间戳、在途判断、结算都是它，冷却与夜间判断也必须一致，否则会互相错位
+        LocalDateTime now = clock();
+        SandboxCharacter actor = characterMapper.selectById(act.getCharacterId());
+        String actorName = actor == null ? null : actor.getName();
         for (String raw : companions.split("、")) {
             SandboxCharacter target = findByName(worldCharacters, raw.trim());
             if (target == null) {
@@ -1097,7 +1220,18 @@ public class SandboxServiceImpl implements SandboxService {
             if (target.getEnabled() == null || target.getEnabled() != 1) {
                 continue;
             }
+            // 乙：对方还在赶路就不打断它（双保险：上面的 otherCharacters 已经过滤过一轮）
+            if (traveling(target)) {
+                log.info("沙盒角色「{}」正在赶路，本次不触发它的回应行动", target.getName());
+                continue;
+            }
             if (inNight(now.toLocalTime()) || dailyLimitReached(target.getId())) {
+                continue;
+            }
+            // ③ 同一对角色之间的互动冷却：默认 4 小时内不再互相触发（防止每轮扫描又把两人凑到一起）
+            if (interactionCoolingDown(act.getCharacterId(), actorName, target.getId(), target.getName())) {
+                log.info("沙盒角色「{}」与「{}」最近互动过，互动冷却中，跳过本次回应",
+                        actorName, target.getName());
                 continue;
             }
             if (cooldown > 0 && target.getLastRunTime() != null
@@ -1110,6 +1244,32 @@ public class SandboxServiceImpl implements SandboxService {
             log.info("沙盒角色被互动触发回应回合：{} → {}", act.getCharacterId(), target.getName());
             runWithChain(target.getId(), false, true, act, depth + 1, planned, reactionCount);
         }
+    }
+
+    /**
+     * ③ 同一对角色之间的互动冷却。
+     *
+     * 判断依据：这两个人最近一次「其中一方把另一方写进 companions」的时间；
+     * 距现在不足配置的小时数就返回 true（跳过本次回应）。
+     * companions 是"、"分隔的名字串，用 FIND_IN_SET 精确匹配名字，避免「爱丽丝 / 爱丽丝儿」这类误判。
+     */
+    private boolean interactionCoolingDown(Long actorId, String actorName, Long targetId, String targetName) {
+        int hours = intConfig("sandbox_interaction_cooldown_hours", 4);
+        if (hours <= 0 || actorId == null || targetId == null
+                || !notBlank(actorName) || !notBlank(targetName)) {
+            return false;
+        }
+        LocalDateTime since = clock().minusHours(hours);
+        Number count = actMapper.selectCount(new LambdaQueryWrapper<SandboxAct>()
+                .gt(SandboxAct::getCreateTime, since)
+                .and(wrapper -> wrapper
+                        .and(w -> w.eq(SandboxAct::getCharacterId, actorId)
+                                .apply("FIND_IN_SET({0}, REPLACE(IFNULL(companions, ''), '、', ',')) > 0",
+                                        targetName))
+                        .or(w -> w.eq(SandboxAct::getCharacterId, targetId)
+                                .apply("FIND_IN_SET({0}, REPLACE(IFNULL(companions, ''), '、', ',')) > 0",
+                                        actorName))));
+        return count != null && count.longValue() > 0;
     }
 
     /**
@@ -1143,7 +1303,8 @@ public class SandboxServiceImpl implements SandboxService {
 
     /** 真正执行一次行动（调用前必须已经持有执行锁） */
     private SandboxAct runOnceLocked(Long characterId, boolean manual, boolean reaction, SandboxAct trigger) {
-        SandboxCharacter character = characterMapper.selectById(characterId);
+        // characterOf：读取角色时顺带结算"已经到点"的行程（位置是延迟一拍落地的，见 settlePosition）
+        SandboxCharacter character = characterOf(characterId);
         if (character == null) {
             throw new BusinessException("角色不存在");
         }
@@ -1206,7 +1367,8 @@ public class SandboxServiceImpl implements SandboxService {
             throw e instanceof BusinessException ? (BusinessException) e : new BusinessException(msg);
         }
 
-        LocalDateTime now = LocalDateTime.now();
+        // 用沙盒时钟（调试时可以整体平移，见 clock()）：行动时间戳与位置结算必须共用同一个"现在"
+        LocalDateTime now = clock();
         SandboxAct act = new SandboxAct();
         act.setWorldId(character.getWorldId());
         act.setCharacterId(characterId);
@@ -1288,6 +1450,20 @@ public class SandboxServiceImpl implements SandboxService {
                 subLocation = null;
             }
 
+            // ④ 回应回合：这一步是"接着对方的行动"发生的，两人必须待在同一处——
+            // 地点与坐标直接沿用触发者的行动，不允许 AI 另写一个地方（否则二级地点会乱跳、两边叙述对不上）
+            if (reaction && trigger != null) {
+                if (notBlank(trigger.getLocationName())) {
+                    locationName = trigger.getLocationName();
+                }
+                subLocation = trigger.getSubLocation();
+                if (trigger.getX() != null) {
+                    x = trigger.getX();
+                }
+                if (trigger.getY() != null) {
+                    y = trigger.getY();
+                }
+            }
             act.setLocationName(locationName);
             act.setSubLocation(subLocation);
             act.setX(x);
@@ -1304,6 +1480,13 @@ public class SandboxServiceImpl implements SandboxService {
             act.setFavorChange(applyFavorChanges(character, obj.get("favor_changes"), nearby));
             // 由 AI 决定下一次隔多久再行动（例如睡一觉就是几小时）
             aiNextMinutes = Convert.toInt(obj.get("next_after_minutes"), null);
+            // ⑤ 回应回合：时间跨度不超过触发者，让两人的这一步落在同一段时间里
+            // （否则会出现"对方说 45 分钟、回应方说 75 分钟"这种时间线错位）
+            if (reaction && trigger != null && trigger.getNextAfterMinutes() != null
+                    && trigger.getNextAfterMinutes() > 0
+                    && (aiNextMinutes == null || aiNextMinutes > trigger.getNextAfterMinutes())) {
+                aiNextMinutes = trigger.getNextAfterMinutes();
+            }
             aiNextReason = truncate(trimToEmpty(obj.getStr("next_after_reason")), 40);
             // 重试后仍然没给原因时，补一个默认原因，避免前台只显示时间
             if (aiNextReason == null || aiNextReason.isEmpty()) {
@@ -1313,6 +1496,15 @@ public class SandboxServiceImpl implements SandboxService {
             act.setNextAfterReason(aiNextReason == null || aiNextReason.isEmpty() ? null : aiNextReason);
             // 这一步参考/听说了哪几条纪闻
             act.setNewsRef(matchNewsRefs(obj.getJSONArray("news_refs"), news));
+            // 服务端兜底：AI 忘了填 news_refs，但行动文本里明确出现了某条要闻标题中的事件名词时补上
+            if (act.getNewsRef() == null) {
+                String guessed = guessNewsRef(obj, news);
+                if (guessed != null) {
+                    log.info("沙盒角色「{}」未填 news_refs，但行动涉及要闻，服务端自动补上：{}",
+                            character.getName(), guessed);
+                    act.setNewsRef(guessed);
+                }
+            }
 
             // 状态合并：AI 没提到的状态项沿用上一次的值，避免凭空丢失
             statusJson = mergeStatus(character.getStatusJson(), obj.get("status"));
@@ -1390,13 +1582,16 @@ public class SandboxServiceImpl implements SandboxService {
 
         // 赶路时间兜底：防止 AI 让角色"一步跨过 80 km 却只花 30 分钟"
         aiNextMinutes = applyTravelFloor(character, x, y, locationName, aiNextMinutes);
+        // 伤势时间兜底：濒死/重伤之后必须留出疗养时间，不能下一步就生龙活虎
+        aiNextMinutes = applyInjuryFloor(character, statusJson, aiNextMinutes);
         LocalDateTime next = resolveNextRunTime(character, now, aiNextMinutes);
         characterMapper.update(null, new LambdaUpdateWrapper<SandboxCharacter>()
                 .eq(SandboxCharacter::getId, characterId)
-                .set(SandboxCharacter::getX, x)
-                .set(SandboxCharacter::getY, y)
-                .set(SandboxCharacter::getLocationName, locationName)
-                .set(SandboxCharacter::getSubLocation, subLocation)
+                // 注意：这里**不写位置**。行动记录里的位置代表"这一步结束时所在的地方"，
+                // 角色身上的位置代表"他此刻实际所在的地方"，两者错开一拍——
+                // 等这一步的时间跨度走完，再由 settlePosition() 把落点结算到角色身上。
+                // 以前一落库就改坐标，会出现"人还在路上、系统却认为已经到了"，
+                // 目的地上的其他角色一行动就会把他当成在场的人触发互动，赶路被莫名打断。
                 .set(SandboxCharacter::getGoal, goal)
                 .set(SandboxCharacter::getStatusJson, statusJson)
                 // 金币不在这里整值写回：前面已经用原子增减落到库里了（见 addCoins / trySpendCoins）
@@ -1409,6 +1604,8 @@ public class SandboxServiceImpl implements SandboxService {
                 .set(SandboxCharacter::getFailCount, 0));
 
         actMapper.insert(act);
+        // 态度（对实力 / 财富的看法）微调：只有这一步确实发生了影响认知的事才允许改（规则 26）
+        applyAttitudeChange(character, obj, act, coins, now);
         // 金币流水已在上面（金币落库时）写过：那时余额才是这一步真实的余额
         return act;
     }
@@ -1491,6 +1688,20 @@ public class SandboxServiceImpl implements SandboxService {
                     applyAudit(mainAction, mainScheduled, mainAction);
                 }
             }
+            // 死亡硬兜底（与提示词规则 25 配对）：AI 偶尔会忽略规则把人写死，
+            // 这里扫出死亡表述后做一次"只改死亡、保剧情"的改写，改写后再本地清洗一遍。
+            String deathJson = SandboxReplyParser.extractFinalJson(candidate);
+            String deathHit = SandboxDeathGuard.detect(parseJson(deathJson == null ? candidate : deathJson));
+            if (deathHit != null) {
+                log.warn("沙盒角色「{}」的输出出现死亡表述（{}），触发死亡兜底改写", character.getName(), deathHit);
+                applyAudit(mainAction, mainScheduled, "沙盒·死亡兜底改写");
+                try {
+                    candidate = rewriteDeath(character, provider, candidate, deathHit, temperature);
+                } finally {
+                    // 还原主调用的审计标签，避免这次改写被记成主调用
+                    applyAudit(mainAction, mainScheduled, mainAction);
+                }
+            }
             missing = findMissingFields(parseJson(candidate));
             if (missing.isEmpty()) {
                 return candidate;
@@ -1511,6 +1722,39 @@ public class SandboxServiceImpl implements SandboxService {
             }
         }
         return best == null ? current : best;
+    }
+
+    /**
+     * 死亡兜底改写。
+     *
+     * 优先让 AI 改（保留原本的剧情走向：该受伤受伤、该丢钱丢钱、该被救被救），
+     * 改完再交给 {@link SandboxDeathGuard#clean(String)} 本地清洗一遍；
+     * AI 调用失败或返回不可用时，直接使用本地清洗结果——无论如何都不允许把角色写死。
+     */
+    private String rewriteDeath(SandboxCharacter character, AiProvider provider, String candidate,
+                                String hit, double temperature) {
+        String json = SandboxReplyParser.extractFinalJson(candidate);
+        if (json == null) {
+            json = candidate;
+        }
+        String produced = null;
+        try {
+            String system = "你是剧情修订员。下面的角色行动 JSON 里出现了「" + hit + "」这种把角色写死的表述。"
+                    + "本世界的规则是：**任何角色都绝对不能死亡**，最坏只能到「濒死」（昏迷、命悬一线，但仍然活着）。\n"
+                    + "请在保留原本剧情走向与代价（受伤、丢钱、丢东西、被带走都可以保留）的前提下修订：\n"
+                    + "1. 把与死亡有关的句子改成「重伤昏迷 / 濒死 / 被救下 / 昏迷很久后醒来」这类仍然活着的写法；\n"
+                    + "2. 不许出现 死亡 / 阵亡 / 丧命 / 断气 / 遗体 / 尸首 这类词；\n"
+                    + "3. status 里的「伤势」只能是 无恙 / 轻伤 / 重伤 / 濒死 之一，最坏写「濒死」；\n"
+                    + "4. JSON 结构保持不变、其它字段原样返回；只输出这一个 JSON 对象，不要解释、不要代码块标记。";
+            produced = aiProviderService.chat(provider, character.getModel(), system,
+                    "【需要修订的 JSON】\n" + json, temperature);
+        } catch (Exception e) {
+            log.warn("沙盒角色「{}」的死亡兜底改写调用失败：{}", character.getName(), e.getMessage());
+        }
+        // 本地清洗是最后一道防线：不管 AI 改得怎么样，这里都不允许再出现死亡表述
+        String safe = SandboxDeathGuard.clean(
+                produced != null && parseJson(produced) != null ? produced : json);
+        return parseJson(safe) == null ? json : safe;
     }
 
     /**
@@ -1605,7 +1849,7 @@ public class SandboxServiceImpl implements SandboxService {
                                  List<SandboxCharacter> companions) {
         StringBuilder sb = new StringBuilder();
         sb.append("【当前情况】\n")
-                .append("现在时间：").append(timeText(LocalDateTime.now())).append("\n")
+                .append("现在时间：").append(timeText(clock())).append("\n")
                 .append("角色：").append(character.getName());
         if (notBlank(character.getTitle())) {
             sb.append("（").append(character.getTitle()).append("）");
@@ -2171,6 +2415,8 @@ public class SandboxServiceImpl implements SandboxService {
     }
 
     private SandboxCharacterVO toVO(SandboxCharacter character) {
+        // 前台展示前先结算行程：这样"位置"和"正在前往"的显示不会自相矛盾
+        settlePosition(character);
         SandboxCharacterVO vo = new SandboxCharacterVO();
         vo.setId(character.getId());
         vo.setName(character.getName());
@@ -2205,6 +2451,13 @@ public class SandboxServiceImpl implements SandboxService {
                 .last("limit " + PORTAL_COIN_LOG_LIMIT));
         Collections.reverse(coinLogs);
         vo.setRecentCoins(coinLogs);
+        // 想法变化：角色对实力/财富的看法随经历微调，前台档案展示最近几条
+        List<SandboxAttitudeLog> attitudes = attitudeLogMapper.selectList(new LambdaQueryWrapper<SandboxAttitudeLog>()
+                .eq(SandboxAttitudeLog::getCharacterId, character.getId())
+                .orderByDesc(SandboxAttitudeLog::getCreateTime)
+                .orderByDesc(SandboxAttitudeLog::getId)
+                .last("limit " + PORTAL_ATTITUDE_LIMIT));
+        vo.setRecentAttitudes(attitudes);
         List<SandboxAct> acts = recentActs(character.getId(), PORTAL_ACT_LIMIT);
         // 前台按时间倒序展示：最新的一次行动排在最上面
         vo.setRecentActs(acts);
@@ -2244,6 +2497,11 @@ public class SandboxServiceImpl implements SandboxService {
 
     /** 标准状态项统一成 0~100 的整数，避免 AI 给出离谱数值 */
     private Object normalizeStatusValue(String key, Object value) {
+        // 「伤势」是档位项而不是数值：白名单归一，AI 写了「死亡」也会被归到「濒死」
+        if (INJURY_KEY.equals(key)) {
+            String injury = SandboxDeathGuard.normalizeInjury(value);
+            return injury == null ? value : injury;
+        }
         if (value instanceof Number && STANDARD_STATUS_KEYS.contains(key)) {
             int num = ((Number) value).intValue();
             return Math.max(0, Math.min(100, num));
@@ -2251,12 +2509,35 @@ public class SandboxServiceImpl implements SandboxService {
         return value;
     }
 
-    /** 给 AI 的完整时间描述：日期 + 星期 + 时刻 + 时段（北京时间） */
-    private String timeText(LocalDateTime time) {
-        String[] weeks = {"星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"};
+	    /** 给 AI 的完整时间描述：日期 + 星期 + 时刻 + 时段（北京时间） */
+	    private String timeText(LocalDateTime time) {
+	        String[] weeks = {"星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"};
         String week = weeks[time.getDayOfWeek().getValue() - 1];
         return time.format(DateTimeFormatter.ofPattern("yyyy年MM月dd日 HH:mm"))
                 + "（" + week + "，" + periodOfDay(time.toLocalTime()) + "，北京时间 UTC+8）";
+    }
+
+    /**
+     * 沙盒世界的「当前时间」。
+     *
+     * 默认就是系统真实时间；只有设置了系统属性 bcblog.sandbox.time-offset-minutes 时才整体平移——
+     * 这是给「快速模拟多天剧情」的调试/测试场景用的。**提示词时间、行动时间戳、位置结算、
+     * 在途判断、下一次行动时间都用它**，保证同一次模拟里"现在是几点"只有一个答案：
+     * 否则会出现"提示词说已经过了两天、但位置结算还按真实时间走，人永远到不了"的矛盾。
+     *
+     * 线上不设置该属性时偏移为 0，行为与以前完全一致。
+     */
+    private LocalDateTime clock() {
+        String raw = System.getProperty("bcblog.sandbox.time-offset-minutes");
+        if (raw == null || raw.trim().isEmpty()) {
+            return LocalDateTime.now();
+        }
+        try {
+            int offset = Integer.parseInt(raw.trim());
+            return offset == 0 ? LocalDateTime.now() : LocalDateTime.now().plusMinutes(offset);
+        } catch (NumberFormatException e) {
+            return LocalDateTime.now();
+        }
     }
 
     /** 把一天切成几个时段，让 AI 更容易写出符合时间的行为 */
@@ -2381,8 +2662,17 @@ public class SandboxServiceImpl implements SandboxService {
                     sb.append("（坐标 x=").append(areaX(location)).append(", y=").append(areaY(location)).append("）");
                 }
                 if (notBlank(location.getDescription())) {
-                    sb.append("：").append(location.getDescription());
+                    String desc = location.getDescription().trim();
+                    sb.append("：").append(desc);
+                    // 描述本身以标点结尾时不再补分号，避免出现「…局势。；危险度」
+                    char last = desc.charAt(desc.length() - 1);
+                    boolean ended = "。！？；，".indexOf(last) >= 0;
+                    sb.append(ended ? "危险度：" : "；危险度：");
+                } else {
+                    sb.append("；危险度：");
                 }
+                // 危险度：判断这一步会不会遭遇战斗的主要依据之一
+                sb.append(dangerText(location.getDangerLevel()));
                 sb.append("\n");
             }
         }
@@ -2392,16 +2682,32 @@ public class SandboxServiceImpl implements SandboxService {
                 .append("{\"next_after_minutes\":45,\"next_after_reason\":\"稍作停留\",")
                 .append("\"location\":\"这一步所处的地点名称，尽量使用【地图地点】里的名字\",")
                 .append("\"sub_location\":\"这一步具体所在的小地方（自己创作）\",\"x\":35,\"y\":62,")
-                .append("\"actions\":[\"具体动作一\",\"具体动作二\"],\"inner_voice\":\"角色此刻的心里话（第一人称，一句话）\",")
-                .append("\"status\":{\"体力\":80,\"魔力\":45,\"饥饿度\":30,\"心情\":\"平静\"},")
+                .append("\"actions\":[\"具体动作一\",\"具体动作二\",\"具体动作三\",\"具体动作四\"],")
+                .append("\"inner_voice\":\"角色此刻的心里话（第一人称，15~40 字，写清这一刻的念头或情绪）\",")
+                .append("\"status\":{\"体力\":80,\"魔力\":45,\"饥饿度\":30,\"心情\":\"平静\",\"伤势\":\"无恙\"},")
+                // 位置放在 status 后面（靠前），才不会被模型忽略；示例给的是"真的变了"的样子，
+                // 但下面规则 26 会强调：没有变化时必须把 kind 与 view 留空，不要照抄示例
+                .append("\"attitude_change\":{\"kind\":\"power\",\"view\":\"吃过亏，更想变强了\",")
+                .append("\"reason\":\"差点被魔物咬死\",\"major\":false},")
                 .append("\"goal\":\"当前要去做的事（10 字以内，例如 去森林采药）\",")
+                // news_refs 位置提前并给出具体示例：放在末尾 + 空数组时，AI 几乎总是直接留空
+                .append("\"news_refs\":[\"晨雾森林的商队遭遇魔物袭击，正在招募护卫随行\"],")
                 .append("\"coins_change\":0,\"combat_change\":0,\"companions\":[],\"favor_changes\":{\"角色名\":3},")
                 .append("\"items_change\":{\"物品名\":{\"delta\":1,\"description\":\"6~20 字说明它是什么、有什么用\"}},")
                 .append("\"shop_buy\":[{\"name\":\"旅人集市里的商品名\",\"quantity\":1,\"reason\":\"为什么买\"}],")
-                .append("\"news_refs\":[],\"summary\":\"30 字以内概括这一步\"}\n")
+                .append("\"summary\":\"30 字以内概括这一步\"}\n")
                 .append("要求：\n")
-                .append("1. actions 写 1~3 条具体、有画面感的动作。\n")
-                .append("2. status 必须包含体力、魔力、饥饿度（0~100 的整数）与心情（简短词语），可以再补充其它状态项；")
+                .append("1. actions 的条数**由你按这一步的复杂程度自己决定：最少 3 条、最多 8 条**：\n")
+                .append("   · 简单的一步（吃顿饭、睡一觉、买点东西）写 3~4 条就够；\n")
+                .append("   · 事情多的一步（一场战斗、长途赶路、连着办几件事、和好几个人打交道）可以写到 6~8 条，")
+                .append("把发生的事说清楚为止——**不要为了省行数把一整天压成三句话**；\n")
+                .append("   · 每条 15~50 字，写清「做了什么 + 怎么做的 + 结果或感受」，可以带上对话、环境细节、身体感受；\n")
+                .append("   · 按时间先后排列；同一个小动作不要拆成两条（「弯腰搬起箱子」和「把箱子放下」算一条）；\n")
+                .append("   · 不要为了凑数写空话——纯心理活动、抒情句请放进 inner_voice，actions 只写「发生了什么、做了什么」；\n")
+                .append("   · 人称统一：actions 用第三人称（角色名或「她/他」）叙述，**不要混用「我」**——第一人称只留给 inner_voice；\n")
+                .append("   · 也不要复述 summary：summary 是给列表看的一句话概括，actions 是给读者看的细节。\n")
+                .append("2. status 必须包含体力、魔力、饥饿度（0~100 的整数）、心情（简短词语）")
+                .append("与**伤势**（只能填 无恙 / 轻伤 / 重伤 / 濒死 之一，没受伤就写「无恙」），可以再补充其它状态项；")
                 .append("体力与魔力会随活动增减，饥饿度随时间上升、吃东西后下降。\n")
                 .append("3. 两类数值变化项，没有变化都填 0：\n")
                 .append("   · coins_change 金币（整数）：赚钱填正数、花钱填负数，不能超过身上的余额；")
@@ -2409,19 +2715,25 @@ public class SandboxServiceImpl implements SandboxService {
                 .append("   · **花钱必须与 actions 相称，金额要说得通**：一顿饭 1~3 金币、普通住宿 2~5、")
                 .append("短途车马 2~6、长途车马 8~20、情报或打点 1~5、普通日用品 1~5；")
                 .append("别为了「买了几颗浆果和一支火把」就写 -15，那种东西两三金币就够了；")
-                .append("单次行动的非集市花费不允许超过系统上限（超了会被自动截断），身上钱少时更要省着花。\n")
+                .append("单次行动的非集市花费不允许超过系统上限（超了会被自动截断），身上钱少时更要省着花。")
+                .append("战败被抢、赔偿、医药费这类损失也算花费，同样受这个上限约束：")
+                .append("一次最多 10 金币，被抢光家当这种写法会被截断，反而显得不真实。\n")
                 .append("   · **同一件东西不要重复付钱**：在旅人集市买的东西只写进 shop_buy（服务端按标价扣款），")
                 .append("**绝对不要再把它算进 coins_change**；集市里没有、但你确实买了的小东西才写进 items_change，")
                 .append("并按上面的参考价在 coins_change 里扣钱；\n")
                 .append("   · combat_change 战斗力（整数，综合实力）：只有学会新魔法、得到强力装备（+1~+3）、")
-                .append("受伤或力量受损（-1~-3）这类才给非 0，日常行动一律 0，且原因必须写进 actions。\n")
+                .append("受伤或力量受损（-1~-3）、**战斗惨败或重伤（-2~-5）**这类才给非 0，")
+                .append("日常行动一律 0，且原因必须写进 actions。\n")
                 .append("4. 行动必须符合当前时间与时段，作息要像真人：清晨 5~8 点起床准备，上午到下午适合赶路、做工或交易，")
                 .append("傍晚 18~21 点适合吃饭、收尾、闲逛、赶路或去酒馆坐坐，23 点以后多是休息或守夜。")
                 .append("**晚上 21 点之前一般不要进入整夜睡眠**——除非有明确理由：体力低于 30、受伤或生病、")
                 .append("前一天熬夜没睡好、外面风雨太大无处可去；否则会显得作息不真实。")
                 .append("如果确实要睡，就按「睡到第二天早上 6~8 点」来设置 next_after_minutes，不要出现「傍晚六点睡下、凌晨两点醒来」这种时间。\n")
                 .append("5. companions 是角色名数组：如果这一步你与【世界里的其他居民】在同一地点相遇、交谈、")
-                .append("同行或互相影响，就把他们的名字填进去（名字必须与上面列出的完全一致），没有就填 []。\n")
+                .append("同行或互相影响，就把对方的名字填进去（名字必须与上面列出的完全一致），没有就填 []。")
+                .append("**一次最多只填一个名字**：这一步只和一个人打交道，不要同时写上两三个人——")
+                .append("多人一起互动会让故事线互相打架（被写上的另一个人会在之后的某个时刻用自己的视角行动，")
+                .append("两边的地点与先后顺序就会对不上）。想和别人打交道，留到下一步再做。\n")
                 .append("6. favor_changes 表示这一步你对某个角色的好感度变化，格式是 {\"角色名\": 变化量}：")
                 .append("只有当这一步真的和对方发生了互动（并且已把对方写进 companions）时才填，否则填 {}；")
                 .append("名字必须与【世界里的其他居民】里列出的完全一致，不要用称号、不要编造；")
@@ -2438,7 +2750,9 @@ public class SandboxServiceImpl implements SandboxService {
                 .append("单次数量变化不超过 ±9，不要凭空得到贵重或神器的东西。\n")
                 .append("8. 背包里已有的物品可以继续使用或送人；【最近的记忆】是你对过去几天的印象，")
                 .append("请保持人设与记忆连贯，不要做出与记忆矛盾的事。\n")
-                .append("9. 整体风格温和、日常、有生活感，避免暴力与不适内容。\n")
+                .append("9. 整体风格真实、有生活感：该平和的地方就平和，该危险的地方就有危险——")
+                .append("野外、深夜、险地会出现野兽、魔物、劫匪、塌方、暴风雪这类意外；")
+                .append("可以写受伤、受挫、落难、饥饿，但不写血腥猎奇与不适内容，**也绝不写角色死亡**。\n")
                 .append("10. sub_location 是二级地点：请根据你所在的一级地点，自行创作一个具体的小地方，")
                 .append("例如「东侧集市」「城墙下的旧书摊」「酒馆二层」「长满萤石的树洞」；")
                 .append("要求 4~12 个字、具体可感、与一级地点的风格一致，不要直接重复一级地点名，")
@@ -2457,9 +2771,16 @@ public class SandboxServiceImpl implements SandboxService {
                 .append("不要给与行动无关的短间隔（例如「睡觉」却只隔 15 分钟）；")
                 .append("**睡觉要把间隔算到第二天早上 6~8 点**（例如 22:30 睡下就是 450~570 分钟），")
                 .append("不允许「睡 8 小时却在凌晨 2 点醒来」这种与时段的矛盾。");
-        sb.append("\n13. news_refs 是数组：如果你这一步听说了、议论了或关注了【今日要闻】里的某条事件，")
-                .append("就把那条事件的原句填进去（必须与上面列出的标题完全一致），没有就填 []；")
-                .append("听说并不代表一定要参与。");
+        sb.append("\n13. news_refs 是数组，用来记录这一步和哪几条【今日要闻】有关：")
+                .append("① 只要这一步涉及某条要闻的**地点、人物或事件**——哪怕是路过、打听、议论、心里想到——")
+                .append("就**必须**把那条要闻的标题**一字不差**地填进 news_refs；")
+                .append("② 这一步确实跟任何要闻都无关，才填 []；")
+                .append("③ 【输出要求】里那一条标题只是**格式示例**，不是让你照抄的：")
+                .append("照抄一个不存在的标题会被服务端丢掉，等于这一步的纪闻线索白填了；")
+                .append("④ 听说或关注不等于一定要参与，参不参与由你的处境决定，但「有没有听说、有没有涉及」必须如实记录；")
+                .append("⑤ 一件事往往要追好几步：只要你还在追查、打听、处理同一条要闻相关的事，")
+                .append("**每一步都要继续把它填进 news_refs**，直到这件事告一段落")
+                .append("（线索断了、事情办完了、或者你决定不管了），不要只在第一次提到时填一次。");
         sb.append("\n14. 背包管理：每次行动都顺便看一眼背包——能用掉的就用掉（吃掉干粮、喝掉药水等，")
                 .append("让饥饿度或体力、魔力得到恢复），用不上的可以丢掉或送人（在 items_change 里写负数，")
                 .append("数量减到 0 会自动从背包移除）；不要长期囤积用不上的东西，也不要一次丢光所有物资。");
@@ -2502,6 +2823,60 @@ public class SandboxServiceImpl implements SandboxService {
                 .append("如果这一步花了很久（连夜赶路、睡一觉），actions 要让人看出时间跨度")
                 .append("（例如「连夜赶路，天蒙蒙亮才看见城门」），但**不要写成「已经在那里做完了下一件事」**——")
                 .append("真正抵达、开始新活动，留给下一次行动去写。");
+        sb.append("\n22. 这个世界是有危险的，日子不总是温馨：要不要出事，看你现在处在什么处境——")
+                .append("① 所在地点的**危险度**（标在【地图地点】里：安全 / 较低 / 较高 / 危险）；")
+                .append("② 时段（深夜比白天危险，荒野的夜晚尤其）；")
+                .append("③ 你自身的状态（体力魔力低、身上有伤时更容易被盯上、也更打不过）；")
+                .append("④ 你身上带着多少钱、是不是一个人、有没有同伴；")
+                .append("⑤ 这一步要去做什么（深入魔物森林探宝、连夜赶路，当然比在城里逛街危险）。")
+                .append("判断标准：安全、较低的地方基本不会出事，最多是些小摩擦；较高的地方在夜里或独自行动时可能遇上麻烦；")
+                .append("危险的地区随时可能遭遇野兽、魔物、劫匪或天灾。")
+                .append("**但不要每一步都出事**——大多数日子仍然该是饮食、交易、赶路、聊天这些平常事，")
+                .append("危险只是偶尔出现，这样才真实。");
+        sb.append("\n23. 一旦遭遇战斗，先判断对手是谁、有多强，再决定结果：把对手的强度和你的**战斗力**（提示词里给了数值）比一比——")
+                .append("对方远强于你：你只能逃、躲、求饶、被压制，甚至被打成重伤，**不要写侥幸反杀**；")
+                .append("实力接近：可能有来有回，惨胜、僵持、落败都有可能；你远强于对方：才可能轻松取胜。")
+                .append("你当前体力魔力低、身上有伤、没有同伴时，都会明显吃亏；有同伴在场时则可以互相照应。")
+                .append("战斗的经过要写进 actions，涉及到的数值写进对应字段：")
+                .append("受伤写 combat_change 与 status 的「伤势」，掉钱写 coins_change（受单次花费上限约束），")
+                .append("丢了东西写 items_change（负数），赢了有合理的小额战利品则写 items_change 或 coins_change（+5~+15）。")
+                .append("不要天天打架，也不要为了变强就凭空刷战斗。");
+        sb.append("\n24. status 里的「伤势」只能填四个词之一：无恙 / 轻伤 / 重伤 / 濒死。")
+                .append("轻伤是擦伤、扭伤、被咬一口这种还能走动的伤；重伤是被打成内伤、走不动路、需要人扶；")
+                .append("濒死是只剩一口气、昏迷不醒，但**仍然活着**。")
+                .append("伤势要靠疗养、看医者、用药、休息慢慢好转，不要无缘无故就痊愈——")
+                .append("例如重伤至少要养一整天才会回到轻伤，濒死更需要别人照顾。体力降到 0 只表示昏过去，不等于死亡。");
+        sb.append("\n25. 【最重要的一条】**绝对不许死亡**：你，以及这个世界里的任何角色，都不会死。")
+                .append("禁止出现 死亡 / 阵亡 / 丧命 / 断气 / 遗体 / 尸首 这类说法，最坏也只能写到「濒死」。")
+                .append("如果这一步按情境本该致命，就按下面的优先级收场：")
+                .append("① 优先被【世界里的其他居民】里说得通的人救下——对方离得近、关系不错、有理由出现；")
+                .append("把人写进 companions，并给 2~5 的好感度变化（favor_changes），这是并肩过命的交情；")
+                .append("② 其次，在城镇、商道、协会这类有人烟的地方，被不认识的路人救下——")
+                .append("**不要给对方起名字，不要引出新势力，也不要留后续剧情的钩子**，只当是运气好；")
+                .append("③ 如果独自在荒野、又确实不会有人经过：写成昏迷过去，过很久自己醒来，但代价更重——")
+                .append("丢金币、丢物品、被挪到别的地方、体力恢复得更慢都可以。")
+                .append("濒死或重伤之后，下一步要优先写疗养、求医、躲藏、被照顾，")
+                .append("并把 next_after_minutes 拉长（濒死至少 360 分钟、重伤至少 180 分钟），不要在重伤状态下继续冒险。");
+        sb.append("\n26. 你的「对实力的看法」和「对财富的看法」不是一成不变的，但**大多数行动都不会改变它们**。")
+                .append("只有真的发生了影响认知的事，才写进 attitude_change：\n")
+                .append("   · 对实力：被人打败、受伤、濒死、被强者压制、亲眼见到强者出手——")
+                .append("可能让你更想变强，也可能让你更谨慎、更想避开危险，取决于你的性格与经历；\n")
+                .append("   · 对财富：缺钱挨饿、欠债、被抢、穷到住不起店——")
+                .append("可能让你更想赚钱，也可能让你更看淡钱、更在意人情（被人免费收留、被人舍命相救）；\n")
+                .append("   · 得到一大笔钱、靠钱解决了难题、长期安稳度日，同样可能改变看法。\n")
+                .append("   **必须认真考虑的情形**：这一步只要你①受了伤、被打败或濒死，②金币归零、被抢、损失惨重或暴富，")
+                .append("③被人救下、被人舍命相助——你就必须想一遍「这件事有没有改变我的想法」，并给出结论：")
+                .append("有变化就写清楚，确实没有变化才留空。这是硬要求，不要因为懒得想就直接留空。\n")
+                .append("写法要求：\n")
+                .append("   ① 【输出要求】里那段 JSON 的 attitude_change 只是**格式示例**，绝对不要照抄它的内容；")
+                .append("这一步没有上面这类事，就把四项全部留空：{\"kind\":\"\",\"view\":\"\",\"reason\":\"\",\"major\":false}；\n")
+                .append("   ② 一次最多改一个维度（kind 只能是 power 或 wealth）；\n")
+                .append("   ③ view 写 4~20 字，必须是你的人设与经历说得通的说法，**只做微调、不要换一个人格**")
+                .append("（例如「不甘平庸，想变强」→「吃过亏，更想变强了」）；\n")
+                .append("   ④ reason 写 10~30 字，说清是哪件事让你这么想；\n")
+                .append("   ⑤ 只有濒死、破产、暴富、被舍命相救这类重大事件才把 major 填 true——")
+                .append("服务端平时给想法变化加了 12 小时冷却，只有重大事件能突破。\n")
+                .append("另外，你的想法变化会被记下来、展示在角色档案里，请认真对待。");
         appendStyleExtra(sb);
         appendDraftFlow(sb);
         return sb.toString();
@@ -2529,17 +2904,29 @@ public class SandboxServiceImpl implements SandboxService {
             return;
         }
         sb.append("\n【本次输出流程·必须严格遵守】\n");
-        sb.append("请按顺序输出").append(thinkStageOn() ? "四段" : "三段").append("，一个都不能少，段外不要写任何解释。");
+        sb.append("请按顺序输出").append(thinkStageOn() ? "五段" : "四段").append("，一个都不能少，段外不要写任何解释。");
         sb.append("这几段只是给你自己想清楚用的，篇幅不限，但**最后一段必须是完整的 JSON**。\n");
+        // 「回看」段：先用几句话把自己的处境对齐一遍，再开始想这一步做什么。
+        // 加它的直接原因：实测出现过角色反复"出发前往某地"——AI 每一步都在重新想象自己在哪，
+        // 明明正在赶路（位置还没结算），却又写一次"我动身出发"，故事线就散了。
+        sb.append("第一段【回看】<recap>：先别急着想这一步做什么，用 2~5 句话把自己现在的处境对齐一遍——\n");
+        sb.append("· 我此刻到底在哪儿：一级地点 + 二级地点，以【当前状态】里的位置为准，不是你希望的、也不是记忆里的位置；\n");
+        sb.append("· 我正在做的那件事做到哪一步了：看【最近行动】的第一条（那就是刚刚发生的事）——做完了、正在路上、还是刚起头；\n");
+        sb.append("· 今天/最近几天的记忆里有什么会影响这一刻的事（没有就跳过）。\n");
+        sb.append("**赶路要特别说清楚**：【当前状态】的位置是「人此刻真实所在」，【最近行动】里写的才是「那一步结束时要去的地方」——")
+                .append("两者不一致，就说明你还在路上、人没到：这一步要么继续往那儿赶（方向别变、别再写一遍出发），")
+                .append("要么就地在当前所在地做点事；**绝对不要又一次写「我动身前往某地」**。\n");
+        sb.append("这一段只用来给自己对齐信息：不要编造没发生过的事，也不要把它写进 final。\n");
         if (thinkStageOn()) {
-            sb.append("第一段 <think>：先想清楚再动笔。写下你现在的处境（时间/位置/体力魔力/金币/背包）、");
+            sb.append("第二段 <think>：基于上面的回看，想清楚这一步怎么做。写下你现在的处境（时间/位置/体力魔力/金币/背包）、");
             sb.append("有哪几种可选做法（列出 2~3 个）、你为什么选这一个、这么做的代价与风险是什么");
             sb.append("（会不会累垮、钱够不够、赶不赶得上、是否偏离目标或与记忆矛盾）。");
             sb.append("这一段允许写长，鼓励真正权衡；但不要在这里排演具体动作台词。\n");
             sb.append("写法上用角色名或第三人称来写取舍，**不要出现「我打算让她…」「我决定让他…」这类作者口吻**。\n");
         }
-        sb.append("【草稿】<draft>：用 2~5 句白话写这一步具体做什么——动作顺序、");
-        sb.append("会涉及哪些字段、金币与物品的收支是怎么来的。这一段不要写 JSON。\n");
+        sb.append("【草稿】<draft>：用白话把这一步要做的事写清楚——动作的顺序与细节、");
+        sb.append("会涉及哪些字段、金币与物品的收支是怎么来的；这一步 actions 大概要写几条、分别写什么，也在这里想清楚。");
+        sb.append("这一段不要写 JSON。\n");
         sb.append("【自审】<review>：对照下面的清单自检草稿，并写出你打算怎么改：\n");
         sb.append("· 地点与坐标是否落在【地图地点】的范围内；\n");
         sb.append("· 下一步间隔是否和做的事相符、是否符合当前时间与作息；\n");
@@ -2662,7 +3049,8 @@ public class SandboxServiceImpl implements SandboxService {
         for (Object[] row : rows) {
             SandboxLocation location = (SandboxLocation) row[0];
             double km = (double) row[1];
-            sb.append("- ").append(location.getName()).append("：");
+            sb.append("- ").append(location.getName())
+                    .append("（危险度：").append(dangerText(location.getDangerLevel())).append("）").append("：");
             if (km <= 0.05) {
                 sb.append("就在这里（同一片区域内）");
             } else {
@@ -2686,13 +3074,25 @@ public class SandboxServiceImpl implements SandboxService {
                                    List<SandboxMemory> memories, List<SandboxItem> backpack,
                                    List<SandboxNews> news) {
         StringBuilder sb = new StringBuilder();
-        LocalDateTime now = LocalDateTime.now();
+        // 提示词里的"现在时间"：默认等于真实时间，调试时可整体平移，见 clock()
+        LocalDateTime now = clock();
         sb.append("【当前状态】\n")
                 .append("现在时间：").append(timeText(now)).append(sleepHint(now)).append("\n")
                 .append("当前位置：").append(blankToDefault(placeText(c.getLocationName(), c.getSubLocation()), "尚未确定"))
                 .append("（x=").append(c.getX() == null ? 50 : c.getX())
-                .append(", y=").append(c.getY() == null ? 50 : c.getY()).append("）\n")
-                .append("身上金币：").append(c.getCoins() == null ? 0 : c.getCoins())
+                .append(", y=").append(c.getY() == null ? 50 : c.getY()).append("）");
+        // 当前地区的危险度：遭遇判定最直接的依据，直接写在"当前位置"后面
+        String localDanger = dangerOfCurrent(c);
+        if (localDanger != null) {
+            sb.append("，所在地区危险度：").append(localDanger);
+        }
+        sb.append("\n");
+        // 行程状态：把"人还在路上、还没到"直接写出来，避免 AI 一遍遍重写"我动身出发"
+        String travelStatus = travelStatusText(c);
+        if (travelStatus != null) {
+            sb.append(travelStatus).append("\n");
+        }
+        sb.append("身上金币：").append(c.getCoins() == null ? 0 : c.getCoins())
                 .append(" 枚（本次非集市花费请不要超过 ")
                 .append(SandboxSpendLimit.maxSpend(c.getCoins() == null ? 0 : c.getCoins(),
                         intConfig("sandbox_max_spend_per_act", 10)))
@@ -2712,7 +3112,14 @@ public class SandboxServiceImpl implements SandboxService {
                 }
                 sb.append("对财富——").append(truncate(c.getWealthView(), 60));
             }
-            sb.append("（按这个态度决定要不要变强、要不要为钱奔波，也会影响你的心情）\n");
+            sb.append("（按这个态度决定要不要变强、要不要为钱奔波，也会影响你的心情）");
+            // 让 AI 知道距离上次想法变化多久了：服务端有 12 小时冷却，最近改过就别再折腾人设
+            LocalDateTime lastChange = lastAttitudeChangeAt(c.getId());
+            if (lastChange != null) {
+                long hours = Math.max(0, java.time.Duration.between(lastChange, now).toHours());
+                sb.append("（最近一次想法变化：").append(hours < 1 ? "不到 1 小时前" : hours + " 小时前").append("）");
+            }
+            sb.append("\n");
         }
         Map<String, Object> status = parseStatus(c.getStatusJson());
         if (!status.isEmpty()) {
@@ -2810,7 +3217,12 @@ public class SandboxServiceImpl implements SandboxService {
                     .append(" 在 ").append(blankToDefault(placeText(trigger.getLocationName(), trigger.getSubLocation()), "某处")).append("：\n")
                     .append(blankToDefault(trigger.getActions(), blankToDefault(trigger.getSummary(), "")))
                     .append("\n请自然地回应这件事：可以直接搭话、可以并肩行动、也可以只是心里想一想；")
-                    .append("不必强行改变你原本的打算，也不要重复上面已经写过的动作。\n");
+                    .append("不必强行改变你原本的打算，也不要重复上面已经写过的动作。\n")
+                    .append("**这一步必须和对方待在同一处**：location / sub_location 就用上面的地点")
+                    .append("（服务端也会按它校正，你另写别处是无效的）；")
+                    .append("next_after_minutes 不要超过对方的 ")
+                    .append(trigger.getNextAfterMinutes() == null ? 60 : trigger.getNextAfterMinutes())
+                    .append(" 分钟——两人这一步的时间跨度要对得上，不要各写各的。\n");
         }
         // 活跃度引导：连续多次停在同一个地区时，明确提醒该动一动了（比笼统要求"多走动"有效）
         int stayStreak = stayStreak(recent);
@@ -3028,12 +3440,182 @@ public class SandboxServiceImpl implements SandboxService {
         return streak;
     }
 
-    /** 同一世界里其它已启用的角色 */
+    // ============================== 位置结算（在途 / 到达） ==============================
+
+    /**
+     * 读取角色，并顺带结算"已经到点"的行程。
+     *
+     * 角色位置是延迟一拍落地的（见 {@link #settlePosition}），所以所有"需要角色此刻实际位置"的地方
+     * 都应该走这里，而不是直接 selectById。
+     */
+    private SandboxCharacter characterOf(Long characterId) {
+        SandboxCharacter character = characterMapper.selectById(characterId);
+        if (character != null) {
+            settlePosition(character);
+        }
+        return character;
+    }
+
+    /**
+     * 把"已经走完的行程"结算到角色身上。
+     *
+     * 语义约定：
+     *   · sandbox_act 里的位置 = 这一步**结束时**所在的地方；
+     *   · sandbox_character 里的位置 = 他**此刻实际**所在的地方。
+     * 所以角色位置要等这一步的时间跨度走完，才能从行动记录落到角色身上。
+     *
+     * 为什么要这样：以前行动一落库就把坐标改成目的地，于是出现"人还在路上、系统却认为已经到了"——
+     * 目的地上的其他角色一行动，就会把他当成在场的人触发互动，赶路状态被莫名打断；别人看到的
+     * 他的位置也是错的。延迟一拍之后，"在路上"就等于"还没到"，互动、距离、提示词全部自然正确。
+     *
+     * 手动「立即执行」按"时段未到就不落地"处理（等于承认手动执行是提前推进）。
+     */
+    private void settlePosition(SandboxCharacter character) {
+        if (character == null || character.getId() == null) {
+            return;
+        }
+        SandboxAct settled = latestSettledAct(character.getId());
+        if (settled == null || samePlace(character, settled)) {
+            return;
+        }
+        characterMapper.update(null, new LambdaUpdateWrapper<SandboxCharacter>()
+                .eq(SandboxCharacter::getId, character.getId())
+                .set(SandboxCharacter::getX, settled.getX())
+                .set(SandboxCharacter::getY, settled.getY())
+                .set(SandboxCharacter::getLocationName, settled.getLocationName())
+                .set(SandboxCharacter::getSubLocation, settled.getSubLocation()));
+        character.setX(settled.getX());
+        character.setY(settled.getY());
+        character.setLocationName(settled.getLocationName());
+        character.setSubLocation(settled.getSubLocation());
+        log.info("沙盒角色「{}」的行程到点，位置结算为 {} · {}", character.getName(),
+                settled.getLocationName(), settled.getSubLocation());
+    }
+
+    /**
+     * 最新的一条"已经到点"的行动：它就是角色此刻应该在的位置。
+     * 不能只看最新一条——手动连续执行时，后面可能压着好几条还没到点的行动。
+     */
+    private SandboxAct latestSettledAct(Long characterId) {
+        LocalDateTime now = clock();
+        List<SandboxAct> acts = actMapper.selectList(new LambdaQueryWrapper<SandboxAct>()
+                .eq(SandboxAct::getCharacterId, characterId)
+                .orderByDesc(SandboxAct::getId)
+                .last("limit 20"));
+        for (SandboxAct act : acts) {
+            LocalDateTime arriveAt = arriveAt(act);
+            if (arriveAt != null && !arriveAt.isAfter(now)) {
+                return act;
+            }
+        }
+        return null;
+    }
+
+    /** 最新一条行动记录（不看有没有到点），用于管理员手工改位置时同步落点 */
+    private SandboxAct latestAct(Long characterId) {
+        return actMapper.selectOne(new LambdaQueryWrapper<SandboxAct>()
+                .eq(SandboxAct::getCharacterId, characterId)
+                .orderByDesc(SandboxAct::getId)
+                .last("limit 1"));
+    }
+
+    /** 位置（含二级地点）是否被改过 */
+    private boolean positionChanged(SandboxCharacter before, SandboxCharacter after) {
+        return !java.util.Objects.equals(before.getX(), after.getX())
+                || !java.util.Objects.equals(before.getY(), after.getY())
+                || !java.util.Objects.equals(before.getLocationName(), after.getLocationName())
+                || !java.util.Objects.equals(before.getSubLocation(), after.getSubLocation());
+    }
+
+    /**
+     * 【当前状态】里的「行程状态」行：把"人还在路上、还没到"这件事直接说给 AI 听。
+     *
+     * 背景：角色位置是延迟一拍落地的（见 settlePosition）——行动记录里写的落点是"这一步结束时"的位置，
+     * 要等这段时间走完才算真正到达。如果只告诉 AI"你现在在 A 地"，而它的目标又是"去 B 地"，
+     * 它就会一遍遍重写"我动身出发了"（实测连续四步都在"出发前往晨雾森林"）。
+     */
+    private String travelStatusText(SandboxCharacter c) {
+        SandboxAct last = latestAct(c.getId());
+        if (last == null) {
+            return null;
+        }
+        LocalDateTime arriveAt = arriveAt(last);
+        if (arriveAt == null) {
+            return null;
+        }
+        boolean arrived = !arriveAt.isAfter(clock());
+        if (arrived || samePlace(c, last)) {
+            return "行程：没有在赶路（此刻就在本地活动，不是刚出发）";
+        }
+        return "行程：**正在前往 " + placeText(last.getLocationName(), last.getSubLocation())
+                + "，预计 " + arriveAt.format(TIME_FORMATTER) + " 抵达——此刻人还在路上、还没到**。"
+                + "这一步就接着赶路（可以写路上遇到什么、怎么走、什么时候歇脚），"
+                + "或者干脆在现在这个地方做点事；**不要再写一遍「我动身出发去某地」**。";
+    }
+
+    /** 这一步的到达时刻（行动创建时间 + 时间跨度）；时间信息不全时返回 null */
+    private LocalDateTime arriveAt(SandboxAct act) {
+        if (act == null || act.getCreateTime() == null) {
+            return null;
+        }
+        int minutes = act.getNextAfterMinutes() == null ? 0 : Math.max(act.getNextAfterMinutes(), 0);
+        return act.getCreateTime().plusMinutes(minutes);
+    }
+
+    /**
+     * 这个角色是不是"正在赶路"（有还没走完的行程）。
+     *
+     * 判定：最新一条行动记录的到达时刻还没到，而且它写的落点与角色此刻位置不同——人在路上。
+     *
+     * 赶路中的角色**不参与互动**（既不会被别人搭话、也不会主动搭话别人）：
+     * 实测过"在途中被搭话"的后果——回应回合沿用触发者的地点，等于把它原本的行程静默取消，
+     * 于是下一步它又写一遍"我出发了"，同一个角色连着四步都在"前往晨雾森林"却没走出去。
+     */
+    private boolean traveling(SandboxCharacter character) {
+        if (character == null || character.getId() == null) {
+            return false;
+        }
+        SandboxAct last = latestAct(character.getId());
+        if (last == null) {
+            return false;
+        }
+        LocalDateTime arriveAt = arriveAt(last);
+        return arriveAt != null && arriveAt.isAfter(clock()) && !samePlace(character, last);
+    }
+
+    private boolean samePlace(SandboxCharacter character, SandboxAct act) {
+        return java.util.Objects.equals(character.getX(), act.getX())
+                && java.util.Objects.equals(character.getY(), act.getY())
+                && java.util.Objects.equals(character.getLocationName(), act.getLocationName())
+                && java.util.Objects.equals(character.getSubLocation(), act.getSubLocation());
+    }
+
+    /**
+     * 同一世界里其它已启用的角色。
+     *
+     * 这里**必须按 worldId 过滤**：以前漏了这一步，导致 A 世界的角色能在提示词里看到 B 世界的角色
+     * （姓名、人设、位置、最近的行动），还会把对方写进 companions、进而触发对方"立即回应"一次，
+     * 等于多世界之间互相串数据。实测已复现：临时世界的角色写出了真实世界的角色名，
+     * 并触发了那两名真实角色的行动。
+     */
     private List<SandboxCharacter> otherCharacters(Long characterId) {
-        return characterMapper.selectList(new LambdaQueryWrapper<SandboxCharacter>()
+        SandboxCharacter self = characterMapper.selectById(characterId);
+        if (self == null || self.getWorldId() == null) {
+            return Collections.emptyList();
+        }
+        List<SandboxCharacter> list = characterMapper.selectList(new LambdaQueryWrapper<SandboxCharacter>()
+                .eq(SandboxCharacter::getWorldId, self.getWorldId())
                 .ne(SandboxCharacter::getId, characterId)
                 .eq(SandboxCharacter::getEnabled, 1)
                 .orderByAsc(SandboxCharacter::getId));
+        // 这些角色的位置会写进提示词（"其他居民在哪里"），所以同样要先结算行程
+        for (SandboxCharacter other : list) {
+            settlePosition(other);
+        }
+        // 乙：赶路中的角色暂时从别人的世界里消失——否则它会被搭话，行程被静默取消，
+        // 下一步又"重新出发"（实测过连续四步都在前往同一个地方）。
+        list.removeIf(this::traveling);
+        return list;
     }
 
     /** 其它角色最近的一条行动，用于提示词里的「其他居民最近的动静」 */
@@ -3055,6 +3637,24 @@ public class SandboxServiceImpl implements SandboxService {
     }
 
     /** 把 AI 返回的 news_refs 收敛为今天真实存在的纪闻标题，避免编造 */
+    /**
+     * 服务端兜底：AI 忘了填 news_refs 时，从行动文本推断这一步涉及了哪几条要闻。
+     * 判定规则见 {@link SandboxNewsMatcher}（只看行动文本 + 必须命中标题里的"事件名词"）。
+     */
+    private String guessNewsRef(JSONObject obj, List<SandboxNews> news) {
+        if (obj == null || news == null || news.isEmpty()) {
+            return null;
+        }
+        List<String> titles = new ArrayList<>();
+        for (SandboxNews item : news) {
+            if (notBlank(item.getTitle())) {
+                titles.add(item.getTitle());
+            }
+        }
+        List<String> hits = SandboxNewsMatcher.match(attitudeText(obj), titles);
+        return hits.isEmpty() ? null : truncate(String.join("、", hits), 290);
+    }
+
     private String matchNewsRefs(JSONArray array, List<SandboxNews> news) {
         if (array == null || array.isEmpty() || news == null || news.isEmpty()) {
             return null;
@@ -3103,6 +3703,13 @@ public class SandboxServiceImpl implements SandboxService {
         }
         if (names.isEmpty()) {
             return null;
+        }
+        // ② 一次互动只保留一个对手：多个角色同时纠缠会让故事线互相打架
+        // （实测出现过"三个人在同一轮里分别行动、地点和先后顺序对不上"），所以强行收成纯双人互动
+        if (names.size() > 1) {
+            log.info("沙盒角色这一步写了多个互动对象（{}），只保留第一个，确保一次只和一个人互动",
+                    String.join("、", names));
+            names = new ArrayList<>(names.subList(0, 1));
         }
         return truncate(String.join("、", names), 190);
     }
@@ -3163,7 +3770,9 @@ public class SandboxServiceImpl implements SandboxService {
         if (me == null) {
             return list;
         }
+        // 只看同一个世界里的角色：以前漏了 worldId，前台"与其他角色的关系"会列出别的世界的角色
         List<SandboxCharacter> others = characterMapper.selectList(new LambdaQueryWrapper<SandboxCharacter>()
+                .eq(me.getWorldId() != null, SandboxCharacter::getWorldId, me.getWorldId())
                 .ne(SandboxCharacter::getId, characterId)
                 .orderByAsc(SandboxCharacter::getId));
         List<SandboxRelation> mine = relationMapper.selectList(new LambdaQueryWrapper<SandboxRelation>()
@@ -4249,6 +4858,41 @@ public class SandboxServiceImpl implements SandboxService {
         return sb.toString();
     }
 
+    /** 地点危险度的文字：0 安全 / 1 较低 / 2 较高 / 3 危险 */
+    private String dangerText(Integer level) {
+        int value = level == null ? 1 : level;
+        if (value <= 0) {
+            return "安全";
+        }
+        if (value == 1) {
+            return "较低";
+        }
+        if (value == 2) {
+            return "较高";
+        }
+        return "危险";
+    }
+
+    /**
+     * 角色当前所在地点的危险度：先按地点名匹配，匹配不到就用坐标落到哪个区域兜底。
+     * 写进行动提示词，作为"这一步会不会遭遇战斗"的最直接依据。
+     */
+    private String dangerOfCurrent(SandboxCharacter c) {
+        if (c == null || c.getWorldId() == null) {
+            return null;
+        }
+        List<SandboxLocation> locations = locations(c.getWorldId());
+        if (locations.isEmpty()) {
+            return null;
+        }
+        SandboxLocation local = matchLocation(locations, c.getLocationName());
+        if (local == null) {
+            local = locationAtPoint(locations, c.getX() == null ? 50 : c.getX(),
+                    c.getY() == null ? 50 : c.getY());
+        }
+        return local == null ? null : dangerText(local.getDangerLevel());
+    }
+
     private SandboxLocation matchLocation(List<SandboxLocation> locations, String name) {
         if (name == null) {
             return null;
@@ -4471,7 +5115,7 @@ public class SandboxServiceImpl implements SandboxService {
         Long count = actMapper.selectCount(new LambdaQueryWrapper<SandboxAct>()
                 .eq(SandboxAct::getCharacterId, characterId)
                 .eq(SandboxAct::getManual, 0)
-                .ge(SandboxAct::getCreateTime, LocalDate.now().atStartOfDay()));
+                .ge(SandboxAct::getCreateTime, clock().toLocalDate().atStartOfDay()));
         return count != null && count >= limit;
     }
 
@@ -4621,6 +5265,11 @@ public class SandboxServiceImpl implements SandboxService {
      */
     private List<SandboxCharacter> nearbyCompanions(SandboxCharacter self, List<SandboxCharacter> companions,
                                                     int x, int y, String locationName) {
+        // 乙：自己正在赶路 → 这一步不跟任何人互动（人还在路上，碰不到谁）
+        if (traveling(self)) {
+            log.info("沙盒角色「{}」正在赶路，这一步不参与任何互动", self.getName());
+            return new ArrayList<>();
+        }
         double maxKm = intConfig("sandbox_social_max_km", 30);
         List<SandboxCharacter> list = new ArrayList<>();
         for (SandboxCharacter other : companions) {
@@ -4675,6 +5324,253 @@ public class SandboxServiceImpl implements SandboxService {
             return floor;
         }
         return aiMinutes;
+    }
+
+    // ============================== 态度（对实力 / 财富的看法）变化 ==============================
+
+    /**
+     * 态度微调（提示词规则 26）。
+     *
+     * 态度指的是「对实力」「对财富」的看法，平时不变；只有这一步真的发生了影响认知的事
+     * （受伤、惨败、被压制、缺钱、被抢、暴富、被救…）才允许微调。四道闸门全过才写回角色：
+     *   1. 后台开关打开；
+     *   2. AI 给出了合法的 attitude_change（kind / view）；
+     *   3. 这一步确实发生了与这个维度相关的事件（不是 AI 随口想改）；
+     *   4. 距上次变化超过冷却小时数，或这次属于重大事件（濒死、破产、暴富、被救）。
+     * 变化会记一条日志，前台角色档案展示最近几条「想法变化」。
+     */
+    private void applyAttitudeChange(SandboxCharacter character, JSONObject obj, SandboxAct act,
+                                     int coins, LocalDateTime now) {
+        if (!"on".equals(configService.getConfigValue("sandbox_attitude_enabled", "on"))) {
+            return;
+        }
+        Object raw = obj == null ? null : obj.get("attitude_change");
+        if (!(raw instanceof JSONObject)) {
+            return;
+        }
+        JSONObject change = (JSONObject) raw;
+        String kind = normalizeAttitudeKind(change.getStr("kind"));
+        if (kind == null) {
+            return;
+        }
+        String view = truncate(trimToEmpty(change.getStr("view")), 60).trim();
+        if (view.length() < 2) {
+            return;
+        }
+        String oldView = "power".equals(kind) ? character.getPowerView() : character.getWealthView();
+        if (oldView != null && oldView.trim().equals(view)) {
+            // 说法没变，不必记一笔
+            return;
+        }
+        // 事件闸门：这一步没有相关经历，就不许改（防止 AI 每步都微调、把人设改飘）
+        String trigger = attitudeTrigger(kind, obj, act, character, coins);
+        if (trigger == null) {
+            return;
+        }
+        boolean majorEvent = Convert.toBool(change.get("major"), false)
+                && isMajorAttitudeEvent(act, character, coins);
+        int cooldownHours = Math.max(0, intConfig("sandbox_attitude_cooldown_hours", 12));
+        if (!majorEvent && cooldownHours > 0) {
+            LocalDateTime last = lastAttitudeChangeAt(character.getId());
+            if (last != null && last.plusHours(cooldownHours).isAfter(now)) {
+                log.info("沙盒角色「{}」距上次想法变化不足 {} 小时，本次忽略（{}）",
+                        character.getName(), cooldownHours, trigger);
+                return;
+            }
+        }
+        String reason = truncate(trimToEmpty(change.getStr("reason")), 200).trim();
+        if ("power".equals(kind)) {
+            characterMapper.update(null, new LambdaUpdateWrapper<SandboxCharacter>()
+                    .eq(SandboxCharacter::getId, character.getId())
+                    .set(SandboxCharacter::getPowerView, view));
+            character.setPowerView(view);
+        } else {
+            characterMapper.update(null, new LambdaUpdateWrapper<SandboxCharacter>()
+                    .eq(SandboxCharacter::getId, character.getId())
+                    .set(SandboxCharacter::getWealthView, view));
+            character.setWealthView(view);
+        }
+        SandboxAttitudeLog logRow = new SandboxAttitudeLog();
+        logRow.setWorldId(character.getWorldId());
+        logRow.setCharacterId(character.getId());
+        logRow.setCharacterName(character.getName());
+        logRow.setActId(act.getId());
+        logRow.setKind(kind);
+        logRow.setOldView(oldView);
+        logRow.setNewView(view);
+        logRow.setReason(reason.isEmpty() ? trigger : reason);
+        logRow.setMajor(majorEvent ? 1 : 0);
+        logRow.setCreateTime(now);
+        attitudeLogMapper.insert(logRow);
+        log.info("沙盒角色「{}」{}发生变化：{} → {}（{}）", character.getName(),
+                "power".equals(kind) ? "对实力的看法" : "对财富的看法",
+                blankToDefault(oldView, "（空）"), view, logRow.getReason());
+    }
+
+    /** 只接受 power / wealth 两个维度（也兼容 AI 写「实力」「财富」） */
+    private String normalizeAttitudeKind(String kind) {
+        String text = trimToEmpty(kind).toLowerCase();
+        if (text.contains("power") || text.contains("实力")) {
+            return "power";
+        }
+        if (text.contains("wealth") || text.contains("财富") || text.contains("金钱")) {
+            return "wealth";
+        }
+        return null;
+    }
+
+    /**
+     * 这一步有没有发生与该态度相关的事件？命中返回事件描述（可当原因兜底），否则返回 null。
+     * 判断依据是"数值变化 + 文本关键词"，两者任一命中即可。
+     */
+    private String attitudeTrigger(String kind, JSONObject obj, SandboxAct act,
+                                   SandboxCharacter before, int coins) {
+        String text = attitudeText(obj);
+        if ("power".equals(kind)) {
+            int change = act.getCombatChange() == null ? 0 : act.getCombatChange();
+            if (change != 0) {
+                return "战斗力发生了变化";
+            }
+            if (injuryRank(act.getStatusJson()) > injuryRank(before.getStatusJson())) {
+                return "伤势加重了";
+            }
+            // 本身就带着重伤/濒死：躺在床上养伤时反思"实力到底值不值"，是最该发生的态度变化，
+            // 不能因为"伤势没有进一步加重"就被判成没有事件（实测出现过这种漏判）
+            if (injuryRank(act.getStatusJson()) >= 2) {
+                return "带着" + injuryOf(act.getStatusJson()) + "撑过这一段";
+            }
+            String word = hitWord(text, POWER_TRIGGER_WORDS);
+            return word == null ? null : "经历了与「" + word + "」有关的事";
+        }
+        int coinChange = act.getCoinChange() == null ? 0 : act.getCoinChange();
+        if (Math.abs(coinChange) >= 3) {
+            return coinChange > 0 ? "赚到了一笔钱" : "损失了一笔钱";
+        }
+        if (coins <= 3) {
+            return "身上快没钱了";
+        }
+        String word = hitWord(text, WEALTH_TRIGGER_WORDS);
+        return word == null ? null : "经历了与「" + word + "」有关的事";
+    }
+
+    /** 重大事件：濒死/重伤、暴富、破产、重大损失、被救——只有这些能突破冷却 */
+    private boolean isMajorAttitudeEvent(SandboxAct act, SandboxCharacter before, int coins) {
+        String injury = injuryOf(act.getStatusJson());
+        if ("濒死".equals(injury) || "重伤".equals(injury)) {
+            return true;
+        }
+        int change = act.getCoinChange() == null ? 0 : act.getCoinChange();
+        if (change >= 20 || change <= -10) {
+            return true;
+        }
+        int beforeCoins = before.getCoins() == null ? 0 : before.getCoins();
+        if (coins <= 0 && beforeCoins > 0) {
+            return true;
+        }
+        String text = trimToEmpty(act.getActions()) + trimToEmpty(act.getSummary());
+        return text.contains("被救") || text.contains("救了我") || text.contains("救命恩人")
+                || text.contains("破产");
+    }
+
+    /** 行动文本（动作 + 概括 + 心声）：判断触发词用 */
+    private String attitudeText(JSONObject obj) {
+        if (obj == null) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder();
+        JSONArray actions = obj.getJSONArray("actions");
+        if (actions != null) {
+            for (Object action : actions) {
+                sb.append(Convert.toStr(action, "")).append(' ');
+            }
+        }
+        sb.append(trimToEmpty(obj.getStr("summary"))).append(' ');
+        sb.append(trimToEmpty(obj.getStr("inner_voice")));
+        return sb.toString();
+    }
+
+    private String hitWord(String text, List<String> words) {
+        if (text == null || text.isEmpty()) {
+            return null;
+        }
+        for (String word : words) {
+            if (text.contains(word)) {
+                return word;
+            }
+        }
+        return null;
+    }
+
+    /** 伤势等级：0 无恙 / 1 轻伤 / 2 重伤 / 3 濒死，用于判断"伤势有没有加重" */
+    private int injuryRank(String statusJson) {
+        String injury = injuryOf(statusJson);
+        return injury == null ? 0 : Math.max(0, SandboxDeathGuard.INJURY_LEVELS.indexOf(injury));
+    }
+
+    /** 该角色上一次想法变化的时间（没有则 null），用于冷却判断与提示词 */
+    private LocalDateTime lastAttitudeChangeAt(Long characterId) {
+        if (characterId == null) {
+            return null;
+        }
+        SandboxAttitudeLog last = attitudeLogMapper.selectOne(new LambdaQueryWrapper<SandboxAttitudeLog>()
+                .eq(SandboxAttitudeLog::getCharacterId, characterId)
+                .orderByDesc(SandboxAttitudeLog::getCreateTime)
+                .orderByDesc(SandboxAttitudeLog::getId)
+                .last("limit 1"));
+        return last == null ? null : last.getCreateTime();
+    }
+
+    /**
+     * 伤势的时间下限：濒死至少 6 小时、重伤至少 3 小时才进入下一步，
+     * 避免 AI 上一步"只剩一口气"、下一步就精神抖擞地去接委托。
+     * 两个数值都可以在后台配置里调（upgrade_050 会写入默认值）。
+     */
+    private Integer applyInjuryFloor(SandboxCharacter character, String statusJson, Integer aiMinutes) {
+        String injury = injuryOf(statusJson);
+        int floor = 0;
+        if ("濒死".equals(injury)) {
+            floor = intConfig("sandbox_injury_dying_minutes", 360);
+        } else if ("重伤".equals(injury)) {
+            floor = intConfig("sandbox_injury_heavy_minutes", 180);
+        }
+        if (floor <= 0 || (aiMinutes != null && aiMinutes >= floor)) {
+            return aiMinutes;
+        }
+        log.info("沙盒角色「{}」当前伤势为「{}」，把下一次行动间隔从 {} 分钟抬到 {} 分钟",
+                character.getName(), injury, aiMinutes == null ? 0 : aiMinutes, floor);
+        return floor;
+    }
+
+    /** 从状态 JSON 里读「伤势」：经过白名单归一，只可能是 无恙/轻伤/重伤/濒死 */
+    private String injuryOf(String statusJson) {
+        if (statusJson == null || statusJson.trim().isEmpty()) {
+            return null;
+        }
+        try {
+            Object value = JSONUtil.parseObj(statusJson).get(INJURY_KEY);
+            return value == null ? null : SandboxDeathGuard.normalizeInjury(value);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /** 把状态 JSON 里的「伤势」归一成四档（保存角色时调用，解析失败就原样返回） */
+    private String normalizeStatusJson(String statusJson) {
+        try {
+            JSONObject obj = JSONUtil.parseObj(statusJson);
+            Object injury = obj.get(INJURY_KEY);
+            if (injury == null) {
+                return statusJson;
+            }
+            String normalized = SandboxDeathGuard.normalizeInjury(injury);
+            if (normalized == null || normalized.equals(String.valueOf(injury))) {
+                return statusJson;
+            }
+            obj.set(INJURY_KEY, normalized);
+            return JSONUtil.toJsonStr(obj);
+        } catch (Exception e) {
+            return statusJson;
+        }
     }
 
     /** 「步行约 5 小时」这种时间描述，避免提示词里出现 320 分钟这类不好读的数字 */

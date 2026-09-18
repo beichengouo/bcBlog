@@ -240,6 +240,42 @@
 
           <p v-if="active.appearance" class="appearance">{{ active.appearance }}</p>
 
+          <!-- 想法：角色对实力/财富的看法会随经历缓慢改变，这里展示当前态度与最近几次变化 -->
+          <div
+            v-if="active.powerView || active.wealthView || (active.recentAttitudes || []).length"
+            class="attitude"
+          >
+            <h3>TA 的想法</h3>
+            <div class="attitude-views">
+              <span v-if="active.powerView" class="attitude-chip">
+                <span class="label">对实力</span>{{ active.powerView }}
+              </span>
+              <span v-if="active.wealthView" class="attitude-chip">
+                <span class="label">对财富</span>{{ active.wealthView }}
+              </span>
+            </div>
+            <div v-if="(active.recentAttitudes || []).length" class="attitude-history">
+              <div v-for="item in active.recentAttitudes" :key="'att-' + item.id" class="attitude-item">
+                <span class="attitude-tag" :class="item.kind === 'power' ? 'power' : 'wealth'">
+                  {{ item.kind === 'power' ? '实力' : '财富' }}
+                </span>
+                <div class="attitude-body">
+                  <div class="attitude-change">
+                    <span class="old">{{ item.oldView || '（还没想过）' }}</span>
+                    <span class="arrow">→</span>
+                    <span class="new">{{ item.newView }}</span>
+                  </div>
+                  <div class="attitude-reason">
+                    {{ item.reason }}
+                    <span v-if="item.major === 1" class="major">重大经历</span>
+                  </div>
+                </div>
+                <span class="time">{{ (item.createTime || '').slice(5, 16) }}</span>
+              </div>
+            </div>
+            <p v-else class="muted">TA 的想法还没有因为什么经历改变过。</p>
+          </div>
+
           <div class="contribute">
             <div class="contribute-head">
               <strong>为 TA 贡献金币</strong>
@@ -795,6 +831,13 @@ const distanceBase = computed(() => {
   return characters.value[0] || null
 })
 
+/** 地点危险度文案：与后端 dangerText 保持一致（0 安全 / 1 较低 / 2 较高 / 3 危险） */
+function dangerLabel(level) {
+  const names = ['安全', '较低', '较高', '危险']
+  const value = level == null ? 1 : Number(level)
+  return names[value] || '较低'
+}
+
 /** 地点标注点（多边形取形心，与地图上的地名位置一致） */
 function locationLabelPoint(location) {
   const polygon = polygonOf(location)
@@ -806,7 +849,8 @@ function locationLabelPoint(location) {
 
 /** 地图上 hover 地点时的提示：地点描述 + 距基准角色多远（玩家能看懂 AI 为什么走这么久） */
 function locationTitle(location) {
-  const base = location.description || location.name
+  // 危险度放在最前面：用户 hover 地点时能马上知道这里安不安全
+  const base = `危险度：${dangerLabel(location.dangerLevel)}｜${location.description || location.name}`
   const from = distanceBase.value
   if (!from || !location) {
     return base
@@ -2042,6 +2086,34 @@ onBeforeUnmount(() => {
   margin-bottom: 10px;
 }
 .relation-avatar { width: 38px; height: 38px; border-radius: 12px; object-fit: cover; flex-shrink: 0; }
+
+/* ===== 想法（对实力/财富的看法 + 最近几次变化） ===== */
+.attitude { margin: 14px 0; }
+.attitude h3 { margin: 0 0 8px; font-size: 14px; }
+.attitude-views { display: flex; flex-wrap: wrap; gap: 8px; }
+.attitude-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.06);
+  font-size: 12.5px;
+}
+.attitude-chip .label { color: var(--el-text-color-secondary); font-size: 11.5px; }
+.attitude-history { margin-top: 10px; display: flex; flex-direction: column; gap: 8px; }
+.attitude-item { display: flex; align-items: flex-start; gap: 8px; font-size: 12.5px; }
+.attitude-tag { flex: 0 0 auto; padding: 1px 7px; border-radius: 8px; font-size: 11.5px; }
+.attitude-tag.power { color: #b4553f; background: rgba(180, 85, 63, 0.14); }
+.attitude-tag.wealth { color: #b08d2a; background: rgba(176, 141, 42, 0.16); }
+.attitude-body { flex: 1 1 auto; min-width: 0; }
+.attitude-change { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.attitude-change .old { color: var(--el-text-color-secondary); text-decoration: line-through; }
+.attitude-change .arrow { color: var(--el-text-color-secondary); }
+.attitude-change .new { font-weight: 600; }
+.attitude-reason { margin-top: 2px; color: var(--el-text-color-secondary); }
+.attitude-reason .major { margin-left: 6px; color: #c0392b; }
+.attitude-item .time { flex: 0 0 auto; font-size: 11.5px; color: var(--el-text-color-secondary); }
 .relation-avatar.fallback {
   display: flex;
   align-items: center;

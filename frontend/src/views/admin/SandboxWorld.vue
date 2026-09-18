@@ -259,6 +259,20 @@
                 placeholder="如：常年弥漫薄雾的森林，深处有会发光的萤石（会作为 AI 行动参考）"
               />
             </el-form-item>
+            <el-form-item label="危险度">
+              <el-select v-model="form.dangerLevel" style="width: 120px">
+                <el-option
+                  v-for="item in DANGER_LEVELS"
+                  :key="item.value"
+                  :label="item.label"
+                  :value="item.value"
+                />
+              </el-select>
+              <span class="tip">
+                越高越容易在这里遭遇战斗：安全/较低基本平安；较高在夜里或独自行动时可能出事；
+                危险则随时可能碰上野兽、魔物、劫匪（会写进行动提示词，作为 AI 判断遭遇的依据）
+              </span>
+            </el-form-item>
             <el-form-item label="排序">
               <el-input-number v-model="form.sortOrder" :min="0" :max="9999" controls-position="right" />
             </el-form-item>
@@ -314,6 +328,13 @@
           <template #default="{ row }">
             <span v-if="polygonOf(row)">多边形 · {{ polygonOf(row).length }} 个顶点</span>
             <span v-else>单点 ({{ row.x }}, {{ row.y }})</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="危险度" width="94">
+          <template #default="{ row }">
+            <span class="danger-tag" :class="'d' + (row.dangerLevel == null ? 1 : row.dangerLevel)">
+              {{ dangerLabel(row.dangerLevel) }}
+            </span>
           </template>
         </el-table-column>
         <el-table-column prop="description" label="地点描述（会作为 AI 参考）" min-width="220" show-overflow-tooltip />
@@ -768,8 +789,24 @@ const form = reactive({
   x: 44,
   y: 46,
   description: '',
+  // 危险度：0 安全 / 1 较低 / 2 较高 / 3 危险，会写进行动提示词，影响 AI 会不会在这里写遭遇战斗
+  dangerLevel: 1,
   sortOrder: 0
 })
+
+/** 危险度选项（值 → 文案），与后端 SandboxServiceImpl.dangerText 保持一致 */
+const DANGER_LEVELS = [
+  { value: 0, label: '安全' },
+  { value: 1, label: '较低' },
+  { value: 2, label: '较高' },
+  { value: 3, label: '危险' }
+]
+
+/** 危险度文案：null 按「较低」处理，与后端默认值一致 */
+function dangerLabel(level) {
+  const hit = DANGER_LEVELS.find((item) => item.value === (level == null ? 1 : Number(level)))
+  return hit ? hit.label : '较低'
+}
 
 const isCustomIcon = computed(() => /^https?:\/\//i.test(form.icon || '') || (form.icon || '').startsWith('/'))
 
@@ -1267,6 +1304,7 @@ function openAdd(cx = 50, cy = 50) {
   form.x = Math.round(clampPct(cx))
   form.y = Math.round(clampPct(cy))
   form.description = ''
+  form.dangerLevel = 1
   form.sortOrder = locations.value.length
   drawingMode.value = 'polygon'
   magicMode.value = false
@@ -1283,6 +1321,7 @@ function openEdit(row) {
   form.x = row.x == null ? 50 : row.x
   form.y = row.y == null ? 50 : row.y
   form.description = row.description || ''
+  form.dangerLevel = row.dangerLevel == null ? 1 : row.dangerLevel
   form.sortOrder = row.sortOrder || 0
   const polygon = parsePolygon(row.polygon)
   if (polygon.length >= 3) {
@@ -1326,6 +1365,7 @@ async function onSaveLocation() {
       name: form.name,
       icon: form.icon,
       description: form.description,
+      dangerLevel: form.dangerLevel,
       sortOrder: form.sortOrder,
       // 新建地点要指明属于哪个世界；编辑时后端已经有记录，不必再传
       worldId: form.id ? undefined : selectedWorldId.value
@@ -1624,6 +1664,19 @@ onBeforeUnmount(() => {
 .vertex-count { font-size: 12px; color: var(--el-text-color-regular); }
 .draw-tip { display: block; margin-top: 8px; line-height: 1.7; max-width: 760px; }
 .conflict-text { color: var(--el-color-danger); font-size: 12px; line-height: 1.7; }
+
+/* 危险度标签：0 安全 / 1 较低 / 2 较高 / 3 危险，颜色越深越危险 */
+.danger-tag {
+  display: inline-block;
+  padding: 0 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 20px;
+}
+.danger-tag.d0 { color: #2f8f5b; background: rgba(47, 143, 91, 0.12); }
+.danger-tag.d1 { color: #6b7280; background: rgba(107, 114, 128, 0.12); }
+.danger-tag.d2 { color: #b7791f; background: rgba(183, 121, 31, 0.14); }
+.danger-tag.d3 { color: #c0392b; background: rgba(192, 57, 43, 0.14); }
 
 .loc-form {
   margin-top: 14px;

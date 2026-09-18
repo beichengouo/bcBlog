@@ -332,10 +332,46 @@
           <span class="tip">{{ temperature }}</span>
         </el-form-item>
         <el-form-item label="初始坐标">
-          <el-input-number v-model="form.x" :min="0" :max="100" />
+          <el-input-number v-model="form.x" :min="0" :max="100" @change="onCoordinateChange" />
           <span class="range-sep">,</span>
-          <el-input-number v-model="form.y" :min="0" :max="100" />
-          <span class="tip">x 横向、y 纵向，0~100 的地图百分比</span>
+          <el-input-number v-model="form.y" :min="0" :max="100" @change="onCoordinateChange" />
+          <span class="tip">x 横向、y 纵向，0~100 的地图百分比；改坐标会自动把「一级地点」同步成坐标所在的地区</span>
+        </el-form-item>
+        <el-form-item label="一级地点">
+          <el-select
+            v-model="form.locationName"
+            clearable
+            placeholder="按坐标自动匹配"
+            style="width: 220px"
+            @change="onLocationPicked"
+          >
+            <el-option v-for="loc in locations" :key="loc.id" :label="loc.name" :value="loc.name" />
+          </el-select>
+          <span class="tip">选一个地区会把坐标落到该地区内部；坐标和地点始终一致，地图与距离才不会打架</span>
+        </el-form-item>
+        <el-form-item label="二级地点">
+          <el-input
+            v-model="form.subLocation"
+            maxlength="90"
+            style="width: 320px"
+            placeholder="例如：协会门外的喷泉长椅（换了一级地点会自动清空）"
+          />
+        </el-form-item>
+        <el-form-item label="下次行动">
+          <el-date-picker
+            v-model="form.nextRunTime"
+            type="datetime"
+            value-format="YYYY-MM-DD HH:mm:ss"
+            placeholder="留空则按间隔自动安排"
+            style="width: 215px"
+          />
+          <el-input
+            v-model="form.nextReason"
+            maxlength="40"
+            style="width: 170px; margin-left: 8px"
+            placeholder="原因，如 睡觉"
+          />
+          <span class="tip">删除行动日志后想手工回退角色状态时用：这里可以直接安排下一次行动的时间</span>
         </el-form-item>
         <el-form-item label="行动间隔">
           <el-input-number v-model="form.intervalMin" :min="1" :max="1440" />
@@ -398,6 +434,13 @@
               <span class="status-label">心情</span>
               <el-input v-model="statusForm.心情" placeholder="如：平静" maxlength="20" style="width: 130px" />
             </div>
+            <div class="status-row">
+              <span class="status-label">伤势</span>
+              <el-select v-model="statusForm.伤势" style="width: 130px">
+                <el-option v-for="level in INJURY_LEVELS" :key="level" :label="level" :value="level" />
+              </el-select>
+              <span class="tip">AI 行动时也会改这一项；濒死 / 重伤后会自动拉长下一次行动间隔（默认 6 小时 / 3 小时）</span>
+            </div>
             <div class="status-row" v-for="(item, index) in extraStatus" :key="'extra-' + index">
               <el-input v-model="item.key" placeholder="状态名（如 精神）" style="width: 150px" maxlength="20" />
               <el-input v-model="item.value" placeholder="值（如 良好）" style="width: 150px" maxlength="30" />
@@ -444,17 +487,21 @@ import {
   unlockSandboxCharacter,
   saveSandboxItem,
   deleteSandboxItem,
-  generateSandboxCharacter
+  generateSandboxCharacter,
+  sandboxLocations
 } from '@/api/sandbox'
 import { aiProviderList, aiProviderModels } from '@/api/ai'
 import { useSandboxWorld } from '@/composables/useSandboxWorld'
 import { emojiForItem, ITEM_RARITIES, rarityMeta } from '@/utils/sandboxItems'
+import { interiorPoint, locationAtPoint, polygonOf } from '@/utils/sandboxGeo'
 
 const uploadHeaders = { Authorization: localStorage.getItem('token') || '' }
 
 const list = ref([])
 const providers = ref([])
 const models = ref([])
+/** 当前世界的地区列表：编辑角色时用来按坐标反查「一级地点」 */
+const locations = ref([])
 const loading = ref(false)
 const saving = ref(false)
 const modelLoading = ref(false)
@@ -497,8 +544,11 @@ const router = useRouter()
 const selectedWorldId = ref(null)
 const temperature = ref(0.9)
 /** 标准状态项，对应 AI 提示词里的固定字段 */
-const STANDARD_STATUS_KEYS = ['体力', '魔力', '饥饿度', '心情']
-const statusForm = reactive({ 体力: 100, 魔力: 100, 饥饿度: 20, 心情: '平静' })
+// 伤势单独用下拉编辑（四档），所以从"自定义状态项"里排除，避免同一个键出现两份
+const STANDARD_STATUS_KEYS = ['体力', '魔力', '饥饿度', '心情', '伤势']
+/** 伤势档位：与后端 SandboxDeathGuard.INJURY_LEVELS 保持一致 */
+const INJURY_LEVELS = ['无恙', '轻伤', '重伤', '濒死']
+const statusForm = reactive({ 体力: 100, 魔力: 100, 饥饿度: 20, 心情: '平静', 伤势: '无恙' })
 const extraStatus = ref([])
 
 /**
@@ -519,11 +569,15 @@ const FORM_DEFAULTS = {
   temperature: 0.9,
   x: 50,
   y: 50,
+  locationName: '',
+  subLocation: '',
   coins: 0,
   combatPower: 10,
   goal: '',
   powerView: '',
   wealthView: '',
+  nextRunTime: null,
+  nextReason: '',
   intervalMin: 45,
   intervalMax: 75,
   aiIntervalMin: null,
@@ -540,6 +594,7 @@ function resetForm() {
   statusForm.魔力 = 100
   statusForm.饥饿度 = 20
   statusForm.心情 = '平静'
+  statusForm.伤势 = '无恙'
   extraStatus.value = []
   draftItems.value = []
   draftPlace.value = ''
@@ -550,7 +605,13 @@ function resetForm() {
 async function load() {
   loading.value = true
   try {
-    list.value = await sandboxCharacters(selectedWorldId.value)
+    // 角色和地区一起拉：编辑角色时要按坐标反查所在地区（与后端同一套判定）
+    const [characters, places] = await Promise.all([
+      sandboxCharacters(selectedWorldId.value),
+      sandboxLocations(selectedWorldId.value)
+    ])
+    list.value = characters || []
+    locations.value = places || []
   } finally {
     loading.value = false
   }
@@ -625,7 +686,9 @@ function buildStatusJson() {
   const status = {
     体力: statusForm.体力,
     魔力: statusForm.魔力,
-    饥饿度: statusForm.饥饿度
+    饥饿度: statusForm.饥饿度,
+    // 伤势是四档固定值：AI 行动和后台编辑都走同一套白名单
+    伤势: INJURY_LEVELS.includes(statusForm.伤势) ? statusForm.伤势 : '无恙'
   }
   if (statusForm.心情) {
     status.心情 = statusForm.心情
@@ -675,11 +738,15 @@ function openEdit(row) {
   form.temperature = Number(row.temperature || 0.9)
   form.x = row.x == null ? 50 : row.x
   form.y = row.y == null ? 50 : row.y
+  form.locationName = row.locationName || ''
+  form.subLocation = row.subLocation || ''
   form.coins = row.coins == null ? 0 : row.coins
   form.combatPower = row.combatPower == null ? 10 : row.combatPower
   form.goal = row.goal || ''
   form.powerView = row.powerView || ''
   form.wealthView = row.wealthView || ''
+  form.nextRunTime = row.nextRunTime || null
+  form.nextReason = row.nextReason || ''
   form.intervalMin = row.intervalMin || 45
   form.intervalMax = row.intervalMax || 75
   form.aiIntervalMin = row.aiIntervalMin == null ? null : row.aiIntervalMin
@@ -690,17 +757,77 @@ function openEdit(row) {
   statusForm.魔力 = numOr(status['魔力'], 100)
   statusForm.饥饿度 = numOr(status['饥饿度'], 20)
   statusForm.心情 = status['心情'] == null ? '' : String(status['心情'])
+  const injury = status['伤势'] == null ? '无恙' : String(status['伤势'])
+  statusForm.伤势 = INJURY_LEVELS.includes(injury) ? injury : '无恙'
   extraStatus.value = Object.keys(status)
     .filter((key) => !STANDARD_STATUS_KEYS.includes(key))
     .map((key) => ({ key, value: String(status[key]) }))
   temperature.value = Number(row.temperature || 0.9)
   models.value = form.model ? [form.model] : []
+  // 打开时按坐标静默校正一次地点名：历史数据里可能存在"只改过坐标、地点名没跟上"的行，
+  // 让表单直接显示真实归属，管理员一眼就能看出角色到底在哪
+  syncPlaceByPoint(false)
   dialogVisible.value = true
 }
 
 function onAiProviderChange() {
   aiModels.value = []
   aiModel.value = ''
+}
+
+// ============================== 坐标 ↔ 一级地点 联动 ==============================
+//
+// 角色的位置由「一级地点名」和「坐标」两个字段共同表示：
+// 地图按一级地点名归类（决定角色画在哪个区域、能不能相遇），距离按坐标计算。
+// 只改其中一个就会出现矛盾，所以这里两个方向都联动，后端保存时还会再校正一次。
+
+/**
+ * 按坐标反查所在地区，把一级地点同步过去。
+ * notify=true 表示是管理员手动改坐标（弹提示）；打开编辑时静默同步一次，
+ * 让他在表单里看到的就是真实的归属，而不是"旧地点名 + 新坐标"的矛盾状态。
+ */
+function syncPlaceByPoint(notify) {
+  const x = Number(form.x)
+  const y = Number(form.y)
+  if (!locations.value.length || Number.isNaN(x) || Number.isNaN(y)) {
+    return
+  }
+  const hit = locationAtPoint(locations.value, x, y, false)
+  if (!hit || hit.name === form.locationName) {
+    return
+  }
+  form.locationName = hit.name
+  // 二级地点是旧的一级地点里的具体小地方，换了大地点就作废
+  form.subLocation = ''
+  if (notify) {
+    ElMessage.info(`坐标位于「${hit.name}」，已同步一级地点`)
+  }
+}
+
+/** 手改坐标：按坐标反查所在地区，把一级地点同步过去（不在任何地区里就不动，交给后端兜底） */
+function onCoordinateChange() {
+  syncPlaceByPoint(true)
+}
+
+/** 手选一级地点：把坐标落到该地区内部，保证「地点名 = 坐标所在区域」 */
+function onLocationPicked(name) {
+  if (!name) {
+    return
+  }
+  const loc = locations.value.find((item) => item.name === name)
+  if (!loc) {
+    return
+  }
+  const polygon = polygonOf(loc)
+  if (polygon) {
+    const point = interiorPoint(polygon)
+    form.x = Math.round(point[0])
+    form.y = Math.round(point[1])
+  } else {
+    // 还没画区域的单点地点：直接用它的标注点
+    form.x = Number(loc.x == null ? form.x : loc.x)
+    form.y = Number(loc.y == null ? form.y : loc.y)
+  }
 }
 
 async function loadAiModels() {
@@ -736,7 +863,11 @@ async function onAiGenerate() {
       requirement: aiRequirement.value.trim()
     }, selectedWorldId.value)
     applyDraft(draft)
-    ElMessage.success('已生成，请检查后保存')
+    ElMessage.success(
+      draft && draft.combatPower != null
+        ? `已生成（AI 评估战斗力 ${draft.combatPower}），请检查后保存`
+        : '已生成，请检查后保存'
+    )
   } finally {
     aiGenerating.value = false
   }
@@ -762,6 +893,10 @@ function applyDraft(draft) {
   if (draft.coins != null) {
     form.coins = draft.coins
   }
+  // AI 按角色描述与世界观评估出来的战斗力，直接填进表单（不再一律用默认 10）
+  if (draft.combatPower != null) {
+    form.combatPower = draft.combatPower
+  }
   // 对实力/财富的态度：AI 生成时一并填充，管理员可以改
   form.powerView = draft.powerView || form.powerView
   form.wealthView = draft.wealthView || form.wealthView
@@ -777,6 +912,8 @@ function applyDraft(draft) {
   statusForm.魔力 = numOr(status['魔力'], 100)
   statusForm.饥饿度 = numOr(status['饥饿度'], 20)
   statusForm.心情 = status['心情'] == null ? '平静' : String(status['心情'])
+  const draftInjury = status['伤势'] == null ? '无恙' : String(status['伤势'])
+  statusForm.伤势 = INJURY_LEVELS.includes(draftInjury) ? draftInjury : '无恙'
   extraStatus.value = Object.keys(status)
     .filter((key) => !STANDARD_STATUS_KEYS.includes(key))
     .map((key) => ({ key, value: String(status[key]) }))

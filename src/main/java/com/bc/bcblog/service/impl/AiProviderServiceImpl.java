@@ -282,6 +282,12 @@ public class AiProviderServiceImpl implements AiProviderService {
     @Override
     public AiProvider resolveManualProvider(Long preferredId) {
         Long uid = currentAdminId();
+        // 没有登录上下文（定时任务、命令行/测试脚本）时视同系统调用：
+        // 此时不存在"某个普通管理员"这个主体，直接用系统服务商即可。
+        // 线上手动执行（HTTP）一定带登录态，所以"用调用者自己的 key"这条规则不受影响。
+        if (uid == null) {
+            return resolveSystemProvider(preferredId);
+        }
         boolean superAdmin = isSuper(uid);
         AiProvider preferred = preferredId == null ? null : providerMapper.selectById(preferredId);
         if (preferred != null && visibleTo(preferred, uid, superAdmin)) {

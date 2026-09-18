@@ -1,6 +1,7 @@
 package com.bc.bcblog.vo;
 
 import com.bc.bcblog.entity.SandboxAct;
+import com.bc.bcblog.entity.SandboxAttitudeLog;
 import com.bc.bcblog.entity.SandboxCoinLog;
 import com.bc.bcblog.entity.SandboxItem;
 import com.bc.bcblog.entity.SandboxMemory;
@@ -46,6 +47,8 @@ public class SandboxCharacterVO {
     private String powerView;
     /** 对金钱财富的看法 */
     private String wealthView;
+    /** 最近几次「想法变化」：角色怎么看待实力与财富会随经历缓慢改变，前台展示成长轨迹 */
+    private List<SandboxAttitudeLog> recentAttitudes;
     /** 下次自动行动时间（前台展示倒计时用） */
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     private LocalDateTime nextRunTime;

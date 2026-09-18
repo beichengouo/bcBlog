@@ -25,6 +25,8 @@ public class SandboxCharacterDraftVO {
     private Map<String, Object> status = new LinkedHashMap<>();
     /** 初始金币 */
     private Integer coins;
+    /** 初始战斗力：AI 按角色描述与世界观评估（缺失时才由保存逻辑回落到默认值） */
+    private Integer combatPower;
     /** 对自身实力的看法（AI 生成，可改） */
     private String powerView;
     /** 对金钱财富的看法（AI 生成，可改） */

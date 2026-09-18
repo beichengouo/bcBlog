@@ -9,7 +9,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 沙盒回复解析：从「草稿 → 自审 → 终稿」三段式回复里取出最终 JSON。
+ * 沙盒回复解析：从「回看 → 思考 → 草稿 → 自审 → 终稿」多段式回复里取出最终 JSON。
  *
  * 背景：开启三段式后，模型会先写 &lt;draft&gt; 草稿、&lt;review&gt; 自审，最后才给 &lt;final&gt; 里的 JSON。
  * 以前的解析要求"整段回复就是一个 JSON"，遇到这种输出会直接判为掉格式。
@@ -23,13 +23,16 @@ public final class SandboxReplyParser {
 
     /** <final> 的内容（允许没有闭合标签，那就取到文末） */
     private static final Pattern FINAL_BLOCK = Pattern.compile("(?is)<final>(.*?)(?:</final>|$)");
-    private static final Pattern DRAFT_BLOCK = Pattern.compile("(?is)<draft>.*?</draft>");
-    private static final Pattern REVIEW_BLOCK = Pattern.compile("(?is)<review>.*?</review>");
-    private static final Pattern THINK_BLOCK = Pattern.compile("(?is)<think>.*?</think>");
+    // 这几段都允许"没有闭合标签"——实测模型经常直接写 <recap> 内容后接 <think>，
+    // 所以用"到下一个段标记为止"的宽松匹配，避免兜底展示时把思考内容漏到前台
+    private static final Pattern DRAFT_BLOCK = Pattern.compile("(?is)<draft>.*?(?=</?recap>|</?think>|</?review>|</?final>|$)");
+    private static final Pattern REVIEW_BLOCK = Pattern.compile("(?is)<review>.*?(?=</?recap>|</?think>|</?draft>|</?final>|$)");
+    private static final Pattern THINK_BLOCK = Pattern.compile("(?is)<think>.*?(?=</?recap>|</?draft>|</?review>|</?final>|$)");
+    private static final Pattern RECAP_BLOCK = Pattern.compile("(?is)<recap>.*?(?=</?think>|</?draft>|</?review>|</?final>|$)");
     /** 代码块围栏（有的模型爱把 JSON 包在 ```json 里） */
     private static final Pattern CODE_FENCE = Pattern.compile("(?is)```[a-zA-Z]*\\s*(.*?)```");
     /** 残留的三段标记 */
-    private static final Pattern MARKER_TAG = Pattern.compile("(?i)</?(think|draft|review|final)>");
+    private static final Pattern MARKER_TAG = Pattern.compile("(?i)</?(recap|think|draft|review|final)>");
 
     private SandboxReplyParser() {
     }
@@ -89,6 +92,7 @@ public final class SandboxReplyParser {
         text = DRAFT_BLOCK.matcher(text).replaceAll("");
         text = REVIEW_BLOCK.matcher(text).replaceAll("");
         text = THINK_BLOCK.matcher(text).replaceAll("");
+        text = RECAP_BLOCK.matcher(text).replaceAll("");
         text = MARKER_TAG.matcher(text).replaceAll("");
         return text.trim();
     }
