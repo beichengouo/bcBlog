@@ -7,6 +7,8 @@ spring:
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
     url: jdbc:mysql://localhost:3306/bc_blog?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    # 提交前必须清空这两行（本地开发填自己的库账号密码，提交时留空，提交后自己补回来）
+    # 仓库里永远保持空值：这里一旦填了真实账号密码，push 上去就等于把数据库口令公开了
     username:
     password:
   jackson:
