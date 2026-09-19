@@ -20,6 +20,8 @@ public class SandboxCharacterVO {
     private String title;
     private String avatar;
     private String appearance;
+    /** 此刻的样子：穿着、干净程度、伤势外观、发型神态（与 appearance 的"底子"分开） */
+    private String currentLook;
     private Integer x;
     private Integer y;
     private String locationName;
@@ -59,4 +61,8 @@ public class SandboxCharacterVO {
     private String nextReason;
     /** 是否正在启用自动行动 */
     private Integer enabled;
+    /** 当前正在执行的委托（没有进行中的委托时为 null） */
+    private com.bc.bcblog.entity.SandboxQuest currentQuest;
+    /** 最近完成的委托（近三天，前台展示"TA 最近完成了什么"，与委托板共用一份数据） */
+    private List<com.bc.bcblog.entity.SandboxQuest> recentQuests;
 }

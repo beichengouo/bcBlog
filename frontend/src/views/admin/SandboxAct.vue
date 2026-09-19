@@ -60,6 +60,18 @@
           <el-table-column label="概括" min-width="160" show-overflow-tooltip>
             <template #default="{ row }">{{ row.summary || '—' }}</template>
           </el-table-column>
+          <el-table-column label="运气" width="96">
+            <template #default="{ row }">
+              <span v-if="row.luck != null">{{ luckText(row.luck) }}（{{ row.luck > 0 ? '+' : '' }}{{ row.luck }}）</span>
+              <span v-else class="muted">—</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="本步遭遇" min-width="160" show-overflow-tooltip>
+            <template #default="{ row }">{{ row.encounter || '—' }}</template>
+          </el-table-column>
+          <el-table-column label="此刻的模样" min-width="170" show-overflow-tooltip>
+            <template #default="{ row }">{{ row.look || '—' }}</template>
+          </el-table-column>
           <el-table-column label="下次间隔" width="150">
             <template #default="{ row }">
               <span v-if="row.nextAfterMinutes > 0">
@@ -401,11 +413,17 @@
           <el-input v-model="newsSetting.newsPerGenerate" style="width: 90px" />
           <span class="tip">生成事件时默认写几条（1~10）</span>
         </el-form-item>
-        <el-form-item label="每天自动生成">
+        <el-form-item label="自动生成">
           <el-switch v-model="newsSetting.newsAutoEnabled" active-value="1" inactive-value="0" />
-          <span class="range-sep">时间</span>
+          <span class="tip">开启后按下面的间隔自动生成；一批不够时会把间隔调小，多出的批次叠加在当天的纪闻里</span>
+        </el-form-item>
+        <el-form-item label="刷新间隔 / 首次时间">
+          <el-input v-model="newsSetting.newsIntervalHours" style="width: 90px" />
+          <span class="range-sep">小时 · 当天首次</span>
           <el-input v-model="newsSetting.newsAutoTime" style="width: 90px" placeholder="07:00" />
-          <span class="tip">到点后自动按上面的服务商与条数生成一次（每天只生成一次）</span>
+          <span class="tip">
+            间隔填 24 就是每天一次；填 6 就是 07:00 / 13:00 / 19:00 / 01:00 一天四次
+          </span>
         </el-form-item>
         <el-form-item label="生成用服务商">
           <el-select v-model="newsSetting.newsProviderId" clearable placeholder="默认服务商" style="width: 200px" @change="onNewsProviderChange">
@@ -582,7 +600,8 @@ const newsSetting = reactive({
   newsModel: '',
   newsPromptExtra: '',
   newsAutoEnabled: '1',
-  newsAutoTime: '07:00'
+  newsAutoTime: '07:00',
+  newsIntervalHours: '24'
 })
 
 const pageSize = 10
@@ -625,6 +644,12 @@ async function initWorld() {
 function characterName(id) {
   const hit = characters.value.find((c) => c.id === id)
   return hit ? hit.name : `角色#${id}`
+}
+
+/** 本步运气的文字档位（-3 大凶 ~ +3 大吉），与后端 luckText 保持一致 */
+function luckText(luck) {
+  const names = { 3: '大吉', 2: '走运', 1: '小顺', 0: '平常', '-1': '小背', '-2': '倒霉', '-3': '大凶' }
+  return names[String(luck)] || '平常'
 }
 
 async function loadActs() {
@@ -800,6 +825,7 @@ async function loadNewsSetting() {
     newsSetting.newsPromptExtra = data.newsPromptExtra || ''
     newsSetting.newsAutoEnabled = data.newsAutoEnabled === undefined ? '1' : data.newsAutoEnabled
     newsSetting.newsAutoTime = data.newsAutoTime || '07:00'
+    newsSetting.newsIntervalHours = data.newsIntervalHours || '24'
   } catch (e) {
     // 读取失败时保留默认值
   }
@@ -1021,9 +1047,11 @@ function formatInterval(minutes) {
 
 function coinTypeText(type) {
   if (type === 'contribute') return '旅人贡献'
-  if (type === 'earn') return '日常赚取'
+  // earn = AI 叙述里赚到的工钱（打工、卖东西…）；quest = 服务端结算的委托报酬，两者要分清
+  if (type === 'earn') return '临时工钱'
   if (type === 'spend') return '日常消耗'
   if (type === 'shop_buy') return '集市购物'
+  if (type === 'quest') return '委托报酬'
   if (type === 'init') return '初始金币'
   if (type === 'admin') return '管理员调整'
   return '其他变动'
@@ -1086,6 +1114,8 @@ onMounted(async () => {
 .toolbar { display: flex; align-items: center; justify-content: space-between; }
 .toolbar-right { display: flex; align-items: center; gap: 10px; }
 .multiline { white-space: pre-line; line-height: 1.6; }
+.tip { margin-left: 8px; color: var(--el-text-color-secondary); font-size: 12px; }
+.range-sep { margin: 0 8px; color: var(--el-text-color-secondary); }
 .muted { color: var(--el-text-color-secondary); font-size: 12px; }
 .user-cell { display: flex; align-items: center; gap: 8px; }
 .user-avatar { width: 26px; height: 26px; border-radius: 50%; object-fit: cover; }

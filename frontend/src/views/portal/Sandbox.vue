@@ -161,6 +161,10 @@
               v-if="act.summary"
             >：{{ act.summary }}</template>
           </span>
+          <!-- 这一步和旅人委托有关时（接取 / 推进 / 完成）挂一个小徽章，完成的那条最显眼 -->
+          <span v-if="act.questEvent" class="latest-quest" :class="{ done: act.questEvent.indexOf('完成') === 0 }">
+            ✓ {{ act.questEvent }}
+          </span>
           <button type="button" class="ghost-btn latest-btn" @click="viewCharacterActs(act.characterId)">
             查看 TA 的行动
           </button>
@@ -239,6 +243,8 @@
           </div>
 
           <p v-if="active.appearance" class="appearance">{{ active.appearance }}</p>
+          <!-- 此刻的样子：穿着、干净程度、伤势外观这些会随行动变化的状态 -->
+          <p v-if="active.currentLook" class="current-look">此刻的模样：{{ active.currentLook }}</p>
 
           <!-- 想法：角色对实力/财富的看法会随经历缓慢改变，这里展示当前态度与最近几次变化 -->
           <div
@@ -274,6 +280,58 @@
               </div>
             </div>
             <p v-else class="muted">TA 的想法还没有因为什么经历改变过。</p>
+          </div>
+
+          <!-- 旅人委托：当前在执行的那一条 + 近三天完成的（完成记录保留三天，与委托板一致） -->
+          <div v-if="activeQuest || (active.recentQuests || []).length" class="character-quest">
+            <h3>旅人委托</h3>
+            <div v-if="activeQuest" class="cq-current">
+              <div class="cq-title">
+                <span>{{ questTypeEmoji(activeQuest.questType) }} {{ activeQuest.title }}</span>
+                <span class="cq-stars">{{ difficultyStars(activeQuest.difficulty) }}</span>
+              </div>
+              <div class="cq-meta">
+                <span v-if="activeQuest.locationName">📍 {{ activeQuest.locationName }}</span>
+                <span v-if="activeQuest.takerName">{{ activeQuest.takerName }} 正在处理</span>
+              </div>
+              <div v-if="activeQuest.target" class="cq-target">目标：{{ activeQuest.target }}</div>
+              <!-- 报酬：金币胶囊 + 带品质配色的物品徽章（与委托板、集市同一套） -->
+              <div class="quest-rewards">
+                <span class="quest-reward-label">报酬</span>
+                <span v-if="activeQuest.rewardCoins" class="quest-coin">✦ {{ activeQuest.rewardCoins }}</span>
+                <span
+                  v-for="(r, i) in activeQuest.rewards || []"
+                  :key="'cqr-' + i"
+                  class="quest-item"
+                  :style="{
+                    color: rarityMeta(r.rarity).color,
+                    background: rarityMeta(r.rarity).bg,
+                    borderColor: rarityMeta(r.rarity).border
+                  }"
+                  :title="r.description || r.name"
+                >
+                  {{ emojiForItem(r.name) }} {{ r.name }}<template v-if="(r.quantity || 1) > 1">×{{ r.quantity }}</template>
+                </span>
+                <span v-if="!activeQuest.rewardCoins && !(activeQuest.rewards || []).length" class="quest-no-reward">没有报酬</span>
+              </div>
+              <div class="cq-progress">
+                <div class="cq-bar"><i :style="{ width: (activeQuest.progress || 0) + '%' }"></i></div>
+                <span class="cq-percent">{{ activeQuest.progress || 0 }}%</span>
+              </div>
+              <div v-if="activeQuest.progressNote" class="cq-note">最近判断：{{ activeQuest.progressNote }}</div>
+            </div>
+            <p v-else class="muted">TA 现在没有在执行的委托。</p>
+
+            <div v-if="(active.recentQuests || []).length" class="cq-done">
+              <div class="cq-done-title">最近完成的委托</div>
+              <div v-for="quest in active.recentQuests" :key="'cq-' + quest.id" class="cq-done-item">
+                <div class="cq-done-head">
+                  <span class="cq-done-name">{{ questTypeEmoji(quest.questType) }} {{ quest.title }}</span>
+                  <span class="time">{{ (quest.completedAt || '').slice(5, 16) }}</span>
+                </div>
+                <div class="cq-done-note">{{ quest.completionNote || '顺利办完' }}</div>
+              </div>
+            </div>
           </div>
 
           <div class="contribute">
@@ -448,6 +506,10 @@
                 <span v-if="act.combatChange" class="combat-tag inline">战斗力 {{ act.combatChange > 0 ? "+" : "" }}{{ act.combatChange }}</span>
                 <span v-if="moveKmOf(act) >= 1" class="move-tag inline">移动 {{ formatKm(moveKmOf(act)) }}</span>
                 <span v-if="act.newsRef" class="news-tag inline">听闻 · {{ act.newsRef }}</span>
+                <!-- 本步运气：-3 大凶 ~ +3 大吉，让用户一眼看出这一天顺不顺 -->
+                <span v-if="act.luck != null" class="luck-tag inline" :class="luckClass(act.luck)">
+                  运气 · {{ luckText(act.luck) }}{{ act.luck > 0 ? ' +' : ' ' }}{{ act.luck }}
+                </span>
               </div>
               <div class="act-body">{{ act.actions }}</div>
               <div v-if="act.innerVoice" class="voice">「{{ act.innerVoice }}」</div>
@@ -557,6 +619,92 @@
       </div>
     </section>
 
+    <!-- 旅人委托板：最新一批可接 + 所有接取中 + 近三天已完成。
+         角色会自己挑着接，接了要自己赶路、自己推进；完成后奖励直接进 TA 的账 -->
+    <section v-if="questEnabled" class="card quest-board">
+      <div class="quest-head">
+        <h3>{{ questTitle || '旅人委托板' }}</h3>
+        <span class="muted">
+          世界各处贴出来的委托。角色会自己挑着接——接了要自己赶路、自己推进，完成后报酬直接进 TA 的账
+        </span>
+      </div>
+
+      <div v-if="!quests.length" class="muted quest-empty">委托板上暂时什么都没有</div>
+      <div v-else class="quest-groups">
+        <div v-for="section in questSections" :key="'qs-' + section.key" class="quest-group">
+          <div class="quest-group-title">
+            <span class="quest-group-pin">{{ section.key === 'open' ? '📌' : (section.key === 'taken' ? '⚔️' : '✔️') }}</span>
+            {{ section.title }}
+            <span class="quest-group-count">{{ section.items.length }}</span>
+          </div>
+          <div class="quest-grid">
+            <article
+              v-for="quest in section.items"
+              :key="section.key + '-' + quest.id"
+              class="quest-card"
+              :class="[section.key, 'd' + (quest.difficulty || 1)]"
+            >
+              <!-- 顶部：类型徽章 + 难度星级（左）；状态标签（右） -->
+              <div class="quest-card-top">
+                <span class="quest-top-left">
+                  <span class="quest-type">{{ questTypeEmoji(quest.questType) }} {{ questTypeText(quest.questType) }}</span>
+                  <span class="quest-stars" :title="'难度 ' + (quest.difficulty || 1)">{{ difficultyStars(quest.difficulty) }}</span>
+                </span>
+                <span v-if="section.key !== 'open'" class="quest-status" :class="section.key">
+                  {{ section.key === 'taken' ? '接取中' : '已完成' }}
+                </span>
+              </div>
+
+              <div class="quest-card-title">{{ quest.title }}</div>
+
+              <div class="quest-card-meta">
+                <span v-if="quest.locationName" class="quest-place">📍 {{ quest.locationName }}</span>
+                <span v-if="quest.power" class="quest-power">⚔ 战力 {{ quest.power }}</span>
+              </div>
+
+              <div v-if="quest.target" class="quest-card-target">{{ quest.target }}</div>
+
+              <!-- 报酬：金币胶囊 + 带品质配色的物品徽章（和集市、背包同一套配色） -->
+              <div class="quest-rewards">
+                <span class="quest-reward-label">报酬</span>
+                <span v-if="quest.rewardCoins" class="quest-coin">✦ {{ quest.rewardCoins }}</span>
+                <span
+                  v-for="(r, i) in quest.rewards || []"
+                  :key="'qr-' + quest.id + '-' + i"
+                  class="quest-item"
+                  :style="{
+                    color: rarityMeta(r.rarity).color,
+                    background: rarityMeta(r.rarity).bg,
+                    borderColor: rarityMeta(r.rarity).border
+                  }"
+                  :title="r.description || r.name"
+                >
+                  {{ emojiForItem(r.name) }} {{ r.name }}<template v-if="(r.quantity || 1) > 1">×{{ r.quantity }}</template>
+                </span>
+                <span v-if="!quest.rewardCoins && !(quest.rewards || []).length" class="quest-no-reward">没有报酬</span>
+              </div>
+
+              <!-- 接取中：进度条 + AI 最近一次判断 -->
+              <template v-if="section.key === 'taken'">
+                <div class="quest-progress-row">
+                  <div class="quest-progress"><i :style="{ width: (quest.progress || 0) + '%' }"></i></div>
+                  <span class="quest-percent">{{ quest.progress || 0 }}%</span>
+                </div>
+                <div v-if="quest.progressNote" class="quest-card-note">{{ quest.progressNote }}</div>
+                <div class="quest-owner">{{ quest.takerName || '有人' }} 正在处理</div>
+              </template>
+
+              <!-- 已完成：谁完成的 + 完成经过（保留三天） -->
+              <template v-else-if="section.key === 'done'">
+                <div v-if="quest.completionNote" class="quest-card-note">{{ quest.completionNote }}</div>
+                <div class="quest-owner done">由 {{ quest.takerName || '某人' }} 完成</div>
+              </template>
+            </article>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <el-dialog v-model="buyVisible" :title="buyItem ? '赠送「' + buyItem.name + '」' : '赠送'" width="520px">
       <div v-if="buyItem" class="buy-body">
         <div class="buy-top">
@@ -659,6 +807,31 @@ const buyVisible = ref(false)
 const buyItem = ref(null)
 const buyCharacterId = ref(null)
 const buying = ref(false)
+/** 旅人委托板：最新一批可接 + 接取中 + 近三天已完成 */
+const questEnabled = ref(false)
+const questTitle = ref('')
+const quests = ref([])
+/** 委托板分组：可接 / 接取中 / 已完成（前台分三段展示） */
+const openQuests = computed(() => quests.value.filter((item) => item.status === 'open'))
+const takenQuests = computed(() => quests.value.filter((item) => item.status === 'taken'))
+const doneQuests = computed(() => quests.value.filter((item) => item.status === 'completed'))
+/** 委托板分组（空分组不显示） */
+const questSections = computed(() => [
+  { key: 'open', title: '可以接取', items: openQuests.value },
+  { key: 'taken', title: '进行中', items: takenQuests.value },
+  { key: 'done', title: '已完成（近三天）', items: doneQuests.value }
+].filter((section) => section.items.length))
+/** 当前角色手上正在执行的那一条委托 */
+const activeQuest = computed(() => (active.value ? active.value.currentQuest : null))
+/** 委托类型的中文名与图标（与后端 quest_type 一一对应） */
+const QUEST_TYPE_META = {
+  hunt: { label: '讨伐', emoji: '⚔️' },
+  gather: { label: '采集', emoji: '🌿' },
+  escort: { label: '护送', emoji: '🛡️' },
+  explore: { label: '探索', emoji: '🧭' },
+  chore: { label: '杂活', emoji: '🧺' },
+  other: { label: '委托', emoji: '📜' }
+}
 /** 前台可切换的世界（只含「前台可见」的，可能不止一个） */
 const worlds = ref([])
 /** 当前世界：优先用地址栏 ?world=xxx，其次用上次选择的 */
@@ -830,6 +1003,21 @@ const distanceBase = computed(() => {
   }
   return characters.value[0] || null
 })
+
+/** 本步运气的文字档位（-3 大凶 ~ +3 大吉），与后端 luckText 保持一致 */
+function luckText(luck) {
+  const names = { 3: '大吉', 2: '走运', 1: '小顺', 0: '平常', '-1': '小背', '-2': '倒霉', '-3': '大凶' }
+  return names[String(luck)] || '平常'
+}
+
+/** 运气的颜色档位：好运偏暖、霉运偏冷 */
+function luckClass(luck) {
+  if (luck >= 2) return 'luck-great'
+  if (luck === 1) return 'luck-good'
+  if (luck === 0) return 'luck-normal'
+  if (luck === -1) return 'luck-bad'
+  return 'luck-awful'
+}
 
 /** 地点危险度文案：与后端 dangerText 保持一致（0 安全 / 1 较低 / 2 较高 / 3 危险） */
 function dangerLabel(level) {
@@ -1105,6 +1293,10 @@ async function load() {
   whisperPoints.value = data.whisperPoints == null ? 1 : data.whisperPoints
   coinRate.value = data.coinRate == null ? 1 : data.coinRate
   shopBuyPerDay.value = data.shopBuyPerDay == null ? 2 : data.shopBuyPerDay
+  // 旅人委托板：后台总开关关闭时整块不显示
+  questEnabled.value = data.questEnabled === true
+  questTitle.value = data.questTitle || '旅人委托板'
+  quests.value = data.quests || []
   kmMapWidth.value = data.kmMapWidth == null ? 200 : data.kmMapWidth
   news.value = data.news || []
   newsTitle.value = data.newsTitle || ''
@@ -1306,9 +1498,11 @@ async function refreshCharacters() {
 
 function coinTypeText(type) {
   if (type === 'contribute') return '旅人贡献'
-  if (type === 'earn') return '赚取'
+  // 和「委托报酬」区分开：这里的 earn 是 AI 叙述里赚到的工钱/卖东西的钱，不是委托结算发给它的奖励
+  if (type === 'earn') return '临时工钱'
   if (type === 'spend') return '花销'
   if (type === 'shop_buy') return '集市购物'
+  if (type === 'quest') return '委托报酬'
   if (type === 'init') return '初始金币'
   if (type === 'admin') return '管理员调整'
   return '其他变动'
@@ -1326,6 +1520,21 @@ function favorColor(favor) {
   if (value < 40) return '#b9a5c9'
   if (value < 80) return '#7bc47f'
   return '#f2b23e'
+}
+
+/** 旅人委托：类型名与图标 */
+function questTypeText(type) {
+  return (QUEST_TYPE_META[type] || QUEST_TYPE_META.other).label
+}
+
+function questTypeEmoji(type) {
+  return (QUEST_TYPE_META[type] || QUEST_TYPE_META.other).emoji
+}
+
+/** 难度 1~5 → ★★★☆☆ */
+function difficultyStars(difficulty) {
+  const level = Math.max(1, Math.min(5, Number(difficulty) || 1))
+  return '★'.repeat(level) + '☆'.repeat(5 - level)
 }
 
 function parseTime(text) {
@@ -1826,6 +2035,13 @@ onBeforeUnmount(() => {
   border: 1px solid var(--border);
 }
 .appearance { margin: 16px 0 0; color: var(--text); font-size: 14px; line-height: 1.9; }
+/* 此刻的样子：比外貌更「实时」的一行，用稍微柔和的颜色区分开 */
+.current-look {
+  margin: 6px 0 0;
+  color: var(--accent-2);
+  font-size: 13.5px;
+  line-height: 1.8;
+}
 .act-body { margin-top: 6px; white-space: pre-line; line-height: 1.8; color: var(--text); font-size: 14px; }
 .voice { margin-top: 6px; color: var(--accent-2); font-size: 13px; font-style: italic; }
 
@@ -1936,6 +2152,23 @@ onBeforeUnmount(() => {
   vertical-align: bottom;
 }
 .news-tag.inline { margin-left: 8px; }
+
+/* 本步运气：-3 大凶 ~ +3 大吉 */
+.luck-tag {
+  padding: 1px 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  white-space: nowrap;
+  display: inline-block;
+  vertical-align: bottom;
+  border: 1px solid transparent;
+}
+.luck-tag.inline { margin-left: 8px; }
+.luck-tag.luck-great { color: #b8860b; background: rgba(255, 200, 60, 0.22); border-color: rgba(255, 200, 60, 0.55); }
+.luck-tag.luck-good { color: #6a9a4a; background: rgba(140, 200, 110, 0.18); border-color: rgba(140, 200, 110, 0.45); }
+.luck-tag.luck-normal { color: var(--el-text-color-secondary); background: rgba(150, 150, 150, 0.12); border-color: rgba(150, 150, 150, 0.3); }
+.luck-tag.luck-bad { color: #b07a3a; background: rgba(200, 150, 90, 0.16); border-color: rgba(200, 150, 90, 0.42); }
+.luck-tag.luck-awful { color: #b4564a; background: rgba(200, 90, 80, 0.16); border-color: rgba(200, 90, 80, 0.45); }
 .area.flash .area-label {
   background: linear-gradient(120deg, #ff6f9f, #ff9ec4);
   animation: areaFlash 0.8s ease-in-out 2;
@@ -2319,9 +2552,10 @@ onBeforeUnmount(() => {
   gap: 4px;
   /* 卡片整体收小一圈，显得更精致 */
   padding: 13px 10px 10px;
-  border: 1.5px solid var(--r-border, var(--border));
+  border: 1.5px solid var(--r-border, var(--glass-border));
   border-radius: 16px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.5), rgba(255, 255, 255, 0.16));
+  /* 走主题变量：白天是浅色摊位，夜晚是深蓝柜台（写死白色会在夜晚模式变成刺眼的白卡） */
+  background: linear-gradient(180deg, var(--glass-bg), transparent);
   cursor: pointer;
   overflow: hidden;
   text-align: center;
@@ -2357,9 +2591,10 @@ onBeforeUnmount(() => {
   width: 46px;
   height: 46px;
   border-radius: 50%;
-  background: radial-gradient(circle at 32% 28%, rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0.35));
+  /* 展台的柔光也跟着主题走：白天偏白、夜晚偏深，emoji 图标两种主题下都看得清 */
+  background: radial-gradient(circle at 32% 28%, var(--glass-border), var(--glass-bg));
   box-shadow: inset 0 -3px 8px rgba(0, 0, 0, 0.06), 0 6px 14px rgba(0, 0, 0, 0.1);
-  border: 1px solid var(--r-border, var(--border));
+  border: 1px solid var(--r-border, var(--glass-border));
   transition: transform 0.25s ease;
  }
 .shop-icon { font-size: 22px; line-height: 1; }
@@ -2383,7 +2618,7 @@ onBeforeUnmount(() => {
   height: 4px;
   margin-top: 2px;
   border-radius: 4px;
-  background: rgba(0, 0, 0, 0.08);
+  background: var(--border);
   overflow: hidden;
 }
 .shop-stockbar i {
@@ -2411,7 +2646,7 @@ onBeforeUnmount(() => {
 .shop-cell:hover {
   transform: translateY(-4px);
   border-color: var(--r-color, var(--accent));
-  box-shadow: 0 12px 26px rgba(0, 0, 0, 0.16), 0 0 0 1px var(--r-border, transparent);
+  box-shadow: var(--shadow-hover), 0 0 0 1px var(--r-border, transparent);
 }
 .shop-cell:hover .shop-icon-wrap { transform: translateY(-2px) scale(1.06); }
 /* 高品质：加一层柔光，越稀有越亮 */
@@ -2435,4 +2670,226 @@ onBeforeUnmount(() => {
   /* 手机端保持原样：两列 + 原来的间距 */
   .shop { padding: 16px 14px 18px; }
   .shop-grid { grid-template-columns: repeat(2, 1fr); gap: 14px; padding: 0; }
+}
+
+/* ============ 旅人委托板：布告栏质感（难度色带 + 星星 + 进度条） ============ */
+.quest-board { padding: 22px 26px 26px; }
+.quest-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+.quest-head h3 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text-strong);
+}
+.quest-head h3::before { content: '📜 '; }
+.quest-empty { padding: 22px 0; text-align: center; }
+.quest-groups { display: flex; flex-direction: column; gap: 18px; }
+.quest-group-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px 4px 10px;
+  border-radius: 999px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+  background: var(--accent-soft);
+  border: 1px solid var(--border);
+  margin-bottom: 12px;
+  letter-spacing: 0.5px;
+}
+.quest-group-pin { font-size: 12px; }
+.quest-group-count {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  font-size: 11px;
+  line-height: 18px;
+  text-align: center;
+  color: var(--text-strong);
+  background: var(--glass-bg);
+}
+.quest-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 14px;
+}
+/*
+ * 委托卡：一张"悬赏单"——左侧难度色带、顶部类型与星级、中间标题与目标、
+ * 底部一条报酬条（金币胶囊 + 带品质配色的物品徽章），进行中/已完成再叠进度或完成经过。
+ * 背景与描边全部走主题变量，夜晚模式下才不会出现"黑底白卡"的高对比刺眼问题。
+ */
+.quest-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 14px 16px 15px 19px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--glass-border);
+  background: var(--glass-bg);
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+  overflow: hidden;
+}
+/* 难度色带：整条贴边，难度越高颜色越"烫" */
+.quest-card::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: linear-gradient(180deg, var(--q-bar, var(--accent)), transparent 92%);
+}
+.quest-card.d1 { --q-bar: #9ec7a4; }
+.quest-card.d2 { --q-bar: #7fb6d8; }
+.quest-card.d3 { --q-bar: #d8b96a; }
+.quest-card.d4 { --q-bar: #e08c5a; }
+.quest-card.d5 { --q-bar: #d4677f; }
+.quest-card:hover {
+  transform: translateY(-3px);
+  border-color: var(--q-bar, var(--accent));
+  box-shadow: var(--shadow-hover);
+}
+/* 进行中：暖色薄雾（两个主题下都不会刺眼）；已完成：整体压暗一点 */
+.quest-card.taken {
+  border-color: rgba(240, 177, 60, 0.4);
+  background:
+    linear-gradient(180deg, rgba(240, 177, 60, 0.12), transparent 46%),
+    var(--glass-bg);
+}
+.quest-card.done { opacity: 0.9; }
+.quest-card-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.quest-top-left { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
+.quest-type {
+  font-size: 11px;
+  color: var(--text);
+  background: var(--accent-soft);
+  border-radius: 999px;
+  padding: 1px 8px;
+  white-space: nowrap;
+}
+.quest-stars { font-size: 11px; color: #d9a33a; letter-spacing: 1px; }
+.quest-status {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  border-radius: 999px;
+  padding: 1px 8px;
+  white-space: nowrap;
+}
+.quest-status.taken { color: #b8791f; background: rgba(240, 177, 60, 0.18); }
+.quest-status.done { color: #3f8f63; background: rgba(99, 192, 122, 0.18); }
+.quest-card-title { font-size: 14px; font-weight: 700; color: var(--text-strong); line-height: 1.4; }
+.quest-card-meta { display: flex; flex-wrap: wrap; gap: 10px; font-size: 12px; color: var(--text-muted); }
+.quest-card-target {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.6;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+/* 报酬条：和上面的信息用虚线隔开，像悬赏单底部那一栏 */
+.quest-rewards {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border);
+}
+.quest-reward-label { font-size: 11px; color: var(--text-muted); }
+.quest-coin {
+  font-size: 12px;
+  font-weight: 700;
+  color: #c98a2a;
+  background: rgba(240, 177, 60, 0.16);
+  border: 1px solid rgba(240, 177, 60, 0.45);
+  border-radius: 999px;
+  padding: 0 8px;
+  white-space: nowrap;
+}
+.quest-item {
+  font-size: 12px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: 0 8px;
+  white-space: nowrap;
+}
+.quest-no-reward { font-size: 12px; color: var(--text-muted); }
+.quest-owner { font-size: 11px; color: var(--text-muted); }
+.quest-owner.done { color: #5a9e73; font-weight: 600; }
+.quest-card-note {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.6;
+  border-left: 2px solid var(--border);
+  padding-left: 8px;
+}
+.quest-progress-row { display: flex; align-items: center; gap: 8px; }
+.quest-progress {
+  flex: 1;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--border);
+  overflow: hidden;
+}
+.quest-progress i {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #f0b96b, #e08c5a);
+  transition: width 0.3s ease;
+}
+.quest-percent { font-size: 11px; color: var(--text-muted); min-width: 32px; text-align: right; }
+
+/* 角色档案里的「旅人委托」：当前委托 + 最近完成 */
+.character-quest { margin-top: 16px; }
+.character-quest h3 { margin: 0 0 8px; font-size: 14px; color: var(--text-strong); }
+.cq-current {
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  /* 走主题变量：白天是淡淡的樱粉，夜晚是深蓝底，都不会出现"黑底白卡" */
+  background: var(--accent-soft);
+}
+.cq-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-weight: 700; color: var(--text-strong); }
+.cq-stars { font-size: 11px; color: #d9a33a; }
+.cq-meta { display: flex; flex-wrap: wrap; gap: 12px; font-size: 12px; color: var(--text-muted); margin-top: 6px; }
+.cq-target { font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.6; }
+.cq-progress { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.cq-bar { flex: 1; height: 6px; border-radius: 999px; background: var(--border); overflow: hidden; }
+.cq-bar i { display: block; height: 100%; border-radius: 999px; background: linear-gradient(90deg, #f0b96b, #e08c5a); }
+.cq-percent { font-size: 12px; color: var(--text-muted); min-width: 34px; text-align: right; }
+.cq-note { font-size: 12px; color: var(--text-muted); margin-top: 6px; }
+.cq-done { margin-top: 12px; }
+.cq-done-title { font-size: 12px; color: var(--text-muted); margin-bottom: 6px; }
+.cq-done-item { padding: 6px 0; border-top: 1px dashed var(--border); }
+.cq-done-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.cq-done-name { font-size: 13px; color: var(--text-strong); font-weight: 600; }
+.cq-done-note { font-size: 12px; color: var(--text-muted); margin-top: 2px; line-height: 1.6; }
+
+/* 最新动态上的委托徽章 */
+.latest-quest {
+  align-self: flex-start;
+  font-size: 11px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  color: var(--text);
+  background: var(--accent-soft);
+}
+.latest-quest.done {
+  color: #3f8f63;
+  background: rgba(99, 192, 122, 0.2);
+  font-weight: 600;
+}
+
+@media (max-width: 720px) {
+  .quest-board { padding: 16px 14px 18px; }
+  .quest-grid { grid-template-columns: 1fr; gap: 12px; }
+  .quest-card { padding: 13px 13px 14px 17px; }
 }</style>

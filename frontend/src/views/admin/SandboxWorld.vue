@@ -273,6 +273,15 @@
                 危险则随时可能碰上野兽、魔物、劫匪（会写进行动提示词，作为 AI 判断遭遇的依据）
               </span>
             </el-form-item>
+            <el-form-item label="生物战力">
+              <el-input-number v-model="form.powerMin" :min="1" :max="9999" controls-position="right" placeholder="下限" />
+              <span class="range-sep">~</span>
+              <el-input-number v-model="form.powerMax" :min="1" :max="9999" controls-position="right" placeholder="上限" />
+              <span class="tip">
+                这里出没的生物大致在这个战力区间，遭遇时对手强度从这里取（不再跟着角色变强）；
+                留空则按危险度默认：较低 6~14、较高 15~30、危险 25~55
+              </span>
+            </el-form-item>
             <el-form-item label="排序">
               <el-input-number v-model="form.sortOrder" :min="0" :max="9999" controls-position="right" />
             </el-form-item>
@@ -335,6 +344,12 @@
             <span class="danger-tag" :class="'d' + (row.dangerLevel == null ? 1 : row.dangerLevel)">
               {{ dangerLabel(row.dangerLevel) }}
             </span>
+          </template>
+        </el-table-column>
+        <el-table-column label="生物战力" width="104">
+          <template #default="{ row }">
+            <span v-if="row.powerMin != null && row.powerMax != null">{{ row.powerMin }} ~ {{ row.powerMax }}</span>
+            <span v-else class="muted">默认</span>
           </template>
         </el-table-column>
         <el-table-column prop="description" label="地点描述（会作为 AI 参考）" min-width="220" show-overflow-tooltip />
@@ -444,6 +459,13 @@
             两端的人离得很远）；同一个二级地点的角色无条件算相遇。填 0 表示不限制
           </span>
         </el-form-item>
+        <el-form-item label="限同一级地点">
+          <el-switch v-model="settings.socialSameAreaOnly" active-value="1" inactive-value="0" />
+          <span class="tip">
+            开启后（推荐）：**只有处在同一个一级地点的角色才能互动**。地图上有些一级地点彼此不到 30km，
+            不限制的话会出现"明明隔着另一个地区、却因为离得近而互相触发互动"的情况
+          </span>
+        </el-form-item>
         <el-form-item label="失败退避">
           <el-input v-model="settings.failBackoffBaseMinutes" style="width: 90px" />
           <span class="range-sep">~</span>
@@ -484,20 +506,29 @@
             地点/角色名对不上、状态数值越界；「每次都查」最稳但每次行动都要多一次调用
           </span>
         </el-form-item>
-        <el-form-item label="三段式输出">
+        <el-form-item label="行动分段输出">
           <el-switch v-model="settings.draftMode" active-value="on" inactive-value="off" />
           <span class="tip">
-            开启后要求 AI 在同一次回复里先写「思考 → 草稿 → 自审 → 终稿」：先权衡处境与可选做法，
-            再写这一步具体做什么，然后对照清单自检（地点/间隔/物品来源/花费是否相称/是否重复付款/是否符合人设），
-            最后才给最终 JSON。服务端只取终稿，前面几段不会出现在前台；
-            代价是输出变长（免费接口不心疼，按量计费的接口注意成本）
+            **仅对角色行动生效**。开启后要求 AI 在同一次回复里按「回看 → 思考 → 草稿 → 自审 → 终稿」五段输出：
+            先对齐自己此刻在哪、正在做什么，再权衡这一步怎么做，然后写草稿、对照清单自检，最后才给 JSON。
+            服务端只取终稿，前面几段不会出现在前台。角色行动保持五段式，是因为行动要权衡的东西更多
+            （位置、间隔、收支、目标、记忆…）；代价是输出变长（免费接口不心疼，按量计费的接口注意成本）
           </span>
         </el-form-item>
         <el-form-item label="思考阶段">
           <el-switch v-model="settings.thinkStage" active-value="on" inactive-value="off" />
           <span class="tip">
-            三段式最前面的 &lt;think&gt; 段：让 AI 先写下处境、2~3 种可选做法、为什么选这一个、代价与风险。
-            篇幅不限，不在这里排演动作。只有三段式开启时才生效；如果某个接口吃不住长输出，可以只关这一段
+            角色行动五段式里的 &lt;think&gt; 段：让 AI 先写下处境、2~3 种可选做法、为什么选这一个、代价与风险。
+            篇幅不限，不在这里排演动作。只有「行动分段输出」开启时才生效
+          </span>
+        </el-form-item>
+        <el-form-item label="生成器三段式">
+          <el-switch v-model="settings.generatorFlow" active-value="three" inactive-value="off" />
+          <span class="tip">
+            **仅对四个生成器生效**（AI 创作角色 / 旅人纪闻 / 旅人集市 / 旅人委托）。
+            开启后它们也按「思考 &lt;think&gt; → 草稿 &lt;draft&gt; → 终稿 &lt;final&gt;」三段输出：
+            先结合世界观与地图地点（含描述、危险度）权衡，再写草稿，最后才落 JSON。
+            生成器原来是一次调用直接吐 JSON，模型常常不多想就编；加上思考段后内容会更贴地图与世界
           </span>
         </el-form-item>
         <el-form-item label="文风补充">
@@ -653,6 +684,7 @@ const settings = reactive({
   verifyMode: 'suspicious',
   draftMode: 'on',
   thinkStage: 'on',
+  generatorFlow: 'three',
   styleExtra: '',
   batchWindowMinutes: '5',
   chainMaxDepth: '1',
@@ -672,7 +704,8 @@ const settings = reactive({
   whisperEnabled: '1',
   kmMapWidth: '200',
   travelSpeeds: '步行:4,骑乘:20,车船:12,飞行:60',
-  socialMaxKm: '30'
+  socialMaxKm: '30',
+  socialSameAreaOnly: '1'
 })
 
 const loading = ref(false)
@@ -791,6 +824,9 @@ const form = reactive({
   description: '',
   // 危险度：0 安全 / 1 较低 / 2 较高 / 3 危险，会写进行动提示词，影响 AI 会不会在这里写遭遇战斗
   dangerLevel: 1,
+  // 该地点生物的战力区间：遭遇时对手强度从这里取；留空则按危险度取默认区间（1→6~14，2→15~30，3→25~55）
+  powerMin: null,
+  powerMax: null,
   sortOrder: 0
 })
 
@@ -1305,6 +1341,8 @@ function openAdd(cx = 50, cy = 50) {
   form.y = Math.round(clampPct(cy))
   form.description = ''
   form.dangerLevel = 1
+  form.powerMin = null
+  form.powerMax = null
   form.sortOrder = locations.value.length
   drawingMode.value = 'polygon'
   magicMode.value = false
@@ -1322,6 +1360,8 @@ function openEdit(row) {
   form.y = row.y == null ? 50 : row.y
   form.description = row.description || ''
   form.dangerLevel = row.dangerLevel == null ? 1 : row.dangerLevel
+  form.powerMin = row.powerMin == null ? null : row.powerMin
+  form.powerMax = row.powerMax == null ? null : row.powerMax
   form.sortOrder = row.sortOrder || 0
   const polygon = parsePolygon(row.polygon)
   if (polygon.length >= 3) {
@@ -1366,6 +1406,8 @@ async function onSaveLocation() {
       icon: form.icon,
       description: form.description,
       dangerLevel: form.dangerLevel,
+      powerMin: form.powerMin,
+      powerMax: form.powerMax,
       sortOrder: form.sortOrder,
       // 新建地点要指明属于哪个世界；编辑时后端已经有记录，不必再传
       worldId: form.id ? undefined : selectedWorldId.value

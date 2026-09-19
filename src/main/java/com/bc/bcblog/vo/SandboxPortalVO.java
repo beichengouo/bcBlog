@@ -35,4 +35,10 @@ public class SandboxPortalVO {
     private int kmMapWidth;
     /** 当前世界最新一批商品 */
     private List<com.bc.bcblog.entity.SandboxShopItem> shopItems;
+    /** 旅人委托板栏目名（后台可改） */
+    private String questTitle;
+    /** 委托板总开关（关闭时前台整块隐藏，角色也不再接取） */
+    private boolean questEnabled;
+    /** 委托板：最新一批可接 + 所有接取中 + 近三天已完成（标「已被 XX 完成」） */
+    private List<com.bc.bcblog.entity.SandboxQuest> quests;
 }

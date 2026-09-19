@@ -57,6 +57,14 @@ public class SandboxAct {
     private String nextAfterReason;
     /** 这一步参考/听说的旅人纪闻标题 */
     private String newsRef;
+    /** 本步由服务端注入的遭遇（危险地区掷骰命中时才会有），前台/后台可展示「他到底遇上了什么」 */
+    private String encounter;
+    /** 本步运气值：-3 大凶 ~ +3 大吉（服务端生成，前台展示） */
+    private Integer luck;
+    /** 这一步结束时角色的样子（外貌底子不变，随行动变化的是穿着、脏污、伤势外观这些） */
+    private String look;
+    /** 这一步和旅人委托有关时记一句，如「完成委托：清除晨雾森林的影狼」（前台据此显示徽章） */
+    private String questEvent;
     /** AI 原始返回，便于排查问题 */
     private String rawResponse;
     /** 是否来自 AI：1 是，0 为兜底记录 */

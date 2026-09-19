@@ -49,6 +49,7 @@ const routes = [
       { path: 'sandbox/characters', component: () => import('@/views/admin/SandboxCharacter.vue'), meta: { title: '沙盒角色', menu: 'sandboxCharacters' } },
       { path: 'sandbox/acts', component: () => import('@/views/admin/SandboxAct.vue'), meta: { title: '沙盒日志', menu: 'sandboxActs' } },
       { path: 'sandbox/shop', component: () => import('@/views/admin/ShopManage.vue'), meta: { title: '集市管理', menu: 'sandboxShop' } },
+      { path: 'sandbox/quests', component: () => import('@/views/admin/QuestManage.vue'), meta: { title: '旅人委托板', menu: 'sandboxQuests' } },
       { path: 'settings', component: () => import('@/views/admin/Settings.vue'), meta: { title: '系统设置', menu: 'settings' } },
       { path: 'admins', component: () => import('@/views/admin/AdminUserManage.vue'), meta: { title: '管理员管理', menu: 'admins', superOnly: true } },
       { path: 'members', component: () => import('@/views/admin/MemberManage.vue'), meta: { title: '用户管理', menu: 'members', superOnly: true } },
@@ -81,7 +82,8 @@ const SECURITY_MENUS = new Set([
   'sandboxWorld',
   'sandboxCharacters',
   'sandboxActs',
-  'sandboxShop'
+  'sandboxShop',
+  'sandboxQuests'
 ])
 
 const router = createRouter({

@@ -33,6 +33,9 @@ public final class SandboxReplyParser {
     private static final Pattern CODE_FENCE = Pattern.compile("(?is)```[a-zA-Z]*\\s*(.*?)```");
     /** 残留的三段标记 */
     private static final Pattern MARKER_TAG = Pattern.compile("(?i)</?(recap|think|draft|review|final)>");
+    /** 分段结束标记（用来判断"终稿 JSON 是不是写在最后一个分段之后、却忘了加 <final>"） */
+    private static final Pattern CLOSE_TAG =
+            Pattern.compile("(?i)</(recap|think|draft|review|final)>");
 
     private SandboxReplyParser() {
     }
@@ -55,8 +58,53 @@ public final class SandboxReplyParser {
                 return json;
             }
         }
-        // 2) 退化为"整段文本里最后一段合法 JSON"
+        // 2) 模型常把 JSON 直接写在 </review>（或 </draft>）之后、却忘了加 <final> 标记：
+        //    先截取"最后一个分段标记之后"的文本再找 JSON，避免误取到自审段里的示例对象。
+        //    （实测 5 段式里 18 步有 14 步没写 <final>，只靠"全文最后一个 JSON"是有风险的）
+        String tail = afterLastStageTag(text);
+        if (tail != null) {
+            String json = lastJsonObject(stripFence(tail));
+            if (json != null) {
+                return json;
+            }
+        }
+        // 3) 退化为"整段文本里最后一段合法 JSON"
         return lastJsonObject(stripFence(text));
+    }
+
+    /** 最后一个分段**结束标记**之后的内容（没有标记时返回 null） */
+    private static String afterLastStageTag(String text) {
+        Matcher matcher = CLOSE_TAG.matcher(text);
+        int end = -1;
+        while (matcher.find()) {
+            end = matcher.end();
+        }
+        return end < 0 ? null : text.substring(end);
+    }
+
+    /**
+     * 取「终稿」段的**原始文本**（可能是 JSON 对象，也可能是 JSON 数组）。
+     *
+     * 给四个生成器用：它们要么输出数组（集市商品、委托）、要么输出对象（角色卡、纪闻），
+     * 所以不能像 {@link #extractFinalJson} 那样限定"必须是个对象"。
+     * 没有分段标记时（生成器关掉三段式）返回原文，行为与以前一致。
+     */
+    public static String extractFinalBlock(String raw) {
+        if (raw == null || raw.trim().isEmpty()) {
+            return null;
+        }
+        String text = raw.trim();
+        Matcher matcher = FINAL_BLOCK.matcher(text);
+        String block = null;
+        while (matcher.find()) {
+            block = matcher.group(1);
+        }
+        if (block != null) {
+            return stripFence(block).trim();
+        }
+        // 忘了写 <final> 时，取"最后一个分段标记之后"的内容（那里才是终稿）
+        String tail = afterLastStageTag(text);
+        return stripFence(tail == null ? text : tail).trim();
     }
 
     /** 解析回复中的最终 JSON；解析不出来返回 null（调用方继续走补救流程） */

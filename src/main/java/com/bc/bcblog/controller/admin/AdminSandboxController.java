@@ -168,6 +168,13 @@ public class AdminSandboxController {
         return Result.ok();
     }
 
+    /** 委托板管理页保存设置：只写委托相关配置（普通管理员用这个） */
+    @PutMapping("/quests/settings")
+    public Result<Void> saveQuestSettings(@RequestBody SandboxSettingVO vo) {
+        sandboxService.saveQuestSettings(vo);
+        return Result.ok();
+    }
+
     /**
      * 金币对账修复：按金币流水重算余额与流水的"当时余额"。
      * 只修数据、不删数据，修复前后会在返回结果里逐个角色列出。
@@ -219,6 +226,12 @@ public class AdminSandboxController {
     @PostMapping("/run-all")
     public Result<SandboxRunAllVO> runAll(@RequestParam(required = false) Long worldId) {
         return Result.ok(sandboxService.runAll(worldId));
+    }
+
+    /** 查询「全员行动一轮」的进度：异步执行，前端轮询这个接口 */
+    @GetMapping("/run-all/progress")
+    public Result<SandboxRunAllVO> runAllProgress() {
+        return Result.ok(sandboxService.runAllProgress());
     }
 
     // ---------------- 行动日志 ----------------
@@ -409,5 +422,60 @@ public class AdminSandboxController {
     @GetMapping("/shop/stats")
     public Result<Map<String, Object>> shopStats(@RequestParam(required = false) Long worldId) {
         return Result.ok(sandboxService.shopStats(worldId));
+    }
+
+    // ---------------- 旅人委托板 ----------------
+
+    /** 后台：委托列表（scope=board 只看当前板面；scope=all 连历史一起看） */
+    @GetMapping("/quests")
+    public Result<List<com.bc.bcblog.entity.SandboxQuest>> quests(
+            @RequestParam(required = false) Long worldId,
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false, defaultValue = "board") String scope) {
+        return Result.ok(sandboxService.questsForAdmin(worldId, status, scope));
+    }
+
+    /** 后台：手动新增 / 编辑委托 */
+    @PostMapping("/quests")
+    public Result<com.bc.bcblog.entity.SandboxQuest> saveQuest(
+            @RequestBody com.bc.bcblog.entity.SandboxQuest quest) {
+        return Result.ok(sandboxService.saveQuest(quest));
+    }
+
+    @DeleteMapping("/quests/{id}")
+    public Result<Void> deleteQuest(@PathVariable Long id) {
+        sandboxService.deleteQuest(id);
+        return Result.ok();
+    }
+
+    /** 后台：立即生成一批委托（会保留接取中的，只补足到「每次生成条数」） */
+    @PostMapping("/quests/generate")
+    public Result<Integer> generateQuests(@RequestBody Map<String, Object> body) {
+        Integer count = Convert.toInt(body.get("count"), null);
+        Long providerId = Convert.toLong(body.get("providerId"), null);
+        String model = body.get("model") == null ? null : String.valueOf(body.get("model"));
+        Long worldId = Convert.toLong(body.get("worldId"), null);
+        return Result.ok(sandboxService.generateQuests(count, providerId, model, worldId));
+    }
+
+    /** 后台：重置回「可接」并加入当前这一批（清接取人、进度清零） */
+    @PostMapping("/quests/{id}/reset")
+    public Result<com.bc.bcblog.entity.SandboxQuest> resetQuest(@PathVariable Long id) {
+        return Result.ok(sandboxService.resetQuest(id));
+    }
+
+    /** 后台：下架（把委托撤下来；对「接取中」的会同时解除接取关系，不结算奖励） */
+    @PostMapping("/quests/{id}/expire")
+    public Result<com.bc.bcblog.entity.SandboxQuest> expireQuest(@PathVariable Long id) {
+        return Result.ok(sandboxService.expireQuest(id));
+    }
+
+    /** 后台：手动改进度与说明（进度只能往上调） */
+    @PostMapping("/quests/{id}/progress")
+    public Result<com.bc.bcblog.entity.SandboxQuest> setQuestProgress(
+            @PathVariable Long id, @RequestBody Map<String, Object> body) {
+        Integer progress = Convert.toInt(body.get("progress"), null);
+        String note = body.get("note") == null ? null : String.valueOf(body.get("note"));
+        return Result.ok(sandboxService.setQuestProgress(id, progress, note));
     }
 }

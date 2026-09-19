@@ -20,6 +20,59 @@ class SandboxReplyParserTest {
     private static final String JSON = "{\"location\":\"晨雾森林\",\"actions\":[\"采药\"]}";
 
     @Test
+    @DisplayName("忘了写 <final> 时，要取 </review> 之后的 JSON，而不是自审段里的示例对象")
+    void 没有final标记时取最后一段之后的JSON() {
+        String raw = "<recap>我在晨雾森林。</recap>\n"
+                + "<think>想去采药。</think>\n"
+                + "<draft>采三株银叶草。</draft>\n"
+                + "<review>自查：地点 {\"location\":\"示例地点\"} 没问题，最终决定如下：</review>\n"
+                + JSON;
+        assertEquals(JSON, SandboxReplyParser.extractFinalJson(raw));
+        JSONObject parsed = SandboxReplyParser.parse(raw);
+        assertNotNull(parsed);
+        assertEquals("晨雾森林", parsed.getStr("location"));
+    }
+
+    @Test
+    @DisplayName("生成器忘了写 <final> 时，同样取最后一个分段之后的内容")
+    void 生成器没有final标记() {
+        String raw = "<think>x</think><draft>y</draft>\n[{\"name\":\"防雾斗篷\"}]";
+        assertEquals("[{\"name\":\"防雾斗篷\"}]", SandboxReplyParser.extractFinalBlock(raw));
+    }
+
+    @Test
+    @DisplayName("生成器：终稿是数组时也要能整段取出来")
+    void 生成器终稿数组() {
+        String raw = "<think>\n先想一下要摆什么货。\n</think>\n"
+                + "<draft>\n1. 防雾斗篷 2. 银叶草\n</draft>\n"
+                + "<final>\n[{\"name\":\"防雾斗篷\"},{\"name\":\"银叶草\"}]\n</final>";
+        assertEquals("[{\"name\":\"防雾斗篷\"},{\"name\":\"银叶草\"}]",
+                SandboxReplyParser.extractFinalBlock(raw));
+    }
+
+    @Test
+    @DisplayName("生成器：终稿后面还跟了客套话时，仍只取 JSON")
+    void 生成器终稿带尾巴() {
+        String raw = "<think>想</think><draft>草稿</draft>\n<final>\n[{\"title\":\"甲\"}]\n</final>\n以上就是本批委托。";
+        assertEquals("[{\"title\":\"甲\"}]", SandboxReplyParser.extractFinalBlock(raw));
+    }
+
+    @Test
+    @DisplayName("生成器：关掉三段式（没有标记）时返回原文，保持老行为")
+    void 生成器无标记() {
+        assertEquals("[{\"name\":\"干粮\"}]", SandboxReplyParser.extractFinalBlock("  [{\"name\":\"干粮\"}]  "));
+        assertNull(SandboxReplyParser.extractFinalBlock(null));
+        assertNull(SandboxReplyParser.extractFinalBlock("   "));
+    }
+
+    @Test
+    @DisplayName("生成器：代码块包裹的终稿要去掉围栏")
+    void 生成器代码块() {
+        String raw = "<think>x</think><draft>y</draft><final>\n```json\n[{\"name\":\"面包\"}]\n```\n</final>";
+        assertEquals("[{\"name\":\"面包\"}]", SandboxReplyParser.extractFinalBlock(raw));
+    }
+
+    @Test
     @DisplayName("标准三段式：取 <final> 里的 JSON")
     void testFinalBlock() {
         String raw = "<draft>\n我打算让她去森林采药，顺便赚点钱（花 3 金币）。\n</draft>\n"

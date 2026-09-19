@@ -39,6 +39,7 @@ export const adminMenus = [
       { key: 'sandboxCharacters', path: '/admin/sandbox/characters', title: '角色管理', icon: 'User' },
       { key: 'sandboxActs', path: '/admin/sandbox/acts', title: '行动日志', icon: 'Clock' }
       ,{ key: 'sandboxShop', path: '/admin/sandbox/shop', title: '集市管理', icon: 'ShoppingCart' }
+      ,{ key: 'sandboxQuests', path: '/admin/sandbox/quests', title: '旅人委托板', icon: 'Tickets' }
     ]
   },
   {

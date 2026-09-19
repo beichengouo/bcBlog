@@ -35,10 +35,22 @@ public class SandboxTask {
     private final AtomicBoolean newsGenerating = new AtomicBoolean(false);
     /** 旅人集市刷新防止重入 */
     private final AtomicBoolean shopRefreshing = new AtomicBoolean(false);
+    /** 旅人委托板刷新防止重入 */
+    private final AtomicBoolean questRefreshing = new AtomicBoolean(false);
     /** 记录最近一次总结的日期，保证每天只跑一次 */
     private volatile String lastMemoryDate = "";
-    /** 记录最近一次自动生成纪闻的日期 */
-    private volatile String lastNewsDate = "";
+
+    /**
+     * 测试进程里把定时任务整个跳过。
+     *
+     * 为什么需要：沙盒测试工具会设「模拟时钟偏移」（把时间往后推，用来快速模拟多天剧情），
+     * 而测试用的 Spring 上下文里定时任务也在跑——它一旦用模拟时钟判断"谁到期了"，
+     * 就会把**真实世界**里本该明天才行动的角色提前执行掉，污染正式数据（真的发生过一次）。
+     * 所以测试进程启动时会设上 bcblog.sandbox.scheduler.disabled=true，这里直接返回。
+     */
+    private boolean schedulerDisabled() {
+        return Boolean.parseBoolean(System.getProperty("bcblog.sandbox.scheduler.disabled", "false"));
+    }
 
     /**
      * 旅人集市刷新：每分钟检查一次，到点（间隔/起始时间）就自动生成新一批商品。
@@ -46,6 +58,9 @@ public class SandboxTask {
      */
     @Scheduled(cron = "0 * * * * ?")
     public void shop() {
+        if (schedulerDisabled()) {
+            return;
+        }
         if (!"1".equals(configService.getConfigValue("sandbox_shop_auto_enabled", "1"))) {
             return;
         }
@@ -63,6 +78,9 @@ public class SandboxTask {
 
     @Scheduled(cron = "0 */5 * * * ?")
     public void run() {
+        if (schedulerDisabled()) {
+            return;
+        }
         if (!running.compareAndSet(false, true)) {
             return;
         }
@@ -81,6 +99,9 @@ public class SandboxTask {
      */
     @Scheduled(cron = "0 * * * * ?")
     public void memory() {
+        if (schedulerDisabled()) {
+            return;
+        }
         if (!"1".equals(configService.getConfigValue("sandbox_memory_enabled", "1"))) {
             return;
         }
@@ -105,31 +126,48 @@ public class SandboxTask {
     }
 
     /**
-     * 旅人纪闻自动生成：每分钟检查一次，到达后台配置的时间（默认 07:00）且当天还没生成过时执行一次。
+     * 旅人委托板刷新：每分钟检查一次，到点（刷新间隔 + 当天首次时间）就换一批新委托。
+     * 是否到期由服务层按配置判断，接取中的委托会被保留。
+     */
+    @Scheduled(cron = "0 * * * * ?")
+    public void questBoard() {
+        if (schedulerDisabled()) {
+            return;
+        }
+        if (!"1".equals(configService.getConfigValue("sandbox_quest_auto_enabled", "1"))) {
+            return;
+        }
+        if (!questRefreshing.compareAndSet(false, true)) {
+            return;
+        }
+        try {
+            sandboxService.autoRefreshQuests();
+        } catch (Exception e) {
+            log.warn("旅人委托板刷新任务异常：{}", e.getMessage());
+        } finally {
+            questRefreshing.set(false);
+        }
+    }
+
+    /**
+     * 旅人纪闻自动生成：每分钟检查一次，到点（刷新间隔 + 当天首次时间，默认每天 07:00）就生成一批。
+     * 是否到期由服务层按配置判断，这样「一天刷几次」只需要改间隔。
      */
     @Scheduled(cron = "0 * * * * ?")
     public void news() {
-        if (!"1".equals(configService.getConfigValue("sandbox_news_auto_enabled", "1"))) {
+        if (schedulerDisabled()) {
             return;
         }
-        String configured = configService.getConfigValue("sandbox_news_auto_time", "07:00");
-        String now = LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm"));
-        String today = LocalDate.now().toString();
-        if (!now.equals(configured) || today.equals(lastNewsDate)) {
+        if (!"1".equals(configService.getConfigValue("sandbox_news_auto_enabled", "1"))) {
             return;
         }
         if (!newsGenerating.compareAndSet(false, true)) {
             return;
         }
         try {
-            // 多世界：每个「运行中」的世界各自生成当天的纪闻
-            for (com.bc.bcblog.entity.SandboxWorld world : sandboxService.worlds()) {
-                if (world.getEnabled() == null || world.getEnabled() != 1) {
-                    continue;
-                }
-                sandboxService.autoGenerateNews(world.getId());
-            }
-            lastNewsDate = today;
+            sandboxService.autoRefreshNews();
+        } catch (Exception e) {
+            log.warn("旅人纪闻生成任务异常：{}", e.getMessage());
         } finally {
             newsGenerating.set(false);
         }

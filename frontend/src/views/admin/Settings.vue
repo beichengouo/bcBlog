@@ -123,6 +123,17 @@
           清理后角色会忘掉更早的事，但不会影响当前状态、金币、好感度与背包。建议 30～180 天。
         </div>
       </el-form-item>
+      <el-form-item label="旅人委托保留">
+        <div class="cleanup-field">
+          <el-input-number v-model="form.cleanupSandboxQuestDays" :min="1" :max="3650" />
+          <span class="field-tip">天</span>
+        </div>
+        <div class="cleanup-desc">
+          旅人委托板（sandbox_quest）：已完成的委托与没人接的旧批次委托会保留这么久，方便角色档案里
+          「最近完成的委托」和委托板上的「已被 XX 完成」有东西可显示；**接取中的委托永远不会被清理**。
+          建议 3～15 天。
+        </div>
+      </el-form-item>
       <el-form-item label="API 调用审计保留">
         <div class="cleanup-field">
           <el-input-number v-model="form.cleanupAdminApiLogDays" :min="1" :max="3650" />
@@ -182,6 +193,7 @@ const form = reactive({
   cleanupPointLogDays: 30,
   cleanupSandboxActDays: 7,
   cleanupSandboxMemoryDays: 30,
+  cleanupSandboxQuestDays: 3,
   cleanupAdminApiLogDays: 3
 })
 
@@ -209,6 +221,7 @@ async function load() {
   form.cleanupPointLogDays = data.cleanupPointLogDays || 30
   form.cleanupSandboxActDays = data.cleanupSandboxActDays || 7
   form.cleanupSandboxMemoryDays = data.cleanupSandboxMemoryDays || 30
+  form.cleanupSandboxQuestDays = data.cleanupSandboxQuestDays || 3
   form.cleanupAdminApiLogDays = data.cleanupAdminApiLogDays || 3
 }
 

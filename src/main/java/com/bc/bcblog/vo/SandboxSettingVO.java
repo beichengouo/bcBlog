@@ -27,6 +27,8 @@ public class SandboxSettingVO {
     private String draftMode;
     /** 思考阶段（四段式最前面那段 <think>）：on 开启（默认）/ off 关闭；仅在三段式开启时生效 */
     private String thinkStage;
+    /** 四个生成器（角色/纪闻/集市/委托）是否走三段式：three 开启（默认）/ off 关闭；角色行动不适用 */
+    private String generatorFlow;
     /** 文风补充：管理员可粘贴酒馆预设里的写作基准段落，会拼进行动提示词 */
     private String styleExtra;
     /** 同一轮行动的时间窗（分钟） */
@@ -67,6 +69,9 @@ public class SandboxSettingVO {
     private String newsAutoEnabled;
     /** 自动生成纪闻的时间 HH:mm */
     private String newsAutoTime;
+
+    /** 自动生成纪闻的刷新间隔（小时）：24 = 每天一次；填 6 就是一天四次 */
+    private String newsIntervalHours;
     /** 系统级 AI 调用（定时行动 / 记忆总结）使用的模型，留空则用角色自身模型 */
     private String systemModel;
     /** 系统级 AI 调用统一使用的服务商 id（留空 = 沿用原来的自动规则：角色绑定的系统服务商，否则默认服务商） */
@@ -102,6 +107,35 @@ public class SandboxSettingVO {
     private String shopBuyPerDay;
     /** 积分 → 金币 汇率（1 积分换多少金币），前台购买折算与"贡献金币"共用 */
     private String coinRate;
+    // ---------------- 旅人委托板 ----------------
+    /** 前台委托板栏目名 */
+    private String questTitle;
+    /** 委托板总开关 */
+    private String questEnabled;
+    /** 提示词里最多列几条可接委托 */
+    private String questVisibleCount;
+    /** 每次刷新生成几条委托 */
+    private String questPerGenerate;
+    /** 生成委托用的服务商 id */
+    private String questProviderId;
+    /** 生成委托用的模型 */
+    private String questModel;
+    /** 生成委托的附加要求 */
+    private String questPromptExtra;
+    /** 单步进度上限（%）：防止 AI 一步把进度从 0 写到 100 */
+    private String questProgressStepMax;
+    /** 单步进度上限的按难度分档："100,70,50,35,20"（难度 1~5）；留空则用上面的单值 */
+    private String questStepMaxByDifficulty;
+    /** 是否按间隔自动刷新委托 */
+    private String questAutoEnabled;
+    /** 自动刷新间隔（小时） */
+    private String questIntervalHours;
+    /** 当天第一次自动刷新的时间 HH:mm */
+    private String questAutoTime;
+    /** 完成校验没过时，是否再调一次 AI 让它自检修正（1 开 / 0 关） */
+    private String questSelfcheck;
+    /** 单次行动的**非委托**收入上限（金币）：防止 AI 一句话让角色进账一大笔 */
+    private String maxEarnPerAct;
     // ---------------- 距离与交通 ----------------
     /** 地图宽度（km）：横向 100 个坐标单位对应多少公里（默认 200） */
     private String kmMapWidth;
@@ -109,4 +143,6 @@ public class SandboxSettingVO {
     private String travelSpeeds;
     /** 允许互相互动（同行 / 好感度）的最大距离 km，0 = 不限制 */
     private String socialMaxKm;
+    /** 是否强制「必须同一个一级地点才能互动」（1 开 / 0 关）：地图上有的一级地点彼此不到 30km */
+    private String socialSameAreaOnly;
 }

@@ -15,6 +15,7 @@ import com.bc.bcblog.entity.SysUser;
 import com.bc.bcblog.mapper.AiProviderMapper;
 import com.bc.bcblog.mapper.SysUserMapper;
 import com.bc.bcblog.component.SecretCipher;
+import com.bc.bcblog.component.AuditContext;
 import com.bc.bcblog.service.AuditLogService;
 import com.bc.bcblog.service.AiProviderService;
 import com.bc.bcblog.vo.AiArticleVO;
@@ -386,9 +387,14 @@ public class AiProviderServiceImpl implements AiProviderService {
             String result = doChat(p, model, messages, temperature, jsonMode);
             auditLogService.record(p.getName() + " / " + model, true, null, System.currentTimeMillis() - start,
                     result == null ? 0 : result.length());
+            // 需要人工核对"发了什么、回了什么"时（沙盒测试工具会打开它），把完整请求与返回原样落盘
+            com.bc.bcblog.common.AiCallRecorder.record(AuditContext.action(), model, messages, result, null,
+                    System.currentTimeMillis() - start);
             return result;
         } catch (Exception e) {
             auditLogService.record(p.getName() + " / " + model, false, e.getMessage(),
+                    System.currentTimeMillis() - start);
+            com.bc.bcblog.common.AiCallRecorder.record(AuditContext.action(), model, messages, null, e.getMessage(),
                     System.currentTimeMillis() - start);
             throw e;
         }

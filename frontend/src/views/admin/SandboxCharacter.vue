@@ -19,7 +19,9 @@
             </el-option>
           </el-select>
           <span class="tip">共 {{ list.length }} 个角色</span>
-          <el-button type="warning" plain :loading="runningAll" @click="onRunAll">全员行动一轮</el-button>
+          <el-button type="warning" plain :loading="runningAll" @click="onRunAll">
+            {{ runningAll && runAllProgressText ? `全员行动中 ${runAllProgressText}` : '全员行动一轮' }}
+          </el-button>
           <el-button plain :loading="repairing" @click="onRepairCoins">金币对账</el-button>
           <el-button type="primary" @click="openAdd">新增角色</el-button>
         </div>
@@ -304,6 +306,16 @@
             maxlength="500"
             placeholder="如：银白色长发，戴着一顶过大的黑色尖帽，披风上缀着星辉"
           />
+          <span class="tip">这是不会变的「底子」：种族、发色、瞳色、身形与标志性特征</span>
+        </el-form-item>
+        <el-form-item label="此刻的模样">
+          <el-input
+            v-model="form.currentLook"
+            maxlength="200"
+            style="width: 420px"
+            placeholder="如：斗篷上还沾着夜路的泥点，长发用旧布条松松束着"
+          />
+          <span class="tip">会随行动变化：穿着、脏污、伤势外观、发型神态；AI 每步自动更新，也可以在这里手工改</span>
         </el-form-item>
         <el-form-item label="角色人设">
           <el-input
@@ -481,6 +493,7 @@ import {
   deleteSandboxCharacter,
   runSandboxCharacter,
   runAllSandboxCharacters,
+  sandboxRunAllProgress,
   sandboxActs,
   sandboxItems,
   repairSandboxCoins,
@@ -508,6 +521,8 @@ const modelLoading = ref(false)
 /** 正在执行中的角色 ID 集合：允许多个角色同时执行，各自独立转圈 */
 const runningIds = ref([])
 const runningAll = ref(false)
+/** 全员行动的进度文案（例如 "2/5"），后端异步执行期间显示在按钮上 */
+const runAllProgressText = ref('')
 /** 金币对账中 */
 const repairing = ref(false)
 /**
@@ -563,6 +578,8 @@ const FORM_DEFAULTS = {
   title: '',
   avatar: '',
   appearance: '',
+  // 此刻的样子：穿着、干净程度、伤势外观这些会随行动变化的状态（AI 每步更新，也可手工改）
+  currentLook: '',
   persona: '',
   providerId: null,
   model: '',
@@ -733,6 +750,7 @@ function openEdit(row) {
   form.title = row.title || ''
   form.avatar = row.avatar || ''
   form.appearance = row.appearance || ''
+  form.currentLook = row.currentLook || ''
   form.persona = row.persona || ''
   form.model = row.model || ''
   form.temperature = Number(row.temperature || 0.9)
@@ -1174,11 +1192,17 @@ async function onUnlock(row) {
   await load()
 }
 
-/** 一键让所有启用角色各行动一次：多角色可以互相遇见、互动 */
+/**
+ * 一键让所有启用角色各行动一次：多角色可以互相遇见、互动。
+ *
+ * 后端已经改成**异步执行**（角色多、单次调用慢的时候，同步请求会让浏览器先超时），
+ * 所以这里点一下只是"启动"，然后每 5 秒轮询一次进度，直到跑完。
+ */
 async function onRunAll() {
   try {
     await ElMessageBox.confirm(
-      '将让所有「启用」的角色各进行一次 AI 行动，角色会依次行动并可能互相遇见。角色较多时耗时较久，确定继续吗？',
+      '将让所有「启用」的角色各进行一次 AI 行动。同一地区的角色会依次行动（不同地区可以同时跑），' +
+        '角色之间会互相遇见、互动。开始后可以继续做别的事，按钮上会显示进度。',
       '全员行动一轮',
       { type: 'warning' }
     )
@@ -1186,40 +1210,87 @@ async function onRunAll() {
     return
   }
   runningAll.value = true
+  runAllProgressText.value = ''
   try {
-    const res = await runAllSandboxCharacters(selectedWorldId.value)
-    // 结果逐条写进「最近执行结果」面板：成功的取回那条行动（含移动距离），失败的记下原因
-    for (const character of list.value) {
-      const line = (res.items || []).find((text) => text.startsWith(character.name + '：'))
-      if (!line) {
-        continue
+    const first = await runAllSandboxCharacters(selectedWorldId.value)
+    await applyRunAllItems(first)
+    if (first.running === 1) {
+      ElMessage.info(`已开始：共 ${first.total} 个角色，后台正在执行`)
+      const final = await pollRunAllProgress()
+      if (final) {
+        await applyRunAllItems(final)
+        ElMessage.success(
+          `本轮完成：成功 ${final.success} 个，失败 ${final.failed} 个，详见下方「最近执行结果」`
+        )
       }
-      const text = line.slice(character.name.length + 1)
-      if (text.startsWith('失败')) {
-        pushRunResult({
-          characterId: character.id,
-          characterName: character.name,
-          ok: false,
-          error: text.replace(/^失败（/, '').replace(/）$/, '')
-        })
-        lastRunAt[character.id] = nowTimeText()
-        continue
-      }
-      const act = await fetchNewestAct(character.id)
-      pushRunResult({
-        characterId: character.id,
-        characterName: character.name,
-        ok: true,
-        act
-      })
-      if (act) {
-        lastRunAt[character.id] = timeText(act.createTime)
-      }
+    } else {
+      ElMessage.success(`本轮完成：成功 ${first.success} 个，失败 ${first.failed} 个`)
     }
-    ElMessage.success(`本轮完成：成功 ${res.success} 个，失败 ${res.failed} 个，详见下方「最近执行结果」`)
     await load()
   } finally {
     runningAll.value = false
+    runAllProgressText.value = ''
+  }
+}
+
+/** 每 5 秒查一次「全员行动」的进度，直到后台跑完 */
+function pollRunAllProgress() {
+  return new Promise((resolve) => {
+    const timer = setInterval(async () => {
+      try {
+        const res = await sandboxRunAllProgress()
+        runAllProgressText.value = `${res.done || 0}/${res.total || 0}`
+        await applyRunAllItems(res)
+        if (!res.running) {
+          clearInterval(timer)
+          resolve(res)
+        }
+      } catch (e) {
+        clearInterval(timer)
+        resolve(null)
+      }
+    }, 5000)
+  })
+}
+
+/**
+ * 把后台返回的每行结果写进「最近执行结果」面板。
+ * 后台返回的是**累计**结果，所以每次整块重建，避免轮询时重复追加。
+ */
+async function applyRunAllItems(res) {
+  if (!res || !res.items || !res.items.length) {
+    return
+  }
+  runResults.value = []
+  for (const line of res.items) {
+    const idx = line.indexOf('：')
+    if (idx <= 0) {
+      continue
+    }
+    const name = line.slice(0, idx)
+    const text = line.slice(idx + 1)
+    const character = list.value.find((c) => c.name === name)
+    const characterId = character ? character.id : null
+    if (text.startsWith('失败')) {
+      pushRunResult({
+        characterId,
+        characterName: name,
+        ok: false,
+        error: text.replace(/^失败（/, '').replace(/）$/, '')
+      })
+      if (character) {
+        lastRunAt[character.id] = nowTimeText()
+      }
+    } else if (text.includes('跳过')) {
+      // 「正在执行中」或「所在地区正有别人行动」都算跳过，不是失败
+      pushRunResult({ characterId, characterName: name, ok: false, error: text })
+    } else {
+      const act = character ? await fetchNewestAct(character.id) : null
+      pushRunResult({ characterId, characterName: name, ok: true, act })
+      if (character && act) {
+        lastRunAt[character.id] = timeText(act.createTime)
+      }
+    }
   }
 }
 

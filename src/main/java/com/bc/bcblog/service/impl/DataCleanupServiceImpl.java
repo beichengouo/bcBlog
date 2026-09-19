@@ -8,6 +8,7 @@ import com.bc.bcblog.entity.SysVisitStat;
 import com.bc.bcblog.entity.SandboxAct;
 import com.bc.bcblog.entity.SandboxMemory;
 import com.bc.bcblog.entity.SandboxNews;
+import com.bc.bcblog.entity.SandboxQuest;
 import com.bc.bcblog.entity.AdminApiLog;
 import com.bc.bcblog.mapper.SysLoginLogMapper;
 import com.bc.bcblog.mapper.SysPointLogMapper;
@@ -16,6 +17,7 @@ import com.bc.bcblog.mapper.SysVisitStatMapper;
 import com.bc.bcblog.mapper.SandboxActMapper;
 import com.bc.bcblog.mapper.SandboxMemoryMapper;
 import com.bc.bcblog.mapper.SandboxNewsMapper;
+import com.bc.bcblog.mapper.SandboxQuestMapper;
 import com.bc.bcblog.mapper.AdminApiLogMapper;
 import com.bc.bcblog.service.ConfigService;
 import com.bc.bcblog.service.DataCleanupService;
@@ -42,6 +44,7 @@ public class DataCleanupServiceImpl implements DataCleanupService {
     private final SandboxMemoryMapper sandboxMemoryMapper;
     private final SandboxNewsMapper sandboxNewsMapper;
     private final com.bc.bcblog.mapper.SandboxShopItemMapper sandboxShopItemMapper;
+    private final SandboxQuestMapper sandboxQuestMapper;
     private final AdminApiLogMapper adminApiLogMapper;
 
     @Override
@@ -87,14 +90,32 @@ public class DataCleanupServiceImpl implements DataCleanupService {
                         .lt(com.bc.bcblog.entity.SandboxShopItem::getCreateTime,
                                 today.minusDays(shopDays - 1L).atStartOfDay())));
 
+        // 旅人委托板：已完成 / 未接取的旧批次委托只保留几天（默认 3 天，跟集市一致）。
+        // 「接取中」的委托永远不动——它可能正被某个角色执行着。
+        int questDays = parseInt(configService.getConfigValue("cleanup_sandbox_quest_days", "3"), 3);
+        LocalDateTime questCutoff = today.minusDays(questDays - 1L).atStartOfDay();
+        int questCompleted = sandboxQuestMapper.delete(new LambdaQueryWrapper<SandboxQuest>()
+                .eq(SandboxQuest::getStatus, "completed")
+                .lt(SandboxQuest::getCompletedAt, questCutoff));
+        int questOpen = sandboxQuestMapper.delete(new LambdaQueryWrapper<SandboxQuest>()
+                .eq(SandboxQuest::getStatus, "open")
+                .lt(SandboxQuest::getCreateTime, questCutoff));
+        // 刷新委托板时被下架的旧委托，同样只保留几天
+        int questExpired = sandboxQuestMapper.delete(new LambdaQueryWrapper<SandboxQuest>()
+                .eq(SandboxQuest::getStatus, "expired")
+                .lt(SandboxQuest::getCreateTime, questCutoff));
+        result.setSandboxQuest(questCompleted + questOpen + questExpired);
+
         // API 调用审计：默认只保留 3 天
         int auditDays = parseInt(configService.getConfigValue("cleanup_admin_api_log_days", "3"), 3);
         result.setAdminApiLog(adminApiLogMapper.delete(new LambdaQueryWrapper<AdminApiLog>()
                 .lt(AdminApiLog::getCreateTime, now.minusDays(auditDays))));
 
-        log.info("数据清理完成：登录日志 {}，访问统计 {}，签到记录 {}，积分流水 {}，沙盒日志 {}，沙盒记忆 {}，旅人纪闻 {}，调用审计 {}",
+        log.info("数据清理完成：登录日志 {}，访问统计 {}，签到记录 {}，积分流水 {}，沙盒日志 {}，沙盒记忆 {}，旅人纪闻 {}，"
+                        + "旅人集市 {}，旅人委托 {}，调用审计 {}",
                 result.getLoginLog(), result.getVisitStat(), result.getSignLog(), result.getPointLog(),
-                result.getSandboxAct(), result.getSandboxMemory(), result.getSandboxNews(), result.getAdminApiLog());
+                result.getSandboxAct(), result.getSandboxMemory(), result.getSandboxNews(),
+                result.getSandboxShopItem(), result.getSandboxQuest(), result.getAdminApiLog());
         return result;
     }
 

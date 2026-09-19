@@ -28,6 +28,11 @@ public class SandboxCharacter {
     private String avatar;
     /** 外貌描述，前台展示 */
     private String appearance;
+    /**
+     * 此刻的样子：穿着、干净程度、伤势外观、发型神态，以及睡下/起床时的换装。
+     * 与 appearance（不变的底子）不同，这一项由 AI 每步重新输出，前台会单独展示。
+     */
+    private String currentLook;
     /** 人设提示词 */
     private String persona;
     /** 绑定的 AI 服务商 ID */

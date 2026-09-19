@@ -30,6 +30,10 @@ public class DataCleanupTask {
 
     @Scheduled(cron = "0 * * * * ?")
     public void run() {
+        // 测试进程里跳过（见 SandboxTask.schedulerDisabled 的说明）
+        if (Boolean.parseBoolean(System.getProperty("bcblog.sandbox.scheduler.disabled", "false"))) {
+            return;
+        }
         if (!"1".equals(configService.getConfigValue("cleanup_enabled", "1"))) {
             return;
         }

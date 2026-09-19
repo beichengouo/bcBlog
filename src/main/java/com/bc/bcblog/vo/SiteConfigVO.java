@@ -46,6 +46,8 @@ public class SiteConfigVO {
     private Integer cleanupSandboxMemoryDays;
     /** 旅人纪闻保留天数（1 = 只留当天） */
     private Integer cleanupSandboxNewsDays;
+    /** 旅人委托板保留天数（已完成的委托与未接取的旧批次委托） */
+    private Integer cleanupSandboxQuestDays;
     /** API 调用审计保留天数 */
     private Integer cleanupAdminApiLogDays;
 }

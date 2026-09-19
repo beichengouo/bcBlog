@@ -20,8 +20,9 @@ public final class SandboxOutputRepair {
     /** 约定 JSON 里的全部字段（顺序与提示词一致，合并时就按这个清单逐个检查） */
     public static final String[] KEYS = {
             "next_after_minutes", "next_after_reason", "location", "sub_location", "x", "y",
-            "actions", "inner_voice", "status", "coins_change", "companions", "favor_changes",
-            "items_change", "news_refs", "summary"
+            "actions", "inner_voice", "look", "status", "attitude_change", "goal", "coins_change",
+            "combat_change", "companions", "favor_changes", "items_change", "shop_buy",
+            "quest_take", "quest_progress", "quest_note", "quest_abandon", "news_refs", "summary"
     };
 
     /** 主调用至少要返回这么长，才值得拿去做补全；空的或太短的只能重跑 */

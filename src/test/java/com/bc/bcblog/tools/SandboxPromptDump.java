@@ -31,6 +31,11 @@ import java.util.List;
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE)
 class SandboxPromptDump {
 
+    static {
+        // 测试进程里禁用定时任务（见 SandboxSceneRun 里的说明）
+        System.setProperty("bcblog.sandbox.scheduler.disabled", "true");
+    }
+
     // 默认要打印哪个角色（14 = 伊露雅）
     private static final Long DEFAULT_CHARACTER_ID = 14L;
 
@@ -64,9 +69,10 @@ class SandboxPromptDump {
                 character, world, locations, companions);
         String userPrompt = (String) call("buildUserPrompt",
                 new Class[]{SandboxCharacter.class, List.class, List.class, List.class, List.class,
-                        boolean.class, String.class, SandboxAct.class, List.class, List.class, List.class},
+                        boolean.class, String.class, SandboxAct.class, List.class, List.class, List.class,
+                        String.class, Integer.class},
                 character, recent, whispers, companions, companionActs, false, null, null,
-                memories, backpack, news);
+                memories, backpack, news, null, null);
 
         // 写成 UTF-8 文件，避免在 Windows 控制台里被搞成乱码
         java.nio.file.Path dir = java.nio.file.Paths.get("target", "prompt-dump");

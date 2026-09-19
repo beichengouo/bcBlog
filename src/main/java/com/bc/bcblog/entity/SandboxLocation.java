@@ -40,6 +40,10 @@ public class SandboxLocation {
     private String description;
     /** 危险度：0 安全 / 1 较低 / 2 较高 / 3 危险。写进行动提示词，决定 AI 会不会写遭遇战斗 */
     private Integer dangerLevel;
+    /** 该地点生物的战力下限（遭遇时对手强度落在这个区间内；不配则按危险度取默认区间） */
+    private Integer powerMin;
+    /** 该地点生物的战力上限 */
+    private Integer powerMax;
     /** 排序，越小越靠前 */
     private Integer sortOrder;
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")

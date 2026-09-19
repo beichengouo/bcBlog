@@ -17,11 +17,16 @@ import com.bc.bcblog.common.SandboxBackoff;
 import com.bc.bcblog.common.SandboxOutputRepair;
 import com.bc.bcblog.common.SandboxShopCoin;
 import com.bc.bcblog.common.SandboxSpendLimit;
+import com.bc.bcblog.common.SandboxEarnLimit;
 import com.bc.bcblog.common.SandboxItemName;
 import com.bc.bcblog.common.SandboxOutputIssues;
 import com.bc.bcblog.common.SandboxReplyParser;
 import com.bc.bcblog.common.SandboxDeathGuard;
 import com.bc.bcblog.common.SandboxNewsMatcher;
+import com.bc.bcblog.common.SandboxMemoryText;
+import com.bc.bcblog.common.SandboxNewsRef;
+import com.bc.bcblog.common.SandboxSocial;
+import com.bc.bcblog.common.SandboxQuestRule;
 import com.bc.bcblog.dto.ChatMessage;
 import com.bc.bcblog.dto.SandboxCharacterGenerateDTO;
 import com.bc.bcblog.component.SensitiveWordFilter;
@@ -36,6 +41,8 @@ import com.bc.bcblog.entity.SandboxLocation;
 import com.bc.bcblog.entity.SandboxMemory;
 import com.bc.bcblog.entity.SandboxAttitudeLog;
 import com.bc.bcblog.entity.SandboxNews;
+import com.bc.bcblog.entity.SandboxQuest;
+import com.bc.bcblog.entity.SandboxQuestReward;
 import com.bc.bcblog.entity.SandboxRelation;
 import com.bc.bcblog.entity.SandboxWorld;
 import com.bc.bcblog.entity.SysUser;
@@ -46,6 +53,7 @@ import com.bc.bcblog.mapper.SandboxInteractionMapper;
 import com.bc.bcblog.mapper.SandboxItemMapper;
 import com.bc.bcblog.mapper.SandboxLocationMapper;
 import com.bc.bcblog.mapper.SandboxMemoryMapper;
+import com.bc.bcblog.mapper.SandboxAreaLockMapper;
 import com.bc.bcblog.mapper.SandboxAttitudeLogMapper;
 import com.bc.bcblog.mapper.SandboxNewsMapper;
 import com.bc.bcblog.mapper.SandboxRelationMapper;
@@ -53,6 +61,7 @@ import com.bc.bcblog.mapper.SandboxWorldMapper;
 import com.bc.bcblog.mapper.SandboxShopItemMapper;
 import com.bc.bcblog.mapper.SandboxShopOrderMapper;
 import com.bc.bcblog.mapper.SandboxGiftMapper;
+import com.bc.bcblog.mapper.SandboxQuestMapper;
 import com.bc.bcblog.entity.SandboxShopItem;
 import com.bc.bcblog.entity.SandboxShopOrder;
 import com.bc.bcblog.entity.SandboxGift;
@@ -101,6 +110,8 @@ import java.util.Map;
 import java.util.Random;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 沙盒世界服务实现。
@@ -118,6 +129,11 @@ public class SandboxServiceImpl implements SandboxService {
     private String uploadDir;
     /** 存档里的时间格式（带秒，便于导入时精确还原） */
     private static final DateTimeFormatter SAVE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+
+    /** 自动刷新（集市 / 委托板 / 纪闻）失败后的重试冷却（分钟）：AI 一直失败时不要每分钟重试一次 */
+    private static final int AUTO_REFRESH_RETRY_MINUTES = 10;
+    /** 每个「刷新源 + 世界」上一次自动刷新的尝试时间（失败重试冷却用） */
+    private final Map<String, LocalDateTime> autoRefreshAttempt = new ConcurrentHashMap<>();
 
     /** 拼提示词时携带的最近行动条数，控制 token 消耗 */
     private static final int PROMPT_ACT_LIMIT = 12;
@@ -188,6 +204,7 @@ public class SandboxServiceImpl implements SandboxService {
     private final SandboxShopItemMapper shopItemMapper;
     private final SandboxShopOrderMapper shopOrderMapper;
     private final SandboxGiftMapper giftMapper;
+    private final SandboxQuestMapper questMapper;
     private final com.bc.bcblog.mapper.AiProviderMapper aiProviderMapper;
     private final SandboxLocationMapper locationMapper;
     private final SandboxCharacterMapper characterMapper;
@@ -196,6 +213,7 @@ public class SandboxServiceImpl implements SandboxService {
     private final SandboxCoinLogMapper coinLogMapper;
     private final SandboxRelationMapper relationMapper;
     private final SandboxMemoryMapper memoryMapper;
+    private final SandboxAreaLockMapper areaLockMapper;
     private final SandboxAttitudeLogMapper attitudeLogMapper;
     private final SandboxItemMapper itemMapper;
     private final SandboxNewsMapper newsMapper;
@@ -303,6 +321,7 @@ public class SandboxServiceImpl implements SandboxService {
         itemMapper.delete(new LambdaQueryWrapper<SandboxItem>().eq(SandboxItem::getWorldId, worldId));
         relationMapper.delete(new LambdaQueryWrapper<SandboxRelation>().eq(SandboxRelation::getWorldId, worldId));
         newsMapper.delete(new LambdaQueryWrapper<SandboxNews>().eq(SandboxNews::getWorldId, worldId));
+        questMapper.delete(new LambdaQueryWrapper<SandboxQuest>().eq(SandboxQuest::getWorldId, worldId));
         characterMapper.delete(new LambdaQueryWrapper<SandboxCharacter>().eq(SandboxCharacter::getWorldId, worldId));
         locationMapper.delete(new LambdaQueryWrapper<SandboxLocation>().eq(SandboxLocation::getWorldId, worldId));
         worldMapper.deleteById(worldId);
@@ -487,6 +506,7 @@ public class SandboxServiceImpl implements SandboxService {
         vo.setVerifyMode(verifyMode());
         vo.setDraftMode(configService.getConfigValue("sandbox_draft_mode", "on"));
         vo.setThinkStage(configService.getConfigValue("sandbox_think_stage", "on"));
+        vo.setGeneratorFlow(configService.getConfigValue("sandbox_generator_flow", "three"));
         vo.setStyleExtra(configService.getConfigValue("sandbox_style_extra", ""));
         vo.setBatchWindowMinutes(configService.getConfigValue("sandbox_batch_window_minutes", "5"));
         vo.setChainMaxDepth(configService.getConfigValue("sandbox_chain_max_depth", "1"));
@@ -507,6 +527,7 @@ public class SandboxServiceImpl implements SandboxService {
         vo.setNewsPromptExtra(configService.getConfigValue("sandbox_news_prompt_extra", ""));
         vo.setNewsAutoEnabled(configService.getConfigValue("sandbox_news_auto_enabled", "1"));
         vo.setNewsAutoTime(configService.getConfigValue("sandbox_news_auto_time", "07:00"));
+        vo.setNewsIntervalHours(configService.getConfigValue("sandbox_news_interval_hours", "24"));
         vo.setSystemModel(configService.getConfigValue("sandbox_system_model", ""));
         vo.setSystemProviderId(configService.getConfigValue("sandbox_system_provider_id", ""));
         vo.setFailBackoffBaseMinutes(configService.getConfigValue("sandbox_fail_backoff_base_minutes", "15"));
@@ -524,10 +545,27 @@ public class SandboxServiceImpl implements SandboxService {
         vo.setShopPromptExtra(configService.getConfigValue("sandbox_shop_prompt_extra", ""));
         vo.setShopLimitPerCharacter(configService.getConfigValue("sandbox_shop_limit_per_character", "1"));
         vo.setShopBuyPerDay(configService.getConfigValue("sandbox_shop_buy_per_day", "2"));
+        // 旅人委托板
+        vo.setQuestTitle(configService.getConfigValue("sandbox_quest_title", "旅人委托板"));
+        vo.setQuestEnabled(configService.getConfigValue("sandbox_quest_enabled", "1"));
+        vo.setQuestVisibleCount(configService.getConfigValue("sandbox_quest_visible_count", "8"));
+        vo.setQuestPerGenerate(configService.getConfigValue("sandbox_quest_per_generate", "4"));
+        vo.setQuestProviderId(configService.getConfigValue("sandbox_quest_provider_id", ""));
+        vo.setQuestModel(configService.getConfigValue("sandbox_quest_model", ""));
+        vo.setQuestPromptExtra(configService.getConfigValue("sandbox_quest_prompt_extra", ""));
+        vo.setQuestProgressStepMax(configService.getConfigValue("sandbox_quest_progress_step_max", "40"));
+        vo.setQuestStepMaxByDifficulty(configService.getConfigValue("sandbox_quest_step_max_by_difficulty",
+                DEFAULT_QUEST_STEP_TABLE));
+        vo.setQuestAutoEnabled(configService.getConfigValue("sandbox_quest_auto_enabled", "1"));
+        vo.setQuestIntervalHours(configService.getConfigValue("sandbox_quest_interval_hours", "24"));
+        vo.setQuestAutoTime(configService.getConfigValue("sandbox_quest_auto_time", "09:00"));
+        vo.setQuestSelfcheck(configService.getConfigValue("sandbox_quest_selfcheck", "1"));
+        vo.setMaxEarnPerAct(configService.getConfigValue("sandbox_max_earn_per_act", "30"));
         vo.setCoinRate(configService.getConfigValue("sandbox_coin_rate", "1"));
         vo.setKmMapWidth(configService.getConfigValue("sandbox_km_map_width", "200"));
         vo.setTravelSpeeds(configService.getConfigValue("sandbox_travel_speeds", DEFAULT_TRAVEL_SPEEDS));
         vo.setSocialMaxKm(configService.getConfigValue("sandbox_social_max_km", "30"));
+        vo.setSocialSameAreaOnly(configService.getConfigValue("sandbox_social_same_area_only", "1"));
         return vo;
     }
 
@@ -543,6 +581,7 @@ public class SandboxServiceImpl implements SandboxService {
         writeSetting("sandbox_verify_enabled", vo.getVerifyEnabled());
         writeSetting("sandbox_draft_mode", vo.getDraftMode());
         writeSetting("sandbox_think_stage", vo.getThinkStage());
+        writeSetting("sandbox_generator_flow", vo.getGeneratorFlow());
         writeSetting("sandbox_style_extra", vo.getStyleExtra());
         // 新的三档自查模式；同时把旧开关写成 1/0，保证还有别的读取者时行为一致
         writeSetting("sandbox_verify_mode", vo.getVerifyMode());
@@ -568,6 +607,7 @@ public class SandboxServiceImpl implements SandboxService {
         writeSetting("sandbox_news_prompt_extra", vo.getNewsPromptExtra());
         writeSetting("sandbox_news_auto_enabled", vo.getNewsAutoEnabled());
         writeSetting("sandbox_news_auto_time", vo.getNewsAutoTime());
+        writeSetting("sandbox_news_interval_hours", vo.getNewsIntervalHours());
         writeSetting("sandbox_system_model", vo.getSystemModel());
         writeSetting("sandbox_system_provider_id", vo.getSystemProviderId());
         writeSetting("sandbox_fail_backoff_base_minutes", vo.getFailBackoffBaseMinutes());
@@ -584,10 +624,25 @@ public class SandboxServiceImpl implements SandboxService {
         writeSetting("sandbox_shop_prompt_extra", vo.getShopPromptExtra());
         writeSetting("sandbox_shop_limit_per_character", vo.getShopLimitPerCharacter());
         writeSetting("sandbox_shop_buy_per_day", vo.getShopBuyPerDay());
+        writeSetting("sandbox_quest_title", vo.getQuestTitle());
+        writeSetting("sandbox_quest_enabled", vo.getQuestEnabled());
+        writeSetting("sandbox_quest_visible_count", vo.getQuestVisibleCount());
+        writeSetting("sandbox_quest_per_generate", vo.getQuestPerGenerate());
+        writeSetting("sandbox_quest_provider_id", vo.getQuestProviderId());
+        writeSetting("sandbox_quest_model", vo.getQuestModel());
+        writeSetting("sandbox_quest_prompt_extra", vo.getQuestPromptExtra());
+        writeSetting("sandbox_quest_progress_step_max", vo.getQuestProgressStepMax());
+        writeSetting("sandbox_quest_step_max_by_difficulty", vo.getQuestStepMaxByDifficulty());
+        writeSetting("sandbox_quest_auto_enabled", vo.getQuestAutoEnabled());
+        writeSetting("sandbox_quest_interval_hours", vo.getQuestIntervalHours());
+        writeSetting("sandbox_quest_auto_time", vo.getQuestAutoTime());
+        writeSetting("sandbox_quest_selfcheck", vo.getQuestSelfcheck());
+        writeSetting("sandbox_max_earn_per_act", vo.getMaxEarnPerAct());
         writeSetting("sandbox_coin_rate", vo.getCoinRate());
         writeSetting("sandbox_km_map_width", vo.getKmMapWidth());
         writeSetting("sandbox_travel_speeds", vo.getTravelSpeeds());
         writeSetting("sandbox_social_max_km", vo.getSocialMaxKm());
+        writeSetting("sandbox_social_same_area_only", vo.getSocialSameAreaOnly());
     }
 
     /**
@@ -611,6 +666,26 @@ public class SandboxServiceImpl implements SandboxService {
         writeSetting("sandbox_coin_rate", vo.getCoinRate());
     }
 
+    /**
+     * 委托板管理页保存设置：只写委托相关的键。
+     * 和集市一样做作用域收口——普通管理员拿到整份设置也改不到世界运行参数。
+     */
+    @Override
+    public void saveQuestSettings(SandboxSettingVO vo) {
+        writeSetting("sandbox_quest_title", vo.getQuestTitle());
+        writeSetting("sandbox_quest_enabled", vo.getQuestEnabled());
+        writeSetting("sandbox_quest_visible_count", vo.getQuestVisibleCount());
+        writeSetting("sandbox_quest_per_generate", vo.getQuestPerGenerate());
+        writeSetting("sandbox_quest_provider_id", vo.getQuestProviderId());
+        writeSetting("sandbox_quest_model", vo.getQuestModel());
+        writeSetting("sandbox_quest_prompt_extra", vo.getQuestPromptExtra());
+        writeSetting("sandbox_quest_progress_step_max", vo.getQuestProgressStepMax());
+        writeSetting("sandbox_quest_auto_enabled", vo.getQuestAutoEnabled());
+        writeSetting("sandbox_quest_interval_hours", vo.getQuestIntervalHours());
+        writeSetting("sandbox_quest_auto_time", vo.getQuestAutoTime());
+        writeSetting("sandbox_quest_selfcheck", vo.getQuestSelfcheck());
+    }
+
     /** 行动日志页保存「旅人纪闻设置」：只写纪闻相关的键 */
     @Override
     public void saveNewsSettings(SandboxSettingVO vo) {
@@ -622,6 +697,7 @@ public class SandboxServiceImpl implements SandboxService {
         writeSetting("sandbox_news_prompt_extra", vo.getNewsPromptExtra());
         writeSetting("sandbox_news_auto_enabled", vo.getNewsAutoEnabled());
         writeSetting("sandbox_news_auto_time", vo.getNewsAutoTime());
+        writeSetting("sandbox_news_interval_hours", vo.getNewsIntervalHours());
     }
 
     private void writeSetting(String key, String value) {
@@ -658,13 +734,13 @@ public class SandboxServiceImpl implements SandboxService {
         String raw;
         AuditContext.manual("沙盒·AI 创作角色");
         try {
-            raw = aiProviderService.chat(provider, dto.getModel(),
+            raw = chatForGenerator(provider, dto.getModel(),
                     buildDraftSystemPrompt(),
                     buildDraftUserPrompt(world, locations, exists, dto.getRequirement().trim()), 0.9);
         } finally {
             AuditContext.clear();
         }
-        JSONObject obj = parseJson(raw);
+        JSONObject obj = parseJson(SandboxReplyParser.extractFinalBlock(raw));
         if (obj == null) {
             throw new BusinessException("AI 返回内容无法解析成 JSON，请重试或换一个模型");
         }
@@ -800,15 +876,8 @@ public class SandboxServiceImpl implements SandboxService {
         if (locations.isEmpty()) {
             sb.append("（管理员还没有添加地点，可以自行设定一个合理的地点名）");
         } else {
-            List<String> names = new ArrayList<>();
-            for (SandboxLocation location : locations) {
-                String text = location.getName();
-                if (notBlank(location.getDescription())) {
-                    text += "（" + truncate(location.getDescription(), 30) + "）";
-                }
-                names.add(text);
-            }
-            sb.append(String.join("、", names));
+            // 完整地点信息（含不截断的描述、危险度、生物战力、区域范围）——生成角色时挑初始地点更准
+            sb.append("\n").append(locationCatalog(locations));
         }
         // 已有角色带上战斗力：让 AI 有个相对尺度，新角色不会一登场就压过所有老人
         sb.append("\n【已有角色】（括号里是称号与当前战斗力，可作参照）");
@@ -901,6 +970,11 @@ public class SandboxServiceImpl implements SandboxService {
         } else {
             SandboxCharacter before = characterMapper.selectById(character.getId());
             characterMapper.updateById(character);
+            // 角色被停用后不再自动行动，他手上"接取中"的委托会永远没人推进——
+            // 直接放回委托板（进度清零），别人还可以接。
+            if (character.getEnabled() != null && character.getEnabled() != 1) {
+                releaseTakenQuests(character.getId());
+            }
             // 管理员直接改金币时补一条流水，方便以后追溯
             if (before != null && character.getCoins() != null) {
                 int oldCoins = before.getCoins() == null ? 0 : before.getCoins();
@@ -980,6 +1054,8 @@ public class SandboxServiceImpl implements SandboxService {
 
     @Override
     public void deleteCharacter(Long id) {
+        // 角色删掉后，他手上"接取中"的委托要回到委托板（否则这条委托会永远卡在 taken 状态）
+        releaseTakenQuests(id);
         // 角色删除时一并清理它的行动记录、低语与金币流水，避免留下孤儿数据
         actMapper.delete(new LambdaQueryWrapper<SandboxAct>().eq(SandboxAct::getCharacterId, id));
         interactionMapper.delete(new LambdaQueryWrapper<SandboxInteraction>()
@@ -1085,9 +1161,22 @@ public class SandboxServiceImpl implements SandboxService {
         // 管理员点「立即执行」：第一次行动失败时直接把原因抛给后台，成功后继续处理回应回合
         Set<Long> planned = new HashSet<>();
         planned.add(characterId);
-        SandboxAct act = runOnce(characterId, manual, false, null);
-        triggerReactions(act, 0, planned, new AtomicInteger());
-        return act;
+        SandboxCharacter character = characterMapper.selectById(characterId);
+        if (character == null) {
+            throw new BusinessException("角色不存在");
+        }
+        // 先锁住它所在的地区：同一片地区同一时刻只允许一个角色行动，
+        // 防止"两个角色同时行动、又刚好互相触发互动"把状态写乱
+        if (!acquireAreaLock(character)) {
+            throw new SandboxBusyException("「" + areaKeyOf(character) + "」那边正有其他角色在行动，稍等一下再试");
+        }
+        try {
+            SandboxAct act = runOnce(characterId, manual, false, null);
+            triggerReactions(act, 0, planned, new AtomicInteger());
+            return act;
+        } finally {
+            releaseAreaLock(character);
+        }
     }
 
     /**
@@ -1126,6 +1215,60 @@ public class SandboxServiceImpl implements SandboxService {
             log.error("释放沙盒执行锁失败（角色 #{}），该角色会一直显示「正在执行中」直到锁超时：{}",
                     characterId, t.getMessage(), t);
         }
+    }
+
+    // ============================== 地区执行锁（同一地区同一时刻只允许一个角色行动） ==============================
+
+    /**
+     * 抢「地区执行锁」：同一片地区（一级地点）同一时刻只允许一个角色在行动。
+     *
+     * 为什么按地区而不是整个世界：并发的风险只来自"可能互动的角色"，而他们必然在同一片地区里
+     * （互动上限默认 30km）；不同地区的角色互不影响，让它们并行跑才不会角色一多就排队排很久。
+     *
+     * 两步 SQL 的返回值语义最清楚：INSERT IGNORE 返回 1 表示锁是空的、抢到了；
+     * 返回 0 说明已有人持有，这时再尝试接管"过期锁"（进程崩过留下的）。
+     */
+    private boolean acquireAreaLock(SandboxCharacter character) {
+        if (character == null || character.getWorldId() == null) {
+            return true;
+        }
+        Long worldId = character.getWorldId();
+        String area = areaKeyOf(character);
+        int minutes = Math.max(1, intConfig("sandbox_area_lock_minutes", 15));
+        String holder = blankToDefault(character.getName(), "角色#" + character.getId());
+        LocalDateTime now = LocalDateTime.now();
+        try {
+            if (areaLockMapper.insertIgnore(worldId, area, holder, now) > 0) {
+                return true;
+            }
+            if (areaLockMapper.takeExpired(worldId, area, holder, now, now.minusMinutes(minutes)) > 0) {
+                log.info("沙盒地区「{}」的执行锁已超过 {} 分钟未刷新，由角色「{}」接管",
+                        area, minutes, holder);
+                return true;
+            }
+        } catch (Exception e) {
+            // 抢锁本身出问题时不要卡死业务：记日志后放行（角色级锁与同角色判定仍在兜底）
+            log.warn("沙盒地区「{}」抢锁异常，本次放行：{}", area, e.getMessage());
+            return true;
+        }
+        return false;
+    }
+
+    /** 释放地区锁 */
+    private void releaseAreaLock(SandboxCharacter character) {
+        if (character == null || character.getWorldId() == null) {
+            return;
+        }
+        try {
+            areaLockMapper.release(character.getWorldId(), areaKeyOf(character));
+        } catch (Throwable t) {
+            log.error("释放沙盒地区锁失败（{}）：{}", areaKeyOf(character), t.getMessage(), t);
+        }
+    }
+
+    /** 地区锁的键：一级地点名（AI 自创的二级地点经常在变，不能用来当锁键） */
+    private String areaKeyOf(SandboxCharacter character) {
+        return blankToDefault(character.getLocationName(), "未知地区");
     }
 
     /** 管理员手动解除执行锁：锁超时是 5 分钟，这个是给卡住的角色一个立刻可用的出口 */
@@ -1322,16 +1465,20 @@ public class SandboxServiceImpl implements SandboxService {
         List<SandboxNews> news = todayNews(character.getWorldId());
 
         String systemPrompt = buildSystemPrompt(character, world, locations, companions);
+        // 本步遭遇：危险地区由服务端掷骰决定"这一步遇上了什么"，命中就写进提示词（AI 只负责应对）
+        String encounter = buildEncounter(character);
+        // 本步运气：只影响偶然因素（怎么脱身、碰上什么小事），不影响会不会遭遇、也不改变实力差距
+        Integer luck = buildLuck(character);
         String userPrompt = buildUserPrompt(character, recent, whispers, companions, companionActs, reaction,
                 trigger == null ? null : characterNameOf(companions, trigger.getCharacterId()), trigger,
-                memories, backpack, news);
+                memories, backpack, news, encounter, luck);
         // 提示词预算守护：超过上限时砍掉"氛围类"内容重来一次，避免数据增长后提示词无限膨胀
         int promptBudget = intConfig("sandbox_prompt_char_limit", 9000);
         if (systemPrompt.length() + userPrompt.length() > promptBudget) {
             List<SandboxAct> shortRecent = recent.size() > 6 ? new ArrayList<>(recent.subList(0, 6)) : recent;
             String compact = buildUserPrompt(character, shortRecent, whispers, companions, new ArrayList<>(),
                     reaction, trigger == null ? null : characterNameOf(companions, trigger.getCharacterId()), trigger,
-                    memories, backpack, new ArrayList<>());
+                    memories, backpack, new ArrayList<>(), encounter, luck);
             if (compact.length() < userPrompt.length()) {
                 log.info("沙盒提示词超出预算（{}+{} > {} 字符），已精简：去掉其他居民动静与今日要闻、最近行动取 6 条",
                         systemPrompt.length(), userPrompt.length(), promptBudget);
@@ -1385,15 +1532,20 @@ public class SandboxServiceImpl implements SandboxService {
         int coins = character.getCoins() == null ? 0 : character.getCoins();
         // 当前目标：AI 没给就沿用上一次的，避免目标凭空丢失
         String goal = character.getGoal();
+        // 此刻的样子：AI 这一步输出的穿着与状态（没给就沿用上一次）
+        String look = null;
         int coinChange = 0;
         /** 花费被上限截断时的说明，会附在金币流水后面 */
         String spendNote = "";
+        /** 收入被上限截断时的说明，同样附在金币流水后面 */
+        String earnNote = "";
         // 战斗力：默认 10，只有 AI 明确给出变化时才动，单次幅度限制在 ±COMBAT_STEP_MAX
         int combatPower = character.getCombatPower() == null ? COMBAT_POWER_DEFAULT : character.getCombatPower();
         int combatChange = 0;
         Integer aiNextMinutes = null;
         String aiNextReason = null;
 
+        // 角色行动走 parseJson(raw)：它内部会先取 <final> 段里的 JSON（见 SandboxReplyParser.parse）
         JSONObject obj = parseJson(raw);
         // 兜底校验：解析结果必须有 actions（哪怕空数组）才算"按格式返回"。
         // 解析器曾经误取到内层小对象（例如 {"delta":-1}），那种对象能解析、但字段全空，
@@ -1471,11 +1623,27 @@ public class SandboxServiceImpl implements SandboxService {
             // 沙盒角色行动是 AI 创作内容，按管理员设置不做敏感词过滤，保持原文
             act.setActions(truncate(joinActions(obj.getJSONArray("actions")), 1000));
             act.setInnerVoice(truncate(trimToEmpty(obj.getStr("inner_voice")), 1000));
+            // 此刻的样子：与「外貌」底子分开存；AI 没给就沿用上一次
+            look = lookOn() ? truncate(trimToEmpty(obj.getStr("look")), 200) : null;
+            if (look != null && look.isEmpty()) {
+                look = null;
+            }
+            act.setLook(look);
             act.setSummary(truncate(trimToEmpty(obj.getStr("summary")), 280));
             // 互动只认"真的在附近"的角色：以前只按名字匹配，AI 能让相隔几百公里的人隔空聊天、还会加好感度
             List<SandboxCharacter> nearby = nearbyCompanions(character, companions, x, y, locationName);
             // 这一步和哪些角色互动了（只保留世界里真实存在的角色名）
             act.setCompanions(matchCompanions(obj.getJSONArray("companions"), nearby));
+            // 乙：兜底补录——AI 常在叙述里点了名字（"偶遇迪雅后搭车离开"）却没写进 companions，
+            // 那样这次互动等于没发生（对方不会被触发、好感度也不涨）。这里只在 nearby（已过距离与在途校验）里找。
+            if (act.getCompanions() == null) {
+                String guessed = guessCompanion(obj, nearby, character);
+                if (guessed != null) {
+                    log.info("沙盒角色「{}」的叙述里提到了「{}」却没写进 companions，服务端已自动补上",
+                            character.getName(), guessed);
+                    act.setCompanions(guessed);
+                }
+            }
             // 好感度变化：AI 返回 { "角色名": 3 }，服务端累加到对应关系上
             act.setFavorChange(applyFavorChanges(character, obj.get("favor_changes"), nearby));
             // 由 AI 决定下一次隔多久再行动（例如睡一觉就是几小时）
@@ -1496,6 +1664,10 @@ public class SandboxServiceImpl implements SandboxService {
             act.setNextAfterReason(aiNextReason == null || aiNextReason.isEmpty() ? null : aiNextReason);
             // 这一步参考/听说了哪几条纪闻
             act.setNewsRef(matchNewsRefs(obj.getJSONArray("news_refs"), news));
+            // 本步遭遇：记下来，方便以后回溯"他这一步到底遇上了什么"，也用于统计当天遭遇次数
+            act.setEncounter(encounter);
+            // 本步运气：前台会展示，方便回看"他这天为什么这么顺/这么惨"
+            act.setLuck(luck);
             // 服务端兜底：AI 忘了填 news_refs，但行动文本里明确出现了某条要闻标题中的事件名词时补上
             if (act.getNewsRef() == null) {
                 String guessed = guessNewsRef(obj, news);
@@ -1505,6 +1677,9 @@ public class SandboxServiceImpl implements SandboxService {
                     act.setNewsRef(guessed);
                 }
             }
+            // 最后统一收紧（不管是 AI 填的还是兜底猜的）：① 行动文本里得真的出现该要闻的事件名词；
+            // ② 最近三步记过的同一条不再重复。**放在兜底之后**是关键——否则刚过滤掉的会被兜底又填回来。
+            act.setNewsRef(SandboxNewsRef.tighten(act.getNewsRef(), recentRefsOf(recent), actText(act)));
 
             // 状态合并：AI 没提到的状态项沿用上一次的值，避免凭空丢失
             statusJson = mergeStatus(character.getStatusJson(), obj.get("status"));
@@ -1521,6 +1696,17 @@ public class SandboxServiceImpl implements SandboxService {
             // 原子增减：这一步先把自己赚/花的钱落到库里，后面扣集市购买时才看得到真实余额。
             // 这样即使同时有别的写入（用户贡献金币、别的行动），也不会互相覆盖。
             if (coinChange > 0) {
+                // 收入上限：支出一直有上限，收入过去没有，AI 能一句话让角色进账 80 金币
+                // （实测就是护送委托没完成却先把整笔报酬写进了 coins_change）。
+                // 委托报酬走 payQuestCoins 单独发放，不占这个额度。
+                int earnLimit = SandboxEarnLimit.maxEarn(intConfig("sandbox_max_earn_per_act",
+                        SandboxEarnLimit.DEFAULT_CAP));
+                if (coinChange > earnLimit) {
+                    log.info("沙盒角色 #{} 本次收入 {} 金币超过上限 {}，已按上限截断",
+                            characterId, coinChange, earnLimit);
+                    earnNote = "（原收入 " + coinChange + " 金币，已按单次上限 " + earnLimit + " 截断）";
+                    coinChange = earnLimit;
+                }
                 coins = addCoins(characterId, coinChange);
             } else if (coinChange < 0) {
                 // 花费上限：AI 常常随口写个大额支出（例如第一次行动就 -15，而 actions 里只买了浆果和火把）。
@@ -1547,7 +1733,8 @@ public class SandboxServiceImpl implements SandboxService {
             // 集市购买会在后面扣款，如果这条流水写到那时候，它的"当时余额"就会用最终余额，看起来像没扣钱
             if (coinChange != 0) {
                 addCoinLog(characterId, null, null, coinChange > 0 ? "earn" : "spend", coinChange, 0, coins,
-                        truncate(blankToDefault(act.getSummary(), coinChange > 0 ? "日常赚取" : "日常花销") + spendNote, 190));
+                        truncate(blankToDefault(act.getSummary(), coinChange > 0 ? "日常赚取" : "日常花销")
+                                + spendNote + earnNote, 190));
             }
 
             // 战斗力变化：与金币一样是可选项，没给就按 0 处理
@@ -1567,6 +1754,21 @@ public class SandboxServiceImpl implements SandboxService {
             if (shopChange != null) {
                 itemChange = itemChange == null ? shopChange : truncate(itemChange + "、" + shopChange, 290);
             }
+
+            // 旅人委托板：接取 / 更新进度 / 放弃 / 完成结算。
+            // 放在物品变化之后——完成校验要看这一步到底有没有真的拿到东西（items_change）。
+            QuestActResult questResult = applyQuestActions(character, obj, locationName, now, act, manual);
+            if (questResult.coinReward > 0) {
+                // 金币与流水已经在 completeQuest 里发过了（两条路径共用一段逻辑），
+                // 这里只把金额补进行动记录，并刷新余额给后面的态度判定用
+                coins = currentCoins(characterId);
+                coinChange += questResult.coinReward;
+            }
+            if (questResult.itemNote != null) {
+                itemChange = itemChange == null ? questResult.itemNote
+                        : truncate(itemChange + "、" + questResult.itemNote, 290);
+            }
+            act.setQuestEvent(questResult.event);
             act.setItemChange(itemChange);
         }
 
@@ -1593,6 +1795,8 @@ public class SandboxServiceImpl implements SandboxService {
                 // 以前一落库就改坐标，会出现"人还在路上、系统却认为已经到了"，
                 // 目的地上的其他角色一行动就会把他当成在场的人触发互动，赶路被莫名打断。
                 .set(SandboxCharacter::getGoal, goal)
+                // 此刻的样子：只在 AI 这一步给出了新描述时才更新，避免把上一句冲掉
+                .set(look != null, SandboxCharacter::getCurrentLook, look)
                 .set(SandboxCharacter::getStatusJson, statusJson)
                 // 金币不在这里整值写回：前面已经用原子增减落到库里了（见 addCoins / trySpendCoins）
                 .set(SandboxCharacter::getCombatPower, combatPower)
@@ -1771,9 +1975,11 @@ public class SandboxServiceImpl implements SandboxService {
         if (!draftModeOn()) {
             return aiProviderService.chat(provider, model, systemPrompt, userPrompt, temperature);
         }
-        // 预填充必须和提示词里的"第一段"一致：开了思考阶段就先写 <think>，否则先写 <draft>。
-        // （以前写死 <draft>，模型被逼着先写草稿，<think> 只能排到后面，段落顺序就乱了）
-        String prefill = thinkStageOn() ? "<think>\n" : "<draft>\n";
+        // 预填充必须和提示词里的「第一段」一致，不能写错，否则模型会跳过那一段。
+        // 历史 bug：提示词里第一段是 <recap>（回看），预填充却写 <think>——
+        // 模型只能接着 <think> 写，于是「回看」整段从来没真正执行过。
+        // 角色行动保留五段式（回看 → 思考 → 草稿 → 自审 → 终稿），因为行动要权衡的东西更多。
+        String prefill = "<recap>\n";
         List<ChatMessage> messages = new ArrayList<>();
         messages.add(ChatMessage.system(systemPrompt));
         messages.add(ChatMessage.user(userPrompt));
@@ -1785,6 +1991,19 @@ public class SandboxServiceImpl implements SandboxService {
     /** 三段式（草稿→自审→终稿）是否开启；默认开启 */
     private boolean draftModeOn() {
         return !"off".equalsIgnoreCase(configService.getConfigValue("sandbox_draft_mode", "on").trim());
+    }
+
+    /**
+     * 四个「生成器」（AI 创作角色 / 旅人纪闻 / 旅人集市 / 旅人委托）是否走三段式
+     * （<think> → <draft> → <final>，默认开启）。
+     *
+     * 注意：**角色行动不走这里**——行动要权衡的东西更多（位置、间隔、收支、目标、记忆…），
+     * 保持原来的五段式（回看 → 思考 → 草稿 → 自审 → 终稿）。
+     * 生成器原来是一次调用直接吐 JSON，模型常常"不多想"就编；加上思考段之后，
+     * 它会先结合世界观与地图地点（含描述）权衡，再落 JSON。
+     */
+    private boolean generatorFlowOn() {
+        return !"off".equalsIgnoreCase(configService.getConfigValue("sandbox_generator_flow", "three").trim());
     }
 
     /** 按「手动 / 定时」还原审计标签 */
@@ -2057,7 +2276,18 @@ public class SandboxServiceImpl implements SandboxService {
         // 如果产生了互动且对方本轮没排上，会立刻给对方一个「回应回合」（受深度/次数/冷却限制）
         AtomicInteger reactionCount = new AtomicInteger();
         for (SandboxCharacter character : batch) {
-            runWithChain(character.getId(), false, false, null, 0, planned, reactionCount);
+            // 每个角色先锁自己所在的地区：同地区的角色依次跑（抢不到就跳过，下一轮自然轮到），
+            // 不同地区之间互不阻塞——这就是"分散的角色可以同时跑"的关键
+            if (!acquireAreaLock(character)) {
+                log.info("沙盒角色「{}」所在的「{}」正有其他角色行动，本轮跳过",
+                        character.getName(), areaKeyOf(character));
+                continue;
+            }
+            try {
+                runWithChain(character.getId(), false, false, null, 0, planned, reactionCount);
+            } finally {
+                releaseAreaLock(character);
+            }
         }
     }
 
@@ -2066,28 +2296,112 @@ public class SandboxServiceImpl implements SandboxService {
         return runAll(null);
     }
 
+    /** 全员行动改成异步后，进度放在这里，前端轮询读它 */
+    private final SandboxRunAllVO runAllState = new SandboxRunAllVO();
+    /** 进度计数 */
+    private final AtomicInteger runAllDone = new AtomicInteger();
+    /** 是否已有一次全员行动在跑（同一时间只允许一轮） */
+    private final AtomicBoolean runAllRunning = new AtomicBoolean(false);
+    /** 每个角色一行的结果，实时累积 */
+    private final List<String> runAllItems = Collections.synchronizedList(new ArrayList<>());
+    /**
+     * 全员行动用的线程池：不同地区的角色可以同时跑（同地区由「地区执行锁」串行）。
+     * 之前是同步 for 循环，角色一多、单次调用又慢，管理员的浏览器请求会先超时。
+     */
+    private final java.util.concurrent.ExecutorService runAllExecutor =
+            java.util.concurrent.Executors.newFixedThreadPool(3);
+
     @Override
     public SandboxRunAllVO runAll(Long worldId) {
-        SandboxRunAllVO vo = new SandboxRunAllVO();
+        if (!runAllRunning.compareAndSet(false, true)) {
+            // 已经有一轮在跑，直接把当前进度给它（前端继续轮询即可）
+            return runAllSnapshot();
+        }
         List<SandboxCharacter> characters = characterMapper.selectList(new LambdaQueryWrapper<SandboxCharacter>()
                 // 多世界：只跑当前这个世界里启用的角色
                 .eq(SandboxCharacter::getWorldId, worldId(worldId))
                 .eq(SandboxCharacter::getEnabled, 1)
                 .orderByAsc(SandboxCharacter::getId));
-        vo.setTotal(characters.size());
+        runAllItems.clear();
+        runAllDone.set(0);
+        synchronized (runAllState) {
+            runAllState.setTotal(characters.size());
+            runAllState.setSuccess(0);
+            runAllState.setFailed(0);
+            runAllState.setRunning(1);
+            runAllState.setDone(0);
+        }
         for (SandboxCharacter character : characters) {
+            runAllExecutor.submit(() -> runOneInRunAll(character));
+        }
+        if (characters.isEmpty()) {
+            runAllRunning.set(false);
+            synchronized (runAllState) {
+                runAllState.setRunning(0);
+            }
+        }
+        return runAllSnapshot();
+    }
+
+    @Override
+    public SandboxRunAllVO runAllProgress() {
+        return runAllSnapshot();
+    }
+
+    /** 全员行动里跑单个角色：先锁它所在的地区（不同地区可并行，同地区依次跑） */
+    private void runOneInRunAll(SandboxCharacter character) {
+        try {
+            if (!acquireAreaLock(character)) {
+                addRunAllItem(character.getName() + "：所在的「" + areaKeyOf(character) + "」正有其他角色行动，本轮跳过");
+                return;
+            }
             try {
                 // 全员一起行动，本身就已经互相可见，不再额外触发回应回合
                 SandboxAct act = runOnce(character.getId(), true, false, null);
-                vo.setSuccess(vo.getSuccess() + 1);
-                vo.getItems().add(character.getName() + "：" + blankToDefault(act.getSummary(), "已行动"));
-            } catch (SandboxBusyException e) {
-                // 这个角色正在执行（手动点了、或上一轮还没跑完）：不算失败，只是跳过
-                vo.getItems().add(character.getName() + "：正在执行中，本轮已跳过");
-            } catch (Exception e) {
-                vo.setFailed(vo.getFailed() + 1);
-                vo.getItems().add(character.getName() + "：失败（" + e.getMessage() + "）");
+                synchronized (runAllState) {
+                    runAllState.setSuccess(runAllState.getSuccess() + 1);
+                }
+                addRunAllItem(character.getName() + "：" + blankToDefault(act.getSummary(), "已行动"));
+            } finally {
+                releaseAreaLock(character);
             }
+        } catch (SandboxBusyException e) {
+            // 这个角色自己正在执行（手动点了、或上一轮还没跑完）：不算失败，只是跳过
+            addRunAllItem(character.getName() + "：正在执行中，本轮已跳过");
+        } catch (Exception e) {
+            synchronized (runAllState) {
+                runAllState.setFailed(runAllState.getFailed() + 1);
+            }
+            addRunAllItem(character.getName() + "：失败（" + e.getMessage() + "）");
+        } finally {
+            int done = runAllDone.incrementAndGet();
+            synchronized (runAllState) {
+                runAllState.setDone(done);
+                if (done >= runAllState.getTotal()) {
+                    runAllState.setRunning(0);
+                    runAllRunning.set(false);
+                }
+            }
+        }
+    }
+
+    private void addRunAllItem(String text) {
+        runAllItems.add(text);
+        synchronized (runAllState) {
+            runAllState.setItems(new ArrayList<>(runAllItems));
+        }
+    }
+
+    /** 给前端看的进度快照（复制一份，避免序列化时被后台线程改到） */
+    private SandboxRunAllVO runAllSnapshot() {
+        SandboxRunAllVO vo = new SandboxRunAllVO();
+        synchronized (runAllState) {
+            vo.setTotal(runAllState.getTotal());
+            vo.setSuccess(runAllState.getSuccess());
+            vo.setFailed(runAllState.getFailed());
+            vo.setRunning(runAllState.getRunning());
+            vo.setDone(runAllState.getDone());
+            vo.setItems(new ArrayList<>(runAllState.getItems()));
         }
         return vo;
     }
@@ -2404,6 +2718,11 @@ public class SandboxServiceImpl implements SandboxService {
         vo.setShopBuyPerDay(intConfig("sandbox_shop_buy_per_day", 2));
         vo.setKmMapWidth((int) mapWidthKm());
         vo.setShopItems(shopEnabled ? shopItems(world.getId()) : new ArrayList<>());
+        // 旅人委托板：最新一批可接 + 接取中 + 近三天已完成
+        boolean questEnabled = questOn();
+        vo.setQuestTitle(configService.getConfigValue("sandbox_quest_title", "旅人委托板"));
+        vo.setQuestEnabled(questEnabled);
+        vo.setQuests(questEnabled ? questBoard(world.getId(), null) : new ArrayList<>());
         vo.setWorld(world);
         vo.setLocations(locations(world.getId()));
         List<SandboxCharacterVO> list = new ArrayList<>();
@@ -2423,6 +2742,8 @@ public class SandboxServiceImpl implements SandboxService {
         vo.setTitle(character.getTitle());
         vo.setAvatar(character.getAvatar());
         vo.setAppearance(character.getAppearance());
+        // 此刻的样子：前台角色档案里单独一行展示（「外貌」是底子，这一行是会变的）
+        vo.setCurrentLook(character.getCurrentLook());
         vo.setX(character.getX());
         vo.setY(character.getY());
         vo.setLocationName(character.getLocationName());
@@ -2461,6 +2782,9 @@ public class SandboxServiceImpl implements SandboxService {
         List<SandboxAct> acts = recentActs(character.getId(), PORTAL_ACT_LIMIT);
         // 前台按时间倒序展示：最新的一次行动排在最上面
         vo.setRecentActs(acts);
+        // 旅人委托：当前在执行的那一条 + 近三天完成的（完成记录与委托板共用一份数据，三天后随清理一起消失）
+        vo.setCurrentQuest(currentQuestOf(character.getId()));
+        vo.setRecentQuests(completedQuestsOf(character.getId()));
         return vo;
     }
 
@@ -2478,6 +2802,24 @@ public class SandboxServiceImpl implements SandboxService {
             // 状态解析失败不影响其它展示
         }
         return map;
+    }
+
+    /**
+     * 这个伤势连续挂了多少步（从最近一条行动往前数）。
+     * AI 看不到「这伤已经持续多久」，所以由服务端算好塞进提示词——
+     * 实测最常见的问题是：一次轻伤挂十几个小时不痊愈（状态项不写就一直保持原样）。
+     */
+    private int injuryStreak(List<SandboxAct> recent, String injury) {
+        int streak = 0;
+        for (SandboxAct act : recent) {
+            Object value = parseStatus(act.getStatusJson()).get(INJURY_KEY);
+            if (value != null && injury.equals(String.valueOf(value))) {
+                streak++;
+            } else {
+                break;
+            }
+        }
+        return streak;
     }
 
     /** 合并状态：AI 返回的项覆盖旧值，AI 没提到的项沿用旧值 */
@@ -2630,6 +2972,10 @@ public class SandboxServiceImpl implements SandboxService {
         if (notBlank(c.getAppearance())) {
             sb.append("外貌：").append(c.getAppearance()).append("\n");
         }
+        // 此刻的样子：与上面的「外貌」是两层——外貌是不变的底子，这一行是这一步的状态
+        if (lookOn() && notBlank(c.getCurrentLook())) {
+            sb.append("此刻的样子：").append(c.getCurrentLook()).append("\n");
+        }
         sb.append("人设：\n").append(blankToDefault(c.getPersona(), DEFAULT_PERSONA)).append("\n\n");
 
         sb.append("【世界设定】\n").append(blankToDefault(w.getWorldPrompt(), DEFAULT_WORLD_PROMPT)).append("\n\n");
@@ -2684,6 +3030,7 @@ public class SandboxServiceImpl implements SandboxService {
                 .append("\"sub_location\":\"这一步具体所在的小地方（自己创作）\",\"x\":35,\"y\":62,")
                 .append("\"actions\":[\"具体动作一\",\"具体动作二\",\"具体动作三\",\"具体动作四\"],")
                 .append("\"inner_voice\":\"角色此刻的心里话（第一人称，15~40 字，写清这一刻的念头或情绪）\",")
+                .append("\"look\":\"角色此刻的样子（20~40 字，见规则 33）\",")
                 .append("\"status\":{\"体力\":80,\"魔力\":45,\"饥饿度\":30,\"心情\":\"平静\",\"伤势\":\"无恙\"},")
                 // 位置放在 status 后面（靠前），才不会被模型忽略；示例给的是"真的变了"的样子，
                 // 但下面规则 26 会强调：没有变化时必须把 kind 与 view 留空，不要照抄示例
@@ -2695,6 +3042,7 @@ public class SandboxServiceImpl implements SandboxService {
                 .append("\"coins_change\":0,\"combat_change\":0,\"companions\":[],\"favor_changes\":{\"角色名\":3},")
                 .append("\"items_change\":{\"物品名\":{\"delta\":1,\"description\":\"6~20 字说明它是什么、有什么用\"}},")
                 .append("\"shop_buy\":[{\"name\":\"旅人集市里的商品名\",\"quantity\":1,\"reason\":\"为什么买\"}],")
+                .append("\"quest_take\":\"\",\"quest_progress\":0,\"quest_note\":\"\",\"quest_abandon\":false,")
                 .append("\"summary\":\"30 字以内概括这一步\"}\n")
                 .append("要求：\n")
                 .append("1. actions 的条数**由你按这一步的复杂程度自己决定：最少 3 条、最多 8 条**：\n")
@@ -2733,7 +3081,10 @@ public class SandboxServiceImpl implements SandboxService {
                 .append("同行或互相影响，就把对方的名字填进去（名字必须与上面列出的完全一致），没有就填 []。")
                 .append("**一次最多只填一个名字**：这一步只和一个人打交道，不要同时写上两三个人——")
                 .append("多人一起互动会让故事线互相打架（被写上的另一个人会在之后的某个时刻用自己的视角行动，")
-                .append("两边的地点与先后顺序就会对不上）。想和别人打交道，留到下一步再做。\n")
+                .append("两边的地点与先后顺序就会对不上）。想和别人打交道，留到下一步再做。")
+                .append("**如果你在 actions 或 summary 里提到了某个居民的名字（哪怕是「偶遇」「遇到」「擦肩而过」），")
+                .append("就必须把 TA 写进 companions**——只写进叙述却不填字段，这次互动等于没发生：")
+                .append("对方不会知道、不会被触发回应，好感度也不会变。\n")
                 .append("6. favor_changes 表示这一步你对某个角色的好感度变化，格式是 {\"角色名\": 变化量}：")
                 .append("只有当这一步真的和对方发生了互动（并且已把对方写进 companions）时才填，否则填 {}；")
                 .append("名字必须与【世界里的其他居民】里列出的完全一致，不要用称号、不要编造；")
@@ -2777,10 +3128,10 @@ public class SandboxServiceImpl implements SandboxService {
                 .append("② 这一步确实跟任何要闻都无关，才填 []；")
                 .append("③ 【输出要求】里那一条标题只是**格式示例**，不是让你照抄的：")
                 .append("照抄一个不存在的标题会被服务端丢掉，等于这一步的纪闻线索白填了；")
-                .append("④ 听说或关注不等于一定要参与，参不参与由你的处境决定，但「有没有听说、有没有涉及」必须如实记录；")
-                .append("⑤ 一件事往往要追好几步：只要你还在追查、打听、处理同一条要闻相关的事，")
-                .append("**每一步都要继续把它填进 news_refs**，直到这件事告一段落")
-                .append("（线索断了、事情办完了、或者你决定不管了），不要只在第一次提到时填一次。");
+                .append("④ 听说或关注不等于一定要参与，参不参与由你的处境决定；")
+                .append("⑤ **但不要为了填而填**：这一步只是顺带路过、随口一提，或者这件事在这一步并没有任何新进展时，")
+                .append("就填 [] ——**同一条要闻不要连续多步反复引用**（服务端也会把最近三步已经记过的丢掉）；")
+                .append("只有这件事真的推进了才继续填：真的到了那个地方、真的动手处理、拿到了新线索或新消息。");
         sb.append("\n14. 背包管理：每次行动都顺便看一眼背包——能用掉的就用掉（吃掉干粮、喝掉药水等，")
                 .append("让饥饿度或体力、魔力得到恢复），用不上的可以丢掉或送人（在 items_change 里写负数，")
                 .append("数量减到 0 会自动从背包移除）；不要长期囤积用不上的东西，也不要一次丢光所有物资。");
@@ -2846,6 +3197,16 @@ public class SandboxServiceImpl implements SandboxService {
                 .append("濒死是只剩一口气、昏迷不醒，但**仍然活着**。")
                 .append("伤势要靠疗养、看医者、用药、休息慢慢好转，不要无缘无故就痊愈——")
                 .append("例如重伤至少要养一整天才会回到轻伤，濒死更需要别人照顾。体力降到 0 只表示昏过去，不等于死亡。");
+        sb.append("\n24.1 但反过来说，**不要平白受伤，也不要一直挂着伤**——实测最容易出问题的两点：\n")
+                .append("   · 这一步没有遭遇战斗、也没做危险的事（吃饭、睡觉、赶路、采药、整理卷宗、进城办事），")
+                .append("就老老实实写「无恙」，不要为了写出戏剧性硬加一句「摔了一跤、膝盖渗血」然后填轻伤；\n")
+                .append("   · 受伤一定要有**说得通的原因**，并且把原因写进 actions（被野兽咬、摔下坡、被人打、")
+                .append("中毒、烫伤都行），不能没头没尾地写着伤；\n")
+                .append("   · **伤势是状态项：这一步不写它，它就保持原样**——所以该好的时候一定要主动写回「无恙」，")
+                .append("不能干脆不提；实测最常见的毛病就是轻伤一挂十几个小时不痊愈；\n")
+                .append("   · 恢复节奏：轻伤（擦伤、扭伤、被咬一口）在包扎处理过、又睡过一觉（8 小时以上）之后，")
+                .append("下一步就该写回「无恙」；重伤至少要养一整天才会转成轻伤；濒死更要靠别人照顾。")
+                .append("但**不要一步跨两档**（比如濒死直接写回无恙）。");
         sb.append("\n25. 【最重要的一条】**绝对不许死亡**：你，以及这个世界里的任何角色，都不会死。")
                 .append("禁止出现 死亡 / 阵亡 / 丧命 / 断气 / 遗体 / 尸首 这类说法，最坏也只能写到「濒死」。")
                 .append("如果这一步按情境本该致命，就按下面的优先级收场：")
@@ -2877,9 +3238,213 @@ public class SandboxServiceImpl implements SandboxService {
                 .append("   ⑤ 只有濒死、破产、暴富、被舍命相救这类重大事件才把 major 填 true——")
                 .append("服务端平时给想法变化加了 12 小时冷却，只有重大事件能突破。\n")
                 .append("另外，你的想法变化会被记下来、展示在角色档案里，请认真对待。");
+        sb.append("\n27. 你只知道你该知道的事：")
+                .append("你能用的信息只有——【当前状态】里你自己的情况、【最近行动】里你亲身经历的、【最近的记忆】，")
+                .append("以及提示词明确列给你的东西（【世界里的其他居民】的位置与最近动静、今日要闻、旅人集市、背包物品）。")
+                .append("你不知道别人的内心想法、没说出口的秘密和计划，**也不知道未来会怎样**；")
+                .append("别人没在你面前说过、做过的事，你就不知道。跟人打交道前先想一句「以我这段经历，我该不该知道这件事」，")
+                .append("**不要把提示词没给你的信息当成你已知的事实**。")
+                .append("也不要用「后来他才明白」「这一切仿佛早已注定」这类站在故事之外的写法，更不要暗示你预知了结局。");
+        sb.append("\n28. 世界不是围着你转的：")
+                .append("【世界里的其他居民】有自己的目标、麻烦和利益。你去找他们时，对方会先掂量「帮你要付出什么、对我有什么好处」——")
+                .append("**被拒绝、被敷衍、被讨价还价、被要求先付出点代价，都是正常的**。")
+                .append("关系好也有底线：违背对方核心利益、或让他陷入危险的事，他会犹豫、拒绝，甚至跟你翻脸。")
+                .append("好感与信任要靠真实经历积累（一起赶过路、共过患难、帮过忙），**不会凭一句话就亲近**；")
+                .append("反过来，你欠下的人情、受过的帮助，日后也可能要还。");
+        sb.append("\n29. 每一步都有代价，鲁莽要吃亏：")
+                .append("逞强、冒险、贪心、说话得罪人，都要有合理的后果——受伤、破财、被人记恨、事情办砸、白跑一趟都算；")
+                .append("帮别人往往也要付出代价（花时间、花钱、耽误自己的事、得罪另一方），没人会替你兜底。")
+                .append("但代价**不会让你死**（见第 25 条）：最坏是重伤、濒死、破产、被人记恨。");
+        sb.append("\n30. 如果提示词里出现了【本步遭遇·必须处理】：")
+                .append("那是这个世界已经发生的事——有人在盯着你、有东西挡在路上、天候突然变了。")
+                .append("**你必须在这一步应对它**：迎战、逃跑、躲藏、丢下东西脱身、花钱消灾、向别人求助都可以，")
+                .append("但不能当它不存在，也不能假装没看见。对方是什么，按地点与世界观由你定，")
+                .append("强度必须符合提示词给出的战斗力数字；结果按第 23 条的实力对比来写。");
+        sb.append("\n31. 提示词里的【本步运气】：它代表这一步的偶然因素，")
+                .append("运气好时可以让「恰好闪过」「有人恰巧路过」「对手失手」「天气帮了忙」「捡到点小东西」这类巧合发生，")
+                .append("运气差时则相反（装备出问题、被人趁火打劫、淋雨生病、白跑一趟）。")
+                .append("但它**只影响偶然因素**：不能改变你与对方的实力差距，不能让你凭空反杀强敌，")
+                .append("也不能让你死（第 25 条）；没有遭遇的时候，它就体现在日常的小顺小背里。");
+        sb.append("\n32. 不要一直在赶路：路上的时间是「什么都不发生」的——真正的机会、麻烦、人物往来，")
+                .append("都发生在你**停留**的地方。所以每到一个新地方，**先在当地活动**")
+                .append("（办事、打听消息、补给、接活、歇脚、过夜），")
+                .append("别刚落地就再动身去下一个地方；只有确实有急事（追人、赶时间、被人赶走）才连着赶路。")
+                .append("提示词里如果给了「到达提示」，就按它说的做。");
+        sb.append("\n33. look 是「**你此刻的样子**」（20~40 字）：穿什么、干不干净、身上有没有伤、")
+                .append("头发怎么束着、神情如何。\n")
+                .append("· 它和人设卡里的【外貌】是两层：【外貌】是不会变的底子（种族、发色、瞳色、身形、标志性特征），")
+                .append("**不要改它**；look 只写这一刻的样子，会跟着行动变化；\n")
+                .append("· 常见的变化：睡下时脱下外衣、换成便服或裹上毯子，头发散开；起床后重新束发、穿戴整齐；")
+                .append("淋雨涉水后湿透；摔跤或赶路后沾了泥；受伤后缠上绷带、脸色发白；")
+                .append("要见重要人物前特意整理仪容；从集市回来手里还拎着东西；\n")
+                .append("· 没有明显变化时，简短写一句现状就行，不要为了凑内容硬编；\n")
+                .append("· 只写看得见的外在，心理活动留给 inner_voice。");
+        sb.append("\n34. 关于「别人此刻是什么状态」：提示词里只给你**附近那些人**的近况")
+                .append("（他们最近做了什么、此刻在做什么、身体怎么样）；")
+                .append("**离你远的人，你只知道有这么个人**，不知道他们在哪、在做什么——")
+                .append("不要凭空猜，也不要把他们写进 companions，除非有剧情内的线索（今日要闻、别人告诉你的消息）。\n")
+                .append("另外：对方**正在睡觉、赶路、重伤疗养**的时候，不要写他们热情地回应你——")
+                .append("最多是被你吵醒后含糊应一声、翻个身继续睡；重伤的人不会陪你长谈；正在赶路的人根本不在你身边。")
+                .append("想认真打交道，等对方醒着、停下来的时候。");
+        sb.append("\n35. 【旅人委托板】上挂着世界各地贴出来的委托（讨伐、采集、护送、探索、杂活）。")
+                .append("它们是你**挣钱、找事做、给自己一个长期目标**的正当途径，不是必须做的任务——")
+                .append("接不接、接哪一条，都要按你自己的处境、性格与手头的事来决定。\n")
+                .append("· 你现在**没有**进行中的委托时，提示词里会列出可接的委托（含距离）；")
+                .append("决定接下哪一条，就把它的**标题一字不差**写进 quest_take（**一次只能接一条**）；")
+                .append("不想接、接不了、或手头有更要紧的事，就填空字符串。\n")
+                .append("· 接了远处的委托就自己赶路过去（按第 19 条挑交通方式）；")
+                .append("委托挂着不代表马上要去做，但也不能永远拖着不管。");
+        sb.append("\n36. 如果有进行中的委托（提示词里的【当前委托】），你这一步要顺带推进它，并把完成度写进 quest_progress：\n")
+                .append("· quest_progress 是 0~100 的整数，表示**相对整件事**的完成度，不是这一小步的进度；")
+                .append("服务端**只取更高值**，且单步最多 +40——所以不要想着一步写到 100；\n")
+                .append("· quest_note 用一句话（15~30 字）说明这一步为委托做了什么，会展示给读者；\n")
+                .append("· **进度满 100 不等于自动拿到奖励**：服务端还会看两件事——")
+                .append("① 你是否真的在目标地区（讨伐/护送/探索类）；② 采集类是否真的把东西拿到手（items_change 有正数）。")
+                .append("不满足就只算 99%，会在 quest_note 里提示你还差什么，等你补上再算完成；\n")
+                .append("· **报酬由系统在你真正完成时发放**：进度没到 100 之前，**绝对不要**把委托的报酬金币或奖励物品")
+                .append("写进 coins_change / items_change（那是「提前发工资」，会造成钱和委托状态对不上；实测被截断过）。")
+                .append("途中拿到的定金、小费这类零碎收入可以写，但一笔最多 5 金币。\n")
+                .append("· 委托完成那一步，如果奖励里含更好的装备、或你讨伐了对手，可以给 combat_change +1~+3；")
+                .append("如果这件事让你对实力或财富的看法变了，也可以按第 26 条写 attitude_change；\n")
+                .append("· 实在做不下去（太难、太远、亏本、有更要紧的事），把 quest_abandon 填 true，")
+                .append("并在 quest_note 里写一句为什么放弃：委托会回到板上、进度清零，你之后还能再接它。")
+                .append("这是正当的选择，不要明知做不成还硬撑。");
+        sb.append("\n37. 没有进行中的委托时，提示词最后会有一行【刚刚完成的委托】——")
+                .append("那是你**已经结算过**的委托（奖励已经到手），不是还在做的事。")
+                .append("你可以自然地提起它、因此心情不错或觉得理所当然，但**不要再跑去执行它**。");
         appendStyleExtra(sb);
         appendDraftFlow(sb);
         return sb.toString();
+    }
+
+    /**
+     * 往用户提示词里追加【世界里的其他居民】，按"能不能碰上"分两档：
+     *
+     *   · **附近的人**（同一处，或距离在互动范围内）：给完整近况——位置与距离、能不能相遇、
+     *     最近一步做了什么（含最后一条动作，那一条最能看出对方此刻的状态）、此刻在做什么、身体怎么样；
+     *   · **离得远的人**：只留名字与称号。
+     *
+     * 为什么这么分：角色不该知道几十公里外的人此刻在干什么（那就是"全知"）。
+     * 实测过"远处的动静"被写进提示词之后，AI 会拿它当身边的信息用——比如对一位
+     * 早已在别处睡着的角色写"对着身边的圣女小姐调情"。所以远处的只保留"世上有这个人"。
+     */
+    private void appendOtherPeople(StringBuilder sb, SandboxCharacter c, List<SandboxCharacter> companions) {
+        if (companions.isEmpty()) {
+            sb.append("\n【世界里的其他居民】\n- （目前世上只有你一个角色，可以自由探索）\n");
+            return;
+        }
+        int socialMaxKm = intConfig("sandbox_social_max_km", 30);
+        List<SandboxCharacter> nearby = new ArrayList<>();
+        List<SandboxCharacter> faraway = new ArrayList<>();
+        for (SandboxCharacter other : companions) {
+            double km = kmBetween(c.getX() == null ? 50 : c.getX(), c.getY() == null ? 50 : c.getY(),
+                    other.getX() == null ? 50 : other.getX(), other.getY() == null ? 50 : other.getY());
+            boolean sameSpot = sameSpot(c.getLocationName(), c.getSubLocation(),
+                    other.getLocationName(), other.getSubLocation());
+            // 和 nearbyCompanions 同一套判定：不同一级地点的人不给"附近的人"待遇（否则 AI 会当身边人写）
+            boolean sameArea = notBlank(c.getLocationName()) && c.getLocationName().equals(other.getLocationName());
+            if (SandboxSocial.canInteract(sameArea, sameSpot, km, socialMaxKm, sameAreaOnly())) {
+                nearby.add(other);
+            } else {
+                faraway.add(other);
+            }
+        }
+        if (!nearby.isEmpty()) {
+            sb.append("\n【你附近的人】你们可能在同一地点相遇、交谈、同行或互相影响：\n");
+            for (SandboxCharacter other : nearby) {
+                appendNearbyPerson(sb, c, other);
+            }
+        }
+        if (!faraway.isEmpty()) {
+            // 远处的人只留名字：角色"听说过"他们的存在，但不知道他们此刻在哪、在做什么
+            sb.append("\n【世上还有这些人】你只隐约听说过他们，并不知道他们此刻在哪、在做什么：\n");
+            List<String> briefs = new ArrayList<>();
+            for (SandboxCharacter other : faraway) {
+                String text = other.getName();
+                if (notBlank(other.getTitle())) {
+                    text += "（" + other.getTitle() + "）";
+                }
+                briefs.add(text);
+            }
+            sb.append("- ").append(String.join("、", briefs)).append("\n");
+            sb.append("（不知道对方的近况，就不要把他们写进 companions，也别凭空猜他们在做什么；")
+                    .append("除非有剧情内的线索——比如今日要闻、别人告诉你的话——你才可能知道一点关于他们的传闻）\n");
+        }
+    }
+
+    /** 附近某个角色的完整近况：位置距离 + 能不能相遇 + 最近一步 + 此刻在做什么 + 身体状态 */
+    private void appendNearbyPerson(StringBuilder sb, SandboxCharacter c, SandboxCharacter other) {
+        double km = kmBetween(c.getX() == null ? 50 : c.getX(), c.getY() == null ? 50 : c.getY(),
+                other.getX() == null ? 50 : other.getX(), other.getY() == null ? 50 : other.getY());
+        boolean sameSpot = sameSpot(c.getLocationName(), c.getSubLocation(),
+                other.getLocationName(), other.getSubLocation());
+        sb.append("- ").append(other.getName());
+        if (notBlank(other.getTitle())) {
+            sb.append("（").append(other.getTitle()).append("）");
+        }
+        sb.append("：").append(blankToDefault(placeText(other.getLocationName(), other.getSubLocation()), "某处"))
+                .append("（x=").append(other.getX() == null ? 50 : other.getX())
+                .append(", y=").append(other.getY() == null ? 50 : other.getY()).append("）");
+        if (sameSpot) {
+            sb.append("，**就在同一个地方**");
+        } else {
+            sb.append("，距你约 ").append(SandboxGeo.kmText(km))
+                    .append("（").append(travelTimeText(km, "步行", walkSpeedKmh())).append("）");
+        }
+        sb.append("，这一步可以相遇、一起行动\n");
+        SandboxAct last = latestAct(other.getId());
+        if (last != null) {
+            String time = last.getCreateTime() == null ? "" : last.getCreateTime().format(DATE_TIME_FORMATTER);
+            sb.append("  · 最近一步（").append(time).append("，在")
+                    .append(blankToDefault(placeText(last.getLocationName(), last.getSubLocation()), "某处"))
+                    .append("）：\n");
+            // 给**完整的**这一步（多条动作逐行列出）：只给摘要或最后一条会缺上下文——
+            // 实测出现过"她敲诈般地收了对方 20 枚金币"，而 AI 根本不知道"对方"是谁。
+            String actions = truncate(trimToEmpty(last.getActions()), 400);
+            if (actions.isEmpty()) {
+                sb.append("    ").append(blankToDefault(last.getSummary(), "（这一步没有留下细节）")).append("\n");
+            } else {
+                for (String line : actions.split("\n")) {
+                    if (notBlank(line)) {
+                        sb.append("    ").append(line.trim()).append("\n");
+                    }
+                }
+            }
+            if (notBlank(last.getSummary())) {
+                sb.append("    · 一句话概括：").append(last.getSummary()).append("\n");
+            }
+            sb.append("  · 此刻：").append(otherCurrentText(last)).append("\n");
+        }
+        String status = otherStatusBrief(other);
+        if (notBlank(status)) {
+            sb.append("  · 身体状态：").append(status).append("\n");
+        }
+    }
+
+    /** 对方此刻在做什么：最新一步还没走完就是"正在进行"，走完了就是"刚结束" */
+    private String otherCurrentText(SandboxAct last) {
+        if (last == null) {
+            return "（还不了解）";
+        }
+        String reason = blankToDefault(last.getNextAfterReason(), "做自己的事");
+        LocalDateTime arriveAt = arriveAt(last);
+        if (arriveAt != null && arriveAt.isAfter(clock())) {
+            return "**正在" + reason + "**（预计 " + arriveAt.format(TIME_FORMATTER) + " 结束）";
+        }
+        return "刚做完「" + reason + "」，此刻可能在忙别的";
+    }
+
+    /** 对方的状态简报：体力 / 伤势 / 心情（决定对方会怎么回应你） */
+    private String otherStatusBrief(SandboxCharacter other) {
+        Map<String, Object> status = parseStatus(other.getStatusJson());
+        List<String> parts = new ArrayList<>();
+        for (String key : new String[]{"体力", "伤势", "心情"}) {
+            Object value = status.get(key);
+            if (value != null && notBlank(String.valueOf(value))) {
+                parts.add(key + " " + value);
+            }
+        }
+        return parts.isEmpty() ? null : String.join("、", parts);
     }
 
     /** 管理员自定义文风补充（后台可编辑，可以粘贴酒馆预设里的写作基准段落） */
@@ -2937,14 +3502,71 @@ public class SandboxServiceImpl implements SandboxService {
         sb.append("下一步间隔多少分钟、物品变化、金币变化各是什么。**如果中途改了主意，就在这里写清新结论**，");
         sb.append("不要让 final 与这里的结论不一致。\n");
         sb.append("【终稿】<final>：给出修正后的最终 JSON，必须完整、合法、字段齐全（结构见【输出要求】），");
-        sb.append("而且只有这一段是 JSON。**<final> 必须是整段回复的最后内容，后面不允许再有任何文字**。\n");
+        sb.append("而且只有这一段是 JSON。\n");
+        sb.append("**位置要求（最容易出错的地方，请务必照做）**：写完 </review> 之后，");
+        sb.append("紧接着就必须是 <final> 这个起始标记，**不允许把 JSON 直接跟在 </review> 后面**——");
+        sb.append("服务端靠 <final> 来区分「你的终稿」与「自审段里的示例和结论」，");
+        sb.append("少了这个标记，服务端只能按「全文最后一段 JSON」去猜，");
+        sb.append("一旦你把自查内容写成 JSON 的形状，被当成终稿落库的就是那段自查——那不是你的本意。\n");
+        sb.append("**<final> 必须是整段回复的最后内容**：`</final>` 之后不允许再有任何文字、");
+        sb.append("不要再补充说明、不要加结束语，也不要再写一次 JSON。\n");
         sb.append("注意：前面几段都是给你自己用的思考过程，绝不能把里面的内容写进 final 的 actions、");
         sb.append("inner_voice 或 summary；也不要在那几段里输出 JSON 或代码块标记。\n");
     }
 
-    /** 思考阶段（四段式的最前面一段）是否开启；默认开启，仅在三段式开启时生效 */
+    /**
+     * 生成器专用的三段式要求（拼在系统提示词末尾）：
+     * 【思考】→【草稿】→【终稿】。
+     *
+     * 生成器原来的做法是"一次调用直接吐 JSON"，模型常常不多想就编；
+     * 加上思考段后，它会先结合世界观与地图地点（含描述、危险度）权衡，再落 JSON。
+     * 这里不提"角色此刻在哪"这类行动专属信息——生成器没有角色视角。
+     */
+    private String generatorFlowHint() {
+        return "\n\n【输出流程·必须严格遵守】\n"
+                + "请按顺序输出三段，一个都不能少，段外不要写任何解释：\n"
+                + "第一段【思考】<think>：结合上面的【世界观】与【地图地点】"
+                + "（名称、危险度、生物战力、区域范围与描述）以及已有的内容，想清楚这次要生成什么——"
+                + "列出 2~3 个候选方向、说明你选哪一个，以及它为什么符合这个世界、这些地点与最近的动向；"
+                + "同时确认数量、难度/品质/价格量级这些硬性要求没有跑偏。\n"
+                + "第二段【草稿】<draft>：把准备输出的内容用白话或列表先写一遍——"
+                + "每一条的名称、落点、关键数值都写清楚，写到「照着它就能填出最终 JSON」的程度。"
+                + "这一段不要写 JSON。\n"
+                + "第三段【终稿】<final>：只输出约定的 JSON，结构必须完全符合上面【输出要求】里的格式；"
+                + "**<final> 必须是整段回复的最后内容**，后面不允许再有任何文字。\n"
+                + "注意：前两段是给你自己想清楚用的，绝不能把其中的说明或草稿写进 JSON；"
+                + "也不要在那两段里使用 Markdown 代码块标记。\n";
+    }
+
+    /**
+     * 生成器（AI 创作角色 / 旅人纪闻 / 旅人集市 / 旅人委托）的主调用。
+     * 开启 sandbox_generator_flow 时走「预填充 + 思考/草稿/终稿」三段式，否则一次调用直接要 JSON。
+     *
+     * 预填充的作用和三段式一样：把 assistant 消息预置成 <think> 的开头，模型只能接着写，
+     * 于是几乎不会跑偏成散文、也不会跳过思考；返回内容不带预填充部分，所以要手动拼回去。
+     */
+    private String chatForGenerator(AiProvider provider, String model, String systemPrompt, String userPrompt,
+                                    double temperature) {
+        if (!generatorFlowOn()) {
+            return aiProviderService.chat(provider, model, systemPrompt, userPrompt, temperature);
+        }
+        String prefill = "<think>\n";
+        List<ChatMessage> messages = new ArrayList<>();
+        messages.add(ChatMessage.system(systemPrompt + generatorFlowHint()));
+        messages.add(ChatMessage.user(userPrompt));
+        messages.add(ChatMessage.assistant(prefill));
+        String content = aiProviderService.chatMessages(provider, model, messages, temperature, false);
+        return prefill + (content == null ? "" : content);
+    }
+
+    /** 思考阶段（五段式的一段）是否开启；已被 sandbox_flow_mode 取代，保留用于向后兼容 */
     private boolean thinkStageOn() {
         return !"off".equalsIgnoreCase(configService.getConfigValue("sandbox_think_stage", "on").trim());
+    }
+
+    /** 「此刻的样子」（current_look）是否启用：默认开启，关闭后 AI 不再输出、角色卡也不再注入 */
+    private boolean lookOn() {
+        return !"off".equalsIgnoreCase(configService.getConfigValue("sandbox_look_enabled", "on").trim());
     }
 
     /**
@@ -3072,7 +3694,7 @@ public class SandboxServiceImpl implements SandboxService {
                                    List<SandboxCharacter> companions, List<SandboxAct> companionActs,
                                    boolean reaction, String triggerName, SandboxAct trigger,
                                    List<SandboxMemory> memories, List<SandboxItem> backpack,
-                                   List<SandboxNews> news) {
+                                   List<SandboxNews> news, String encounter, Integer luck) {
         StringBuilder sb = new StringBuilder();
         // 提示词里的"现在时间"：默认等于真实时间，调试时可整体平移，见 clock()
         LocalDateTime now = clock();
@@ -3091,6 +3713,11 @@ public class SandboxServiceImpl implements SandboxService {
         String travelStatus = travelStatusText(c);
         if (travelStatus != null) {
             sb.append(travelStatus).append("\n");
+        }
+        // 刚赶到一个新地方 → 提醒先在这里活动，别立刻又赶路（否则会一直在路上，什么也遇不上）
+        String arrival = arrivalHint(c);
+        if (arrival != null) {
+            sb.append("到达提示：").append(arrival).append("\n");
         }
         sb.append("身上金币：").append(c.getCoins() == null ? 0 : c.getCoins())
                 .append(" 枚（本次非集市花费请不要超过 ")
@@ -3124,6 +3751,17 @@ public class SandboxServiceImpl implements SandboxService {
         Map<String, Object> status = parseStatus(c.getStatusJson());
         if (!status.isEmpty()) {
             sb.append("当前状态：").append(JSONUtil.toJsonStr(status)).append("\n");
+            // 伤势已经持续多久：AI 自己看不到"这伤挂了几步"，很容易一挂就是一整天不痊愈
+            Object injuryValue = status.get(INJURY_KEY);
+            String injuryNow = injuryValue == null ? null : String.valueOf(injuryValue);
+            if (notBlank(injuryNow) && !"无恙".equals(injuryNow)) {
+                int streak = injuryStreak(recent, injuryNow);
+                if (streak >= 2) {
+                    sb.append("（伤势「").append(injuryNow).append("」已经持续 ").append(streak)
+                            .append(" 步了：这几步里如果处理包扎过、也睡过觉，这一步就该写回「无恙」；")
+                            .append("伤势是状态项，你不写它就会一直保持原样）\n");
+                }
+            }
         }
         // 背包：把物品清单明确列出来，AI 才知道自己身上有什么
         sb.append("背包物品：");
@@ -3144,45 +3782,10 @@ public class SandboxServiceImpl implements SandboxService {
         appendShopPrompt(sb, c);
         // 各地点的实际距离（km）：坐标对 AI 没有意义，给它"多远、要多久"才用得上
         appendDistancePrompt(sb, c);
+        // 旅人委托板：进行中的那一条（有的话）或可接列表；刚完成的那条也在这里提一句
+        appendQuestPrompt(sb, c);
         // 其他居民（含此刻位置）：这部分每次都可能变，放在用户提示词里，让系统提示词保持稳定前缀
-        sb.append("\n【世界里的其他居民】你们生活在同一个世界里，可能在同一地点相遇、交谈、同行或互相影响：\n");
-        if (companions.isEmpty()) {
-            sb.append("- （目前世上只有你一个角色，可以自由探索）\n");
-        } else {
-            for (SandboxCharacter other : companions) {
-                sb.append("- ").append(other.getName());
-                if (notBlank(other.getTitle())) {
-                    sb.append("（").append(other.getTitle()).append("）");
-                }
-                sb.append("：当前在").append(blankToDefault(placeText(other.getLocationName(), other.getSubLocation()), "某处"))
-                        .append("（x=").append(other.getX() == null ? 50 : other.getX())
-                        .append(", y=").append(other.getY() == null ? 50 : other.getY()).append("）");
-                if (notBlank(other.getAppearance())) {
-                    sb.append("；").append(truncate(other.getAppearance(), 60));
-                }
-                // 实际距离：AI 判断"要不要去找他 / 算不算相遇"全靠这个，光给坐标它算不明白
-                double km = kmBetween(c.getX() == null ? 50 : c.getX(), c.getY() == null ? 50 : c.getY(),
-                        other.getX() == null ? 50 : other.getX(), other.getY() == null ? 50 : other.getY());
-                boolean sameSpot = sameSpot(c.getLocationName(), c.getSubLocation(),
-                        other.getLocationName(), other.getSubLocation());
-                // 不管是不是同一个区域，都给实际距离：区域大的时候，同区域也可能相距几十公里
-                sb.append("，距你约 ").append(SandboxGeo.kmText(km))
-                        .append("（").append(travelTimeText(km, "步行", walkSpeedKmh())).append("）");
-                if (sameSpot) {
-                    sb.append("，就在同一个地方");
-                }
-                // 明确告诉 AI 这一步能不能相遇：否则它会写出"碰了面"，而同行/好感度会被服务端丢掉
-                double socialMaxKm = intConfig("sandbox_social_max_km", 30);
-                if (sameSpot || socialMaxKm <= 0 || km <= socialMaxKm) {
-                    sb.append("，这一步可以相遇、一起行动");
-                } else if (km <= socialMaxKm * 2) {
-                    sb.append("，稍远：这一步赶过去只能赶路，很难同时做别的事");
-                } else {
-                    sb.append("，太远了，这一步不可能相遇");
-                }
-                sb.append("\n");
-            }
-        }
+        appendOtherPeople(sb, c, companions);
 
         if (!memories.isEmpty()) {
             List<SandboxMemory> ordered = new ArrayList<>(memories);
@@ -3235,25 +3838,9 @@ public class SandboxServiceImpl implements SandboxService {
         }
         // 同行统计：和同一个人连续一起行动太久时点名提醒（和「别一直待着」同一套思路）
         appendTogethernessHint(sb, c, recent, companions);
-        if (!companionActs.isEmpty()) {
-            sb.append("\n【其他居民最近的动静】\n");
-            List<SandboxAct> ordered = new ArrayList<>(companionActs);
-            ordered.sort((a, b) -> {
-                LocalDateTime ta = a.getCreateTime() == null ? LocalDateTime.MIN : a.getCreateTime();
-                LocalDateTime tb = b.getCreateTime() == null ? LocalDateTime.MIN : b.getCreateTime();
-                return ta.compareTo(tb);
-            });
-            for (SandboxAct act : ordered) {
-                sb.append("- ").append(characterNameOf(companions, act.getCharacterId()))
-                        .append(" 于 ").append(act.getCreateTime() == null ? ""
-                                : act.getCreateTime().format(DATE_TIME_FORMATTER))
-                        .append(" 在").append(blankToDefault(placeText(act.getLocationName(), act.getSubLocation()), "某处")).append("：")
-                        .append(blankToDefault(act.getSummary(), blankToDefault(act.getActions(), "")))
-                        .append("\n");
-            }
-            sb.append("（如果你们恰好都在同一地点或附近，可以自然地遇见、打招呼、结伴或交换物品，")
-                    .append("并把对方名字填进 companions；不必强行互动）\n");
-        }
+        // 原来这里还有一段【其他居民最近的动静】，现在取消了：
+        // 只有"附近的人"才拿得到完整近况（见 appendOtherPeople），远处的人只剩名字——
+        // 再单独列一份所有人的动静，等于把远处的信息又漏回去（那就成了全知）。
         List<String> relationLines = relationLines(c.getId(), companions);
         if (!relationLines.isEmpty()) {
             sb.append("\n【你与其他角色的关系】好感度 -100~100（0 是陌生，越高越亲近，负数表示反感）：\n");
@@ -3316,8 +3903,53 @@ public class SandboxServiceImpl implements SandboxService {
                         .append("\n");
             }
         }
-        sb.append("\n【本次要求】\n请推进 1 步剧情：角色可以移动到一个新的地点、留在原地做一件事，或与这个世界里的事物互动；")
-                .append("不要重复最近已经做过的内容，要有新的细节。最后按约定的 JSON 结构输出。");
+        // 本步遭遇：服务端掷骰命中时给出的"这一步必然发生的事"，必须处理，不能当作没看见
+        if (notBlank(encounter)) {
+            sb.append("\n【本步遭遇·必须处理】\n").append(encounter).append("\n")
+                    .append("对方具体是什么，请你按这个地点与世界观自己定（丛林里的野兽或魔物、荒野的劫匪、遗迹的守卫、")
+                    .append("恶劣天候、塌方之类的意外都可以），**但强度必须符合上面给的战斗力数字**。\n")
+                    .append("**这一步必须应对它**：迎战、逃跑、躲藏、扔下东西脱身、花钱消灾、或者用别的方式化解都行，")
+                    .append("不能视而不见、也不能当它不存在。打不打得过、会不会受伤、要付出什么代价，")
+                    .append("都要按你和对方的实力差来写（第 23 条）。\n");
+        }
+        // 本步运气：只影响偶然因素，不改变实力对比、也不影响"会不会遭遇"
+        if (luck != null) {
+            sb.append("\n【本步运气】").append(luckText(luck)).append("（")
+                    .append(luck > 0 ? "+" : "").append(luck).append("）\n");
+            if (luck >= 2) {
+                sb.append("这一步里的**偶然因素**明显偏向你：可能恰好闪过致命一击、有人恰巧路过搭救、")
+                        .append("对手在关键时刻失误、天气突变帮了你、或者路上捡到点小东西。\n");
+            } else if (luck == 1) {
+                sb.append("这一步运气稍好：小巧合会站在你这边，但别指望它扭转实力差距。\n");
+            } else if (luck == 0) {
+                sb.append("这一步运气平平：没有特别的巧合，事情按它本来的样子发展。\n");
+            } else if (luck == -1) {
+                sb.append("这一步运气稍差：可能多花点力气、多绕点路、丢点小东西，但不会有大事。\n");
+            } else {
+                sb.append("这一步**诸事不顺**：装备可能出问题、容易被人趁火打劫、淋雨生病、白跑一趟，")
+                        .append("遇上危险时也更难脱身。\n");
+            }
+            sb.append("注意：运气只影响**偶然因素**（时机、天气、有没有人恰好出现、对手是否失误），")
+                    .append("**不能凭空改变你和对方的实力差距**（第 23 条），更**不会让你死**（第 25 条）。\n");
+        }
+        sb.append("\n【本次要求】\n请推进 1 步剧情：角色可以移动到一个新的地点、留在原地做一件事，")
+                .append("或与这个世界里的事物互动；不要重复最近已经做过的内容，要有新的细节。\n")
+                // 这一段是模型读到的最后一段指令，所以包裹要求必须写在这里（只写在系统提示词里会被"直接吐 JSON"盖过去）
+                .append("**【本次输出的包裹要求·逐条照做】**整条回复必须从 <recap> 开始、到 </final> 结束，")
+                .append("并且**只能**由下面五个段落按这个顺序组成，每个标记都要出现、都要闭合，段与段之间不要写任何额外说明：\n")
+                .append("1. <recap> … </recap>：先用几句话回看自己的处境——我此刻到底在哪（一级 + 二级地点）、")
+                .append("我正在做的那件事做到哪一步了（以【当前状态】与【最近行动】为准）；赶路时要说清人是还在路上、还是已经到达。\n")
+                .append("2. <think> … </think>：权衡这一步怎么做——列 2~3 种可选做法、为什么选这一个、代价与风险。\n")
+                .append("3. <draft> … </draft>：用白话把这一步要做的事写清楚，并写明你打算怎么填各个字段（地点/间隔/金币/物品/委托）。\n")
+                .append("4. <review> … </review>：对照清单自检，并写出最终决定（地点、间隔分钟数、金币变化、物品变化）。\n")
+                .append("5. <final> … </final>：**最终 JSON 只能写在这一段里**，")
+                .append("也就是「<final> 之后、</final> 之前」，除此之外整条回复里不允许再出现第二处 JSON。\n")
+                .append("**最容易犯的错，请特别注意**：不要把 JSON 直接写在 </review> 后面、也不要省掉 <final> 标记——")
+                .append("服务端是靠 <final> 段来取终稿的：少了它，服务端只能按「全文最后一段 JSON」去猜，")
+                .append("一旦你的自审里出现了 JSON 形状的内容（例如把最终决定写成 {\"location\":…}），")
+                .append("被当成终稿的就是那段自查，这一步的行动就会记错。写完 </review> 之后，下一行请直接写 <final>。\n")
+                .append("另外：五个标记一律用英文尖括号原样书写（不要写成【回看】这类中文标签、不要加空格或换行到标签内部），")
+                .append("也不要使用 Markdown 代码块包裹 JSON。");
         return sb.toString();
     }
 
@@ -3563,6 +4195,208 @@ public class SandboxServiceImpl implements SandboxService {
     }
 
     /**
+     * 本步遭遇：由服务端掷骰子决定"这一步到底遇上了什么"，命中就把具体遭遇写进提示词。
+     *
+     * 为什么不让 AI 自己决定：实测在危险度=3 的魔物森林里跑 8 步只有 1 次轻遭遇、全程没受伤——
+     * AI 一方面严格照着"不要每一步都出事"，另一方面会让角色理性地"警觉、避开、撤离"。
+     * 把"发生与否"交给系统、把"怎么应对"留给 AI，危险才真的会发生。
+     *
+     * @return 注入用的遭遇文本；没触发返回 null
+     */
+    private String buildEncounter(SandboxCharacter character) {
+        if (character == null || !"on".equals(configService.getConfigValue("sandbox_encounter_enabled", "on"))) {
+            return null;
+        }
+        Integer danger = null;
+        // 遭遇只在"停留"时判定：路上默认没有危险（用户确认过的设定），
+        // 所以这里用角色此刻实际所在的地点，而不是它正在赶往的目的地
+        SandboxLocation spot = currentLocation(character);
+        if (spot != null) {
+            danger = spot.getDangerLevel() == null ? 1 : spot.getDangerLevel();
+        }
+        if (danger == null || danger < 2) {
+            return null;
+        }
+        // 濒死的人正在养伤，这一步不再雪上加霜
+        if ("濒死".equals(injuryOf(character.getStatusJson()))) {
+            return null;
+        }
+        int chance = intConfig("sandbox_encounter_chance_" + danger, danger >= 3 ? 55 : 30);
+        if (chance <= 0 || random.nextInt(100) >= Math.min(chance, 100)) {
+            return null;
+        }
+        int limit = intConfig("sandbox_encounter_daily_limit", 3);
+        if (limit > 0 && todayEncounterCount(character.getId()) >= limit) {
+            return null;
+        }
+        int base = character.getCombatPower() == null ? COMBAT_POWER_DEFAULT : character.getCombatPower();
+        // 对手强度：取「这个地点本来的生物强度区间」，而不是跟着角色战力缩放——
+        // 否则同一个魔物森林会随着角色变强一起变强，世界像在陪着角色演戏
+        int[] range = encounterPowerRange(spot, danger);
+        int power = range[0] + (range[1] > range[0] ? random.nextInt(range[1] - range[0] + 1) : 0);
+        String compare = power > base * 1.15 ? "比你强" : (power < base * 0.85 ? "比你弱" : "和你差不多");
+        String place = blankToDefault(placeText(character.getLocationName(), character.getSubLocation()), "这里");
+        String text = "在" + place + "，你被盯上了：对方实力大约相当于战斗力 " + power
+                + "（你现在是 " + base + "，" + compare + "）。";
+        log.info("沙盒角色「{}」在危险度{}的地点触发了本步遭遇（地点区间 {}~{}，本次对手战力 {}）",
+                character.getName(), danger, range[0], range[1], power);
+        return text;
+    }
+
+    /**
+     * 当前地点的生物战力区间：优先用后台配的，没配就按危险度取默认值
+     * （危险度 1 → 6~14，2 → 15~30，3 → 25~55，与升级脚本里的回填一致）。
+     */
+    private int[] encounterPowerRange(SandboxLocation spot, int danger) {
+        int min = spot == null || spot.getPowerMin() == null ? defaultPowerMin(danger) : spot.getPowerMin();
+        int max = spot == null || spot.getPowerMax() == null ? defaultPowerMax(danger) : spot.getPowerMax();
+        if (max < min) {
+            max = min;
+        }
+        return new int[]{Math.max(COMBAT_POWER_MIN, min), Math.max(COMBAT_POWER_MIN, max)};
+    }
+
+    /**
+     * 刚赶到一个新地方时的提示：让角色先在这里活动，别立刻又动身赶路。
+     *
+     * 为什么需要：位置是"到点才落地"的，遭遇又只在停留时判定（路上默认没危险）。
+     * 如果角色一步接一步地赶路，它就会长期挂在"在途"状态——一直在路上，什么也遇不上、
+     * 也没有生活。所以每次真正抵达一个新地区，就提醒它先在这儿待一步。
+     */
+    private String arrivalHint(SandboxCharacter character) {
+        if (character == null || character.getId() == null || traveling(character)) {
+            return null;
+        }
+        List<SandboxAct> acts = actMapper.selectList(new LambdaQueryWrapper<SandboxAct>()
+                .eq(SandboxAct::getCharacterId, character.getId())
+                .orderByDesc(SandboxAct::getId)
+                .last("limit 2"));
+        if (acts.size() < 2) {
+            return null;
+        }
+        SandboxAct last = acts.get(0);
+        SandboxAct prev = acts.get(1);
+        // 上一步换了地区，而且已经到点（说明"他就是刚赶到这儿"）
+        if (last.getLocationName() == null || last.getLocationName().equals(prev.getLocationName())) {
+            return null;
+        }
+        LocalDateTime arriveAt = arriveAt(last);
+        if (arriveAt == null || arriveAt.isAfter(clock())) {
+            return null;
+        }
+        String place = blankToDefault(placeText(last.getLocationName(), last.getSubLocation()), "这里");
+        return "你刚赶到" + place + "。这一步**先在这里活动**——办事、打听消息、补给、找活儿、歇脚、"
+                + "找地方过夜都行；除非有急事（追人、赶时间、被人赶走），不要刚落地就再动身去别处。";
+    }
+
+    private int defaultPowerMin(int danger) {
+        if (danger >= 3) {
+            return 25;
+        }
+        return danger == 2 ? 15 : 6;
+    }
+
+    private int defaultPowerMax(int danger) {
+        if (danger >= 3) {
+            return 55;
+        }
+        return danger == 2 ? 30 : 14;
+    }
+
+    /** 角色当前所在地点（先按地点名匹配，再按坐标兜底） */
+    private SandboxLocation currentLocation(SandboxCharacter character) {
+        if (character == null || character.getWorldId() == null) {
+            return null;
+        }
+        List<SandboxLocation> locations = locations(character.getWorldId());
+        if (locations.isEmpty()) {
+            return null;
+        }
+        SandboxLocation local = matchLocation(locations, character.getLocationName());
+        if (local == null) {
+            local = locationAtPoint(locations, character.getX() == null ? 50 : character.getX(),
+                    character.getY() == null ? 50 : character.getY());
+        }
+        return local;
+    }
+
+    /** 当前所在地点的危险度；地点对不上时按坐标兜底（与 dangerOfCurrent 同一套匹配规则） */
+    private Integer currentDangerLevel(SandboxCharacter character) {
+        SandboxLocation local = currentLocation(character);
+        if (local == null) {
+            return null;
+        }
+        return local.getDangerLevel() == null ? 1 : local.getDangerLevel();
+    }
+
+    /** 当天运气基调（角色 + 日期 → 基调），放在内存里即可：重启后重新抽，运气本来就是临时的 */
+    private final Map<String, Integer> luckBase = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /**
+     * 本步运气值（-3 大凶 ~ +3 大吉）。
+     *
+     * 运气**不影响"会不会遭遇"**（那由地点危险度掷骰决定，属于世界的客观事实），
+     * 它只影响"遭遇之后怎么发展"以及日常里的偶然小事——恰好闪过、有人路过搭救、
+     * 对手失手、大雨浇灭了火；反过来则是装备出问题、被趁火打劫、淋雨生病、白跑一趟。
+     *
+     * 取值方式：当天首次行动抽一个当天的基调（默认 ±2），之后每步在基调上抖动（默认 ±1），
+     * 这样才有"今天诸事不顺 / 今天顺得很"的连贯感。
+     */
+    private Integer buildLuck(SandboxCharacter character) {
+        if (character == null || character.getId() == null
+                || !"on".equals(configService.getConfigValue("sandbox_luck_enabled", "on"))) {
+            return null;
+        }
+        int dayRange = Math.max(0, intConfig("sandbox_luck_day_range", 2));
+        int jitter = Math.max(0, intConfig("sandbox_luck_step_jitter", 1));
+        String day = clock().toLocalDate().toString();
+        String key = character.getId() + ":" + day;
+        int base = luckBase.computeIfAbsent(key,
+                k -> dayRange <= 0 ? 0 : random.nextInt(dayRange * 2 + 1) - dayRange);
+        // 顺手清掉过期记录，避免这张表随天数无限增长
+        if (luckBase.size() > 500) {
+            luckBase.entrySet().removeIf(entry -> !entry.getKey().endsWith(day));
+        }
+        int value = base + (jitter <= 0 ? 0 : random.nextInt(jitter * 2 + 1) - jitter);
+        return Math.max(-3, Math.min(3, value));
+    }
+
+    /** 运气值的文字档位（前台展示与提示词共用） */
+    private String luckText(Integer luck) {
+        if (luck == null) {
+            return "";
+        }
+        switch (luck) {
+            case 3:
+                return "大吉";
+            case 2:
+                return "走运";
+            case 1:
+                return "小顺";
+            case 0:
+                return "平常";
+            case -1:
+                return "小背";
+            case -2:
+                return "倒霉";
+            default:
+                return "大凶";
+        }
+    }
+
+    /** 这个角色今天已经被注入过几次遭遇（用于每日上限） */
+    private int todayEncounterCount(Long characterId) {
+        if (characterId == null) {
+            return 0;
+        }
+        Number count = actMapper.selectCount(new LambdaQueryWrapper<SandboxAct>()
+                .eq(SandboxAct::getCharacterId, characterId)
+                .isNotNull(SandboxAct::getEncounter)
+                .ge(SandboxAct::getCreateTime, clock().toLocalDate().atStartOfDay()));
+        return count == null ? 0 : count.intValue();
+    }
+
+    /**
      * 这个角色是不是"正在赶路"（有还没走完的行程）。
      *
      * 判定：最新一条行动记录的到达时刻还没到，而且它写的落点与角色此刻位置不同——人在路上。
@@ -3580,7 +4414,14 @@ public class SandboxServiceImpl implements SandboxService {
             return false;
         }
         LocalDateTime arriveAt = arriveAt(last);
-        return arriveAt != null && arriveAt.isAfter(clock()) && !samePlace(character, last);
+        if (arriveAt == null || !arriveAt.isAfter(clock())) {
+            return false;
+        }
+        // 注意：这里**只看一级地点**。二级地点是 AI 每步现编的（"协会后巷的旅店"→"旅店二楼"），
+        // 拿它判断"有没有移动"会把所有人误判成"正在赶路"，于是彼此从对方世界里消失
+        //（实测导出提示词时看到"世上只有你一个角色"就是这么来的）。
+        return last.getLocationName() != null
+                && !last.getLocationName().equals(character.getLocationName());
     }
 
     private boolean samePlace(SandboxCharacter character, SandboxAct act) {
@@ -3655,6 +4496,35 @@ public class SandboxServiceImpl implements SandboxService {
         return hits.isEmpty() ? null : truncate(String.join("、", hits), 290);
     }
 
+    /** 这一步的行动文本（动作 + 概括 + 心声），用来判断纪闻引用是不是真的沾边 */
+    private String actText(SandboxAct act) {
+        StringBuilder sb = new StringBuilder();
+        if (act.getActions() != null) {
+            sb.append(act.getActions()).append(' ');
+        }
+        if (act.getSummary() != null) {
+            sb.append(act.getSummary()).append(' ');
+        }
+        if (act.getInnerVoice() != null) {
+            sb.append(act.getInnerVoice());
+        }
+        return sb.toString();
+    }
+
+    /**
+     * 该角色最近几步的纪闻引用（从新到旧），交给 SandboxNewsRef 做「最近几步记过的不再重复」判定。
+     */
+    private List<String> recentRefsOf(List<SandboxAct> recent) {
+        List<String> refs = new ArrayList<>();
+        if (recent == null) {
+            return refs;
+        }
+        for (SandboxAct act : recent) {
+            refs.add(act.getNewsRef());
+        }
+        return refs;
+    }
+
     private String matchNewsRefs(JSONArray array, List<SandboxNews> news) {
         if (array == null || array.isEmpty() || news == null || news.isEmpty()) {
             return null;
@@ -3681,6 +4551,34 @@ public class SandboxServiceImpl implements SandboxService {
             }
         }
         return hits.isEmpty() ? null : truncate(String.join("、", hits), 290);
+    }
+
+    /**
+     * 服务端兜底：AI 在叙述里点了某个居民的名字，却没把他写进 companions（实测很常见，
+     * 例如「在集市补给并偶遇迪雅后，卡恩搭乘商队马车前往冒险家协会」），这里替它补上——
+     * 否则这次互动等于没发生：对方不会被触发回应，好感度也不会变。
+     *
+     * 只从 nearby 里找：那份名单已经过「距离上限 + 赶路途中的角色不可见」的过滤，
+     * 所以不会把几十公里外、或者正在赶路的人误判成相遇。
+     */
+    private String guessCompanion(JSONObject obj, List<SandboxCharacter> nearby, SandboxCharacter self) {
+        if (obj == null || nearby == null || nearby.isEmpty()) {
+            return null;
+        }
+        String text = attitudeText(obj);
+        if (text.isEmpty()) {
+            return null;
+        }
+        for (SandboxCharacter other : nearby) {
+            String name = other.getName();
+            if (name == null || name.trim().isEmpty() || other.getId().equals(self.getId())) {
+                continue;
+            }
+            if (text.contains(name.trim())) {
+                return name.trim();
+            }
+        }
+        return null;
     }
 
     /** 把 AI 返回的 companions 收敛为世界里真实存在的角色名，避免出现编造的名字 */
@@ -4167,11 +5065,11 @@ public class SandboxServiceImpl implements SandboxService {
         }
         String raw;
         try {
-            raw = aiProviderService.chat(newsProvider, useModel.trim(), systemPrompt, userPrompt, 0.95);
+            raw = chatForGenerator(newsProvider, useModel.trim(), systemPrompt, userPrompt, 0.95);
         } finally {
             AuditContext.clear();
         }
-        JSONObject obj = parseJson(raw);
+        JSONObject obj = parseJson(SandboxReplyParser.extractFinalBlock(raw));
         if (obj == null) {
             throw new BusinessException("AI 返回内容无法解析成 JSON，请重试或换一个模型");
         }
@@ -4249,6 +5147,55 @@ public class SandboxServiceImpl implements SandboxService {
         }
     }
 
+    /**
+     * 旅人纪闻自动生成（定时任务调用）：多世界各自判断，到期就再生成一批当天事件。
+     *
+     * 到期口径与集市、委托板一致（见 {@link #newsRefreshDue}）：刷新间隔 + 当天首次时间，
+     * 默认每天 07:00 生成一次；间隔填 6 就是一天四次。
+     */
+    @Override
+    public int autoRefreshNews() {
+        if (!"1".equals(configService.getConfigValue("sandbox_news_enabled", "1"))
+                || !"1".equals(configService.getConfigValue("sandbox_news_auto_enabled", "1"))) {
+            return 0;
+        }
+        int refreshed = 0;
+        for (SandboxWorld world : worlds()) {
+            if (world.getEnabled() == null || world.getEnabled() != 1
+                    || !newsRefreshDue(world.getId()) || !autoRefreshAllowed("news", world.getId())) {
+                continue;
+            }
+            autoGenerateNews(world.getId());
+            refreshed++;
+        }
+        return refreshed;
+    }
+
+    /**
+     * 纪闻是否到了生成时间：
+     * 间隔 ≥ 24 小时 → 按每天的起始时间对齐（每天固定在某个时间生成一次）；
+     * 间隔 &lt; 24 小时 → 距上一批满 N 小时就生成（一天可以生成多次，事件会在当天叠加）。
+     * 「上一批」取该世界最新一条纪闻的生成时间（手动生成的也算一批）。
+     */
+    private boolean newsRefreshDue(Long worldId) {
+        int hours = Math.max(1, intConfig("sandbox_news_interval_hours", 24));
+        LocalTime start = timeConfig("sandbox_news_auto_time", LocalTime.of(7, 0));
+        SandboxNews latest = newsMapper.selectOne(new LambdaQueryWrapper<SandboxNews>()
+                .eq(SandboxNews::getWorldId, worldId)
+                .orderByDesc(SandboxNews::getCreateTime)
+                .last("limit 1"));
+        LocalDateTime latestTime = latest == null ? null : latest.getCreateTime();
+        LocalDateTime due;
+        if (latestTime == null) {
+            due = LocalDate.now().atTime(start);
+        } else if (hours >= 24) {
+            due = latestTime.toLocalDate().plusDays(hours / 24L).atTime(start);
+        } else {
+            due = latestTime.plusHours(hours);
+        }
+        return !LocalDateTime.now().isBefore(due);
+    }
+
     /** 清理超过保留天数的纪闻（默认保留当天） */
     private void cleanupExpiredNews() {
         int keepDays = Math.max(1, intConfig("cleanup_sandbox_news_days", 1));
@@ -4285,11 +5232,8 @@ public class SandboxServiceImpl implements SandboxService {
         if (locations.isEmpty()) {
             sb.append("（还没有地点，可以自行设定一个合理的地点名）");
         } else {
-            List<String> names = new ArrayList<>();
-            for (SandboxLocation location : locations) {
-                names.add(location.getName());
-            }
-            sb.append(String.join("、", names));
+            // 纪闻要写"发生在哪、什么坐标"，所以把完整地点信息（含描述与区域范围）都给出去
+            sb.append("\n").append(locationCatalog(locations));
         }
         sb.append("\n\n【最近的世界动向】");
         if (recentMoves.isEmpty()) {
@@ -4556,6 +5500,11 @@ public class SandboxServiceImpl implements SandboxService {
             log.warn("沙盒角色「{}」{} 的 AI 记忆总结失败，改用兜底拼接：{}",
                     character.getName(), date, e.getMessage());
         }
+        // 小模型爱把整段回忆包成 JSON（数组 / 带 character、date 字段的对象），
+        // 这里先剥掉外壳再入库：否则第二天提示词里的【最近的记忆】就是一串引号和方括号
+        if (summary != null && fromAi) {
+            summary = SandboxMemoryText.clean(summary);
+        }
         if (summary == null || summary.trim().isEmpty()) {
             summary = fallbackSummary(acts);
             fromAi = false;
@@ -4714,7 +5663,8 @@ public class SandboxServiceImpl implements SandboxService {
                     .append("输入是某个角色扮演输出的 JSON。请**原样保留输入中的每一个字段**（键名一个都不能少），")
                     .append("然后输出完整的 JSON：\n")
                     .append("- 不允许删除、省略、改名字段，特别是 sub_location、items_change、news_refs、")
-                    .append("shop_buy、next_after_minutes、next_after_reason 这些字段必须原样保留；\n")
+                    .append("shop_buy、quest_take、quest_progress、quest_note、quest_abandon、")
+                    .append("next_after_minutes、next_after_reason 这些字段必须原样保留；\n")
                     .append("- 不允许新增输入里没有的字段；\n")
                     .append("- 不允许改写或缩写 actions、inner_voice、summary 的文字内容（错别字也保持原样）；\n")
                     .append("- 即使某个字段看起来多余，也要照抄，不要自作主张删掉。\n")
@@ -4741,6 +5691,9 @@ public class SandboxServiceImpl implements SandboxService {
                     .append("这两个字段绝对不能删除；\n")
                     .append("8. 不要编造任何角色名或地点名。\n")
                     .append("9. shop_buy 是集市购物清单，商品名与数量一律照抄，不要新增、不要改写、不要清空；\n")
+                    .append("10. quest_take / quest_progress / quest_note / quest_abandon 是旅人委托的字段，")
+                    .append("一律照抄：quest_take 是委托标题或空字符串，quest_progress 是 0~100 的整数，")
+                    .append("quest_abandon 是 true/false —— 不要改写、不要把它们删掉；\n")
                     .append("只输出这一段完整的 JSON，不要输出解释文字，也不要使用 Markdown 代码块标记。\n");
 
             StringBuilder user = new StringBuilder();
@@ -4962,6 +5915,40 @@ public class SandboxServiceImpl implements SandboxService {
     /** 地点区域左上角 X */
     private int areaX(SandboxLocation location) {
         return location.getX() == null ? 50 : location.getX();
+    }
+
+    /**
+     * 生成类提示词共用的「地图地点」清单：**完整**给出每个地点的信息——
+     * 名称、危险度、生物战力区间、区域范围与中心坐标，以及**不截断**的完整描述。
+     *
+     * 为什么统一：这四个生成器（角色 / 旅人纪闻 / 旅人集市 / 旅人委托）以前各写各的——
+     * 委托带描述、角色只带 30 字、纪闻和集市干脆只有名字，于是新闻与商品跟地图脱节
+     * （雾森的摊子上卖不出防雾斗篷，新闻也写不到"精灵盟约"这种只有描述里才有的东西）。
+     * token 量不是问题（实测提示词体量与响应时间基本无关），信息给全更划算。
+     */
+    private String locationCatalog(List<SandboxLocation> locations) {
+        if (locations == null || locations.isEmpty()) {
+            return "（地图上还没有地点，可以自行合理地设定一个符合世界观的去处）";
+        }
+        StringBuilder sb = new StringBuilder();
+        for (SandboxLocation location : locations) {
+            sb.append("- ").append(location.getName())
+                    .append("（危险度 ").append(dangerText(location.getDangerLevel()));
+            int min = location.getPowerMin() == null ? 0 : location.getPowerMin();
+            int max = location.getPowerMax() == null ? 0 : location.getPowerMax();
+            if (min > 0 || max > 0) {
+                sb.append("；生物战力 ").append(min).append("~").append(max);
+            }
+            sb.append("；区域 x ").append(areaX(location)).append("~").append(areaX(location) + areaWidth(location))
+                    .append("、y ").append(areaY(location)).append("~").append(areaY(location) + areaHeight(location))
+                    .append("，中心 x=").append(centerX(location)).append(", y=").append(centerY(location));
+            sb.append("）");
+            if (notBlank(location.getDescription())) {
+                sb.append("：").append(location.getDescription().trim());
+            }
+            sb.append("\n");
+        }
+        return sb.toString();
     }
 
     /** 地点区域左上角 Y */
@@ -5270,7 +6257,7 @@ public class SandboxServiceImpl implements SandboxService {
             log.info("沙盒角色「{}」正在赶路，这一步不参与任何互动", self.getName());
             return new ArrayList<>();
         }
-        double maxKm = intConfig("sandbox_social_max_km", 30);
+        int maxKm = intConfig("sandbox_social_max_km", 30);
         List<SandboxCharacter> list = new ArrayList<>();
         for (SandboxCharacter other : companions) {
             if (other.getId() != null && other.getId().equals(self.getId())) {
@@ -5283,11 +6270,19 @@ public class SandboxServiceImpl implements SandboxService {
             }
             double km = kmBetween(x, y, other.getX() == null ? 50 : other.getX(),
                     other.getY() == null ? 50 : other.getY());
-            if (maxKm <= 0 || km <= maxKm) {
+            // 保险：必须**在同一个一级地点**才谈得上互动。地图上有几个一级地点彼此不到 30km，
+            // 只按距离判断会让"隔着另一个地区的两个人"莫名其妙地互动起来（用户实测报过）
+            boolean sameArea = notBlank(locationName) && locationName.equals(other.getLocationName());
+            if (SandboxSocial.canInteract(sameArea, false, km, maxKm, sameAreaOnly())) {
                 list.add(other);
             }
         }
         return list;
+    }
+
+    /** 是否强制「必须同一个一级地点才能互动」（后台可关，默认开） */
+    private boolean sameAreaOnly() {
+        return !"0".equals(configService.getConfigValue("sandbox_social_same_area_only", "1"));
     }
 
     /**
@@ -5761,13 +6756,9 @@ public class SandboxServiceImpl implements SandboxService {
             user.append("【世界简介】\n").append(world.getDescription()).append("\n");
         }
         user.append("【现在时间】").append(timeText(LocalDateTime.now())).append("\n");
-        if (!locations.isEmpty()) {
-            List<String> names = new ArrayList<>();
-            for (SandboxLocation location : locations) {
-                names.add(location.getName());
-            }
-            user.append("【地图上的地区】").append(String.join("、", names)).append("\n");
-        }
+        // 完整地点信息：商品要跟地点相称（雾森的摊子该有防雾斗篷，危险区该摆武器与药水），
+        // 只给名字的话 AI 只能凭空编
+        user.append("【地图上的地区】\n").append(locationCatalog(locations)).append("\n");
         if (!news.isEmpty()) {
             user.append("【今日要闻】\n");
             for (SandboxNews item : news) {
@@ -5789,13 +6780,13 @@ public class SandboxServiceImpl implements SandboxService {
         }
         String raw;
         try {
-            raw = aiProviderService.chat(target, useModel, sys.toString(), user.toString(), 0.9);
+            raw = chatForGenerator(target, useModel, sys.toString(), user.toString(), 0.9);
         } finally {
             if (!preset) {
                 AuditContext.clear();
             }
         }
-        JSONArray array = parseJsonArray(raw);
+        JSONArray array = parseJsonArray(SandboxReplyParser.extractFinalBlock(raw));
         if (array == null || array.isEmpty()) {
             throw new BusinessException("AI 返回内容无法解析成 JSON 数组，请重试或换一个模型");
         }
@@ -5880,7 +6871,8 @@ public class SandboxServiceImpl implements SandboxService {
         if (latest == null || latest.getBatchTime() == null) {
             due = LocalDate.now().atTime(start);
         } else if (hours >= 24) {
-            due = latest.getBatchTime().toLocalDate().plusDays(1).atTime(start);
+            // 间隔是整天数就按天对齐：24 = 明天这个点，48 = 后天（写 30 这种不整天的按 1 天算）
+            due = latest.getBatchTime().toLocalDate().plusDays(hours / 24L).atTime(start);
         } else {
             due = latest.getBatchTime().plusHours(hours);
         }
@@ -6178,7 +7170,1360 @@ public class SandboxServiceImpl implements SandboxService {
     }
 
     /** 解析 AI 返回的 JSON 数组（允许被 Markdown 代码块包裹） */
+    // ============================== 旅人委托板 ==============================
+
+    /** 委托类型白名单：AI 写了别的就归到 other（不会因此丢掉整条委托） */
+    private static final List<String> QUEST_TYPES =
+            Arrays.asList("hunt", "gather", "escort", "explore", "chore", "other");
+    /** 委托难度的硬上限（前台按星展示） */
+    private static final int QUEST_DIFFICULTY_MAX = 5;
+    /** 提示词里最多列几条可接委托的硬上限（配置填大了也不会超过它） */
+    private static final int QUEST_VISIBLE_MAX = 12;
+    /** 已完成委托在委托板与角色档案里保留的天数（与 cleanup_sandbox_quest_days 口径一致） */
+    private static final int QUEST_KEEP_DAYS = 3;
+    /** 角色档案里展示的「最近完成的委托」条数 */
+    private static final int PORTAL_QUEST_LIMIT = 3;
+    /** 「刚刚完成的委托」注入提示词的时间窗（小时） */
+    private static final int QUEST_RECENT_HOURS = 24;
+    /**
+     * 管理员能手动改到的进度上限。留 1% 给角色自己走完最后一步：
+     * 100% 会触发完成结算，而结算要过两道校验（到没到目标地区 / 有没有真拿到东西），
+     * 由角色的行动推上去才说得通，也顺带保证奖励不会在角色毫无参与的情况下发出去。
+     */
+    private static final int QUEST_PROGRESS_MAX = 99;
+    /** 单步进度上限的默认分档（难度 1~5）：难度 1 允许一步做完，难度越高越磨；后台可改 */
+    private static final String DEFAULT_QUEST_STEP_TABLE = "100,70,50,35,20";
+
+    /** 一次行动里的委托处理结果：奖励金币 / 物品说明 / 给行动记录写的一句话 */
+    private static final class QuestActResult {
+        private int coinReward;
+        private String title;
+        private String itemNote;
+        private String event;
+    }
+
+    /** 委托板总开关 */
+    private boolean questOn() {
+        return "1".equals(configService.getConfigValue("sandbox_quest_enabled", "1"));
+    }
+
+    private int questVisibleCount() {
+        return Math.max(1, Math.min(QUEST_VISIBLE_MAX, intConfig("sandbox_quest_visible_count", 8)));
+    }
+
+    /** 单步进度增量上限（配置值再大也不会超过 60，防止一步走完全程） */
+    private int questStepMax() {
+        return Math.max(5, Math.min(60, intConfig("sandbox_quest_progress_step_max", 40)));
+    }
+
+    /**
+     * 这条委托的单步进度上限：按难度分档取（见 SandboxQuestRule.stepMaxByDifficulty）。
+     * 配置形如 "100,70,50,35,20"（难度 1~5 依次对应），管理员可在后台任意修改；
+     * 没配或整串写坏时退回 {@link #questStepMax()} 那个单值配置。
+     */
+    private int questStepMax(SandboxQuest quest) {
+        int difficulty = quest == null || quest.getDifficulty() == null ? 1 : quest.getDifficulty();
+        String table = configService.getConfigValue("sandbox_quest_step_max_by_difficulty",
+                DEFAULT_QUEST_STEP_TABLE);
+        return SandboxQuestRule.stepMaxByDifficulty(table, difficulty, questStepMax());
+    }
+
+    private int questProgress(SandboxQuest quest) {
+        if (quest == null || quest.getProgress() == null) {
+            return 0;
+        }
+        return Math.max(0, Math.min(100, quest.getProgress()));
+    }
+
+    /** 「保留三天」的时间线：与集市清理口径一致（今天 + 前 2 天） */
+    private LocalDateTime questKeepFrom() {
+        return LocalDate.now().minusDays(QUEST_KEEP_DAYS - 1L).atStartOfDay();
+    }
+
+    private String questTypeText(String type) {
+        if ("hunt".equals(type)) {
+            return "讨伐";
+        }
+        if ("gather".equals(type)) {
+            return "采集";
+        }
+        if ("escort".equals(type)) {
+            return "护送";
+        }
+        if ("explore".equals(type)) {
+            return "探索";
+        }
+        if ("chore".equals(type)) {
+            return "杂活";
+        }
+        return "委托";
+    }
+
+    private String questDifficultyText(Integer difficulty) {
+        int level = difficulty == null ? 1 : Math.max(1, Math.min(QUEST_DIFFICULTY_MAX, difficulty));
+        switch (level) {
+            case 5:
+                return "凶险";
+            case 4:
+                return "危险";
+            case 3:
+                return "棘手";
+            case 2:
+                return "一般";
+            default:
+                return "简单";
+        }
+    }
+
+    @Override
+    public List<SandboxQuest> questBoard(Long worldId, Long characterId) {
+        Long wid = worldId(worldId);
+        List<SandboxQuest> list = new ArrayList<>();
+        // 顺序：最新一批可接 → 所有接取中 → 近三天已完成（前台按 status 分组展示）
+        list.addAll(latestOpenBatch(wid, 0));
+        list.addAll(questMapper.selectList(new LambdaQueryWrapper<SandboxQuest>()
+                .eq(SandboxQuest::getWorldId, wid)
+                .eq(SandboxQuest::getStatus, "taken")
+                .eq(SandboxQuest::getEnabled, 1)
+                .orderByDesc(SandboxQuest::getPinned)
+                .orderByAsc(SandboxQuest::getTakenAt)
+                .orderByAsc(SandboxQuest::getId)));
+        list.addAll(questMapper.selectList(new LambdaQueryWrapper<SandboxQuest>()
+                .eq(SandboxQuest::getWorldId, wid)
+                .eq(SandboxQuest::getStatus, "completed")
+                .eq(SandboxQuest::getEnabled, 1)
+                .ge(SandboxQuest::getCompletedAt, questKeepFrom())
+                .orderByDesc(SandboxQuest::getCompletedAt)
+                .last("limit 6")));
+        SandboxCharacter viewer = characterId == null ? null : characterMapper.selectById(characterId);
+        LocalDateTime latestBatch = latestBatchTime(wid);
+        for (SandboxQuest quest : list) {
+            decorateQuest(quest, viewer, latestBatch);
+        }
+        return list;
+    }
+
+    @Override
+    public List<SandboxQuest> questsForAdmin(Long worldId, String status) {
+        return questsForAdmin(worldId, status, "board");
+    }
+
+    @Override
+    public List<SandboxQuest> questsForAdmin(Long worldId, String status, String scope) {
+        Long wid = worldId(worldId);
+        boolean filter = status != null && !status.trim().isEmpty() && !"all".equalsIgnoreCase(status.trim());
+        boolean boardScope = scope == null || scope.trim().isEmpty() || "board".equalsIgnoreCase(scope.trim());
+        LambdaQueryWrapper<SandboxQuest> wrapper = new LambdaQueryWrapper<SandboxQuest>()
+                .eq(SandboxQuest::getWorldId, wid)
+                .eq(filter, SandboxQuest::getStatus, filter ? status.trim() : null);
+        if (boardScope) {
+            // 和前台同一口径：最新一批可接 + 所有接取中 + 近三天已完成。
+            // 旧批次没人接的、以及被下架的委托都不出现在这里——否则"生成 5 条"会看起来像 10 条。
+            wrapper.ne(SandboxQuest::getStatus, "expired");
+            wrapper.eq(SandboxQuest::getEnabled, 1);
+            wrapper.and(w -> w.ne(SandboxQuest::getStatus, "completed")
+                    .or().ge(SandboxQuest::getCompletedAt, questKeepFrom()));
+            wrapper.and(w -> w.ne(SandboxQuest::getStatus, "open")
+                    .or().eq(SandboxQuest::getBatchTime, latestBatchTime(wid)));
+        }
+        List<SandboxQuest> list = questMapper.selectList(wrapper
+                .orderByDesc(SandboxQuest::getBatchTime)
+                .orderByDesc(SandboxQuest::getPinned)
+                .orderByAsc(SandboxQuest::getId)
+                .last("limit 200"));
+        LocalDateTime latestBatch = latestBatchTime(wid);
+        for (SandboxQuest quest : list) {
+            decorateQuest(quest, null, latestBatch);
+        }
+        return list;
+    }
+
+    /** 委托板上最新一批的刷新时间；一条委托都没有时返回 null */
+    private LocalDateTime latestBatchTime(Long worldId) {
+        SandboxQuest latest = questMapper.selectOne(new LambdaQueryWrapper<SandboxQuest>()
+                .eq(SandboxQuest::getWorldId, worldId)
+                .orderByDesc(SandboxQuest::getBatchTime)
+                .orderByDesc(SandboxQuest::getId)
+                .last("limit 1"));
+        return latest == null ? null : latest.getBatchTime();
+    }
+
+    /** 最新一批里可接的委托（置顶优先，难度从高到低）；limit &lt;= 0 表示不限条数 */
+    private List<SandboxQuest> latestOpenBatch(Long worldId, int limit) {
+        SandboxQuest latest = questMapper.selectOne(new LambdaQueryWrapper<SandboxQuest>()
+                .eq(SandboxQuest::getWorldId, worldId)
+                .orderByDesc(SandboxQuest::getBatchTime)
+                .orderByDesc(SandboxQuest::getId)
+                .last("limit 1"));
+        if (latest == null || latest.getBatchTime() == null) {
+            return new ArrayList<>();
+        }
+        LambdaQueryWrapper<SandboxQuest> wrapper = new LambdaQueryWrapper<SandboxQuest>()
+                .eq(SandboxQuest::getWorldId, worldId)
+                .eq(SandboxQuest::getBatchTime, latest.getBatchTime())
+                .eq(SandboxQuest::getStatus, "open")
+                .eq(SandboxQuest::getEnabled, 1)
+                .orderByDesc(SandboxQuest::getPinned)
+                .orderByDesc(SandboxQuest::getDifficulty)
+                .orderByAsc(SandboxQuest::getId);
+        if (limit > 0) {
+            wrapper.last("limit " + limit);
+        }
+        return questMapper.selectList(wrapper);
+    }
+
+    /** 角色手上"接取中"的委托（一人一委托，最多一条） */
+    private SandboxQuest currentQuestOf(Long characterId) {
+        if (characterId == null) {
+            return null;
+        }
+        SandboxQuest quest = questMapper.selectOne(new LambdaQueryWrapper<SandboxQuest>()
+                .eq(SandboxQuest::getTakerId, characterId)
+                .eq(SandboxQuest::getStatus, "taken")
+                .orderByDesc(SandboxQuest::getTakenAt)
+                .orderByDesc(SandboxQuest::getId)
+                .last("limit 1"));
+        if (quest != null) {
+            decorateQuest(quest, null);
+        }
+        return quest;
+    }
+
+    /** 某个角色近三天完成的委托（角色档案「最近完成的委托」） */
+    private List<SandboxQuest> completedQuestsOf(Long characterId) {
+        if (characterId == null) {
+            return new ArrayList<>();
+        }
+        List<SandboxQuest> list = questMapper.selectList(new LambdaQueryWrapper<SandboxQuest>()
+                .eq(SandboxQuest::getTakerId, characterId)
+                .eq(SandboxQuest::getStatus, "completed")
+                .ge(SandboxQuest::getCompletedAt, questKeepFrom())
+                .orderByDesc(SandboxQuest::getCompletedAt)
+                .last("limit " + PORTAL_QUEST_LIMIT));
+        for (SandboxQuest quest : list) {
+            decorateQuest(quest, null);
+        }
+        return list;
+    }
+
+    /** 最近 N 小时内完成的那一条（注入提示词用，防止"刚完成就失忆"） */
+    private SandboxQuest recentlyCompletedQuest(Long characterId, int hours) {
+        if (characterId == null) {
+            return null;
+        }
+        return questMapper.selectOne(new LambdaQueryWrapper<SandboxQuest>()
+                .eq(SandboxQuest::getTakerId, characterId)
+                .eq(SandboxQuest::getStatus, "completed")
+                .ge(SandboxQuest::getCompletedAt, clock().minusHours(hours))
+                .orderByDesc(SandboxQuest::getCompletedAt)
+                .last("limit 1"));
+    }
+
+    /** 补齐不落库的展示字段：奖励列表、离查看者多远、是否被查看者放弃过 */
+    private void decorateQuest(SandboxQuest quest, SandboxCharacter viewer) {
+        decorateQuest(quest, viewer, quest == null ? null : latestBatchTime(quest.getWorldId()));
+    }
+
+    /** 同上，但由调用方把「最新批次时间」算好传进来，避免列表里逐条查一次库 */
+    private void decorateQuest(SandboxQuest quest, SandboxCharacter viewer, LocalDateTime latestBatch) {
+        if (quest == null) {
+            return;
+        }
+        quest.setRewards(parseQuestRewards(quest.getRewardItems()));
+        quest.setOnBoard(questOnBoard(quest, latestBatch));
+        if (viewer != null) {
+            double km = questDistanceKm(quest, viewer);
+            quest.setDistanceKm(km < 0 ? null : Math.round(km * 10) / 10d);
+            quest.setAbandonedByMe(notBlank(quest.getAbandonedBy()) && notBlank(viewer.getName())
+                    && quest.getAbandonedBy().contains(viewer.getName()));
+        }
+    }
+
+    /**
+     * 这条委托此刻在不在委托板上——规则与前台 `questBoard()` 完全一致：
+     *   · 管理员关掉了「允许展示」→ 不在板上；
+     *   · 接取中 → 在板上；
+     *   · 已完成且还在三天展示期内 → 在板上；
+     *   · 可接且属于**最新一批** → 在板上（旧批次没人接的已经不在板上了）；
+     *   · 已下架 → 不在板上。
+     */
+    private boolean questOnBoard(SandboxQuest quest, LocalDateTime latestBatch) {
+        if (quest == null || quest.getEnabled() == null || quest.getEnabled() != 1) {
+            return false;
+        }
+        String status = quest.getStatus();
+        if ("taken".equals(status)) {
+            return true;
+        }
+        if ("completed".equals(status)) {
+            return quest.getCompletedAt() != null && !quest.getCompletedAt().isBefore(questKeepFrom());
+        }
+        if ("open".equals(status)) {
+            return latestBatch != null && latestBatch.equals(quest.getBatchTime());
+        }
+        return false;
+    }
+
+    /** 委托目标地区离角色多远（km）；没指定地区、或找不到该地点时返回 -1 */
+    private double questDistanceKm(SandboxQuest quest, SandboxCharacter c) {
+        if (quest == null || c == null || !notBlank(quest.getLocationName())) {
+            return -1;
+        }
+        int x = c.getX() == null ? 50 : c.getX();
+        int y = c.getY() == null ? 50 : c.getY();
+        for (SandboxLocation location : locations(c.getWorldId())) {
+            if (quest.getLocationName().equals(location.getName())) {
+                return kmToLocation(x, y, location);
+            }
+        }
+        return -1;
+    }
+
+    /** 角色清空后的默认状态 */
+    /**
+     * 生成一批新委托（AI）。
+     *
+     * 刷新时保留"接取中"的委托：新生成条数 = 每次生成条数（委托板总数）− 接取中条数，
+     * 这样无论怎么刷，被角色接下的委托都不会凭空消失。
+     */
+    @Override
+    public int generateQuests(Integer count, Long providerId, String model, Long worldId) {
+        Long wid = worldId(worldId);
+        SandboxWorld world = world(wid);
+        if (world.getId() == null) {
+            throw new BusinessException("请先创建沙盒世界");
+        }
+        int boardSize = Math.max(1, Math.min(10,
+                count == null ? intConfig("sandbox_quest_per_generate", 4) : count));
+        Long takenCount = questMapper.selectCount(new LambdaQueryWrapper<SandboxQuest>()
+                .eq(SandboxQuest::getWorldId, wid)
+                .eq(SandboxQuest::getStatus, "taken"));
+        int size = boardSize - (takenCount == null ? 0 : takenCount.intValue());
+        if (size <= 0) {
+            log.info("旅人委托板（世界 {}）：接取中的委托已经占满 {} 条，本轮不再生成", wid, boardSize);
+            return 0;
+        }
+        Long provider = providerId != null ? providerId
+                : Convert.toLong(configService.getConfigValue("sandbox_quest_provider_id", ""), null);
+        String useModel = model;
+        if (useModel == null || useModel.trim().isEmpty()) {
+            useModel = configService.getConfigValue("sandbox_quest_model", "");
+        }
+        if (useModel == null || useModel.trim().isEmpty()) {
+            throw new BusinessException("请先在后台「旅人委托板」里指定生成委托使用的模型（可留空用系统服务商，但要先填模型名）");
+        }
+        List<SandboxLocation> locations = locations(wid);
+        List<SandboxNews> news = todayNews(wid);
+        List<String> moves = new ArrayList<>();
+        for (SandboxCharacter character : characters(wid)) {
+            for (SandboxAct act : recentActs(character.getId(), 1)) {
+                moves.add(character.getName() + "：" + truncate(blankToDefault(act.getSummary(), act.getActions()), 50));
+            }
+        }
+        String extra = configService.getConfigValue("sandbox_quest_prompt_extra", "");
+
+        StringBuilder sys = new StringBuilder();
+        sys.append("你是一位幻想世界的冒险者公会书记官，负责往委托板上抄写当天张贴的委托。\n")
+                .append("请根据下面的世界观、地图与最近的见闻，写 ").append(size).append(" 条委托。\n")
+                .append("要求：\n")
+                .append("1. 必须符合这个世界观（技术水平、魔法程度、风俗），不要出现现代事物；\n")
+                .append("2. quest_type 只能取：hunt 讨伐 / gather 采集 / escort 护送 / explore 探索 / chore 杂活；\n")
+                .append("3. location 必须是地图上真实存在的地区名，且要与委托内容相称；\n")
+                .append("4. 讨伐类必须给出 power（对手综合战斗力，整数），**必须落在该地区给出的战力区间内**；")
+                .append("其它类型可以不填 power（填 null）；\n")
+                .append("5. difficulty 是 1~5 的难度：1 简单 / 2 一般 / 3 棘手 / 4 危险 / 5 凶险，要和目标地区的危险度相称；\n")
+                .append("6. reward_coins 是报酬金币，要和难度相称：简单 3~10、一般 8~25、棘手 20~50、危险 45~90、凶险 80~150；\n")
+                .append("7. reward_items 是 0~2 件额外奖励（药水、材料、装备之类），每件写 name、rarity 与一句 description；没有就填 []；\n")
+                .append("   rarity 是品质：1 普通 / 2 精良 / 3 稀有 / 4 史诗 / 5 传说——")
+                .append("奖励越丰厚、委托越难，品质越高，但大多数应该是 1~2，偶尔才有 3；\n")
+                .append("8. title 是 10~20 字的委托名（例如「清除晨雾森林的影狼」），要具体、不要抽象；\n")
+                .append("9. target 用一句话写清「做什么 + 做到什么程度」（例如「清除 3 只影狼并带回狼牙」）；\n")
+                .append("10. description 写 40~100 字：委托人是谁、为什么要做、有什么注意事项；\n")
+                .append("11. 委托要具体可执行，不要写「拯救世界」这类空泛的目标，也不要出现还没设定过的人物或势力；\n")
+                .append("12. 只输出一个 JSON 数组，不要解释、不要 Markdown 代码块。\n")
+                .append("输出格式：[{\"title\":\"清除晨雾森林的影狼\",\"description\":\"…\",\"quest_type\":\"hunt\",")
+                .append("\"difficulty\":2,\"location\":\"晨雾森林\",\"target\":\"清除 3 只影狼并带回狼牙\",")
+                .append("\"power\":22,\"reward_coins\":18,\"reward_items\":[{\"name\":\"治疗药水\",\"rarity\":2,\"quantity\":1,")
+                .append("\"description\":\"淡绿色的低阶恢复药\"}]}]\n");
+        if (notBlank(extra)) {
+            sys.append("附加要求：").append(extra).append("\n");
+        }
+
+        StringBuilder user = new StringBuilder();
+        user.append("【世界观】\n").append(blankToDefault(world.getWorldPrompt(),
+                blankToDefault(world.getDescription(), DEFAULT_WORLD_PROMPT))).append("\n");
+        if (notBlank(world.getDescription())) {
+            user.append("【世界简介】\n").append(world.getDescription()).append("\n");
+        }
+        user.append("【现在时间】").append(timeText(LocalDateTime.now())).append("\n");
+        // 完整地点信息（含不截断的描述）：委托要跟地点相称，讨伐类的战力还要落在该地点的区间里
+        user.append("【地图上的地区】（危险度 / 生物的战斗力区间，讨伐类委托的 power 要落在区间里）\n")
+                .append(locationCatalog(locations));
+        if (!news.isEmpty()) {
+            user.append("【今日要闻】\n");
+            for (SandboxNews item : news) {
+                user.append("- ").append(item.getTitle()).append("\n");
+            }
+        }
+        if (!moves.isEmpty()) {
+            user.append("【居民最近的动静】\n");
+            for (String move : moves) {
+                user.append("- ").append(move).append("\n");
+            }
+        }
+        user.append("\n请输出今天要贴到委托板上的 ").append(size).append(" 条委托（JSON 数组）。");
+
+        AiProvider target = aiProviderService.resolveManualProvider(provider);
+        boolean preset = AuditContext.isSet();
+        if (!preset) {
+            AuditContext.manual("沙盒·生成旅人委托");
+        }
+        String raw;
+        try {
+            raw = chatForGenerator(target, useModel, sys.toString(), user.toString(), 0.9);
+        } finally {
+            if (!preset) {
+                AuditContext.clear();
+            }
+        }
+        JSONArray array = parseJsonArray(SandboxReplyParser.extractFinalBlock(raw));
+        if (array == null || array.isEmpty()) {
+            throw new BusinessException("AI 返回内容无法解析成 JSON 数组，请重试或换一个模型");
+        }
+        // 新一批已经拿到了，才把上一批下架：上一批里"还没人接、没被置顶、且是 AI 生成的"委托下架。
+        // 管理员手写与置顶的委托都保留——那两种是"我想让它一直在板上"的意思。
+        int expired = expirePreviousBatch(wid);
+        if (expired > 0) {
+            log.info("旅人委托板刷新（世界 {}）：上一批 {} 条没人接的 AI 委托已下架", wid, expired);
+        }
+        LocalDateTime batch = LocalDateTime.now();
+        int created = 0;
+        for (Object element : array) {
+            if (created >= size) {
+                break;
+            }
+            JSONObject item = element instanceof JSONObject ? (JSONObject) element : null;
+            if (item == null) {
+                continue;
+            }
+            String title = truncate(trimToEmpty(item.getStr("title")), 120);
+            if (title.isEmpty()) {
+                continue;
+            }
+            SandboxQuest quest = new SandboxQuest();
+            quest.setWorldId(wid);
+            quest.setBatchTime(batch);
+            quest.setTitle(title);
+            quest.setDescription(truncate(trimToEmpty(item.getStr("description")), 500));
+            String type = trimToEmpty(item.getStr("quest_type"));
+            quest.setQuestType(QUEST_TYPES.contains(type) ? type : "other");
+            quest.setDifficulty(clampInt(Convert.toInt(item.get("difficulty"), 1), 1, QUEST_DIFFICULTY_MAX, 1));
+            quest.setLocationName(truncate(trimToEmpty(item.getStr("location")), 90));
+            quest.setTarget(truncate(trimToEmpty(item.getStr("target")), 200));
+            // 对手强度：先取 AI 给的值，再夹到该地点的战力区间里（地点没设区间就不动）
+            quest.setPower(Convert.toInt(item.get("power"), null));
+            quest.setPower(clampQuestPower(quest));
+            quest.setRewardCoins(Math.max(0, Math.min(500, Convert.toInt(item.get("reward_coins"), 0))));
+            quest.setRewardItems(serializeQuestRewards(parseQuestRewardsFromAi(item.get("reward_items"))));
+            quest.setProgress(0);
+            quest.setStatus("open");
+            quest.setSource("ai");
+            quest.setPinned(0);
+            quest.setEnabled(1);
+            quest.setCreateTime(batch);
+            questMapper.insert(quest);
+            created++;
+        }
+        if (created == 0) {
+            throw new BusinessException("AI 没有给出可用的委托，请重试");
+        }
+        log.info("旅人委托板刷新完成（世界 {}）：新增 {} 条委托", wid, created);
+        return created;
+    }
+
+    /**
+     * 旅人委托板自动刷新（定时任务调用）：多世界各自判断，到期才换一批。
+     *
+     * 到期口径和旅人集市完全一致（见 {@link #questRefreshDue}）：
+     *   间隔 ≥ 24 小时 → 每天在「当天首次时间」刷一次；
+     *   间隔 &lt; 24 小时 → 距上一批满 N 小时就刷（一天可以刷多次）。
+     * 接取中的委托由 generateQuests 自动保下来，不会被刷掉。
+     */
+    @Override
+    public int autoRefreshQuests() {
+        if (!"1".equals(configService.getConfigValue("sandbox_quest_enabled", "1"))
+                || !"1".equals(configService.getConfigValue("sandbox_quest_auto_enabled", "1"))) {
+            return 0;
+        }
+        int refreshed = 0;
+        for (SandboxWorld world : worlds()) {
+            if (world.getEnabled() == null || world.getEnabled() != 1
+                    || !questRefreshDue(world.getId()) || !autoRefreshAllowed("quest", world.getId())) {
+                continue;
+            }
+            try {
+                if (generateQuests(null, null, null, world.getId()) > 0) {
+                    refreshed++;
+                }
+            } catch (Exception e) {
+                log.warn("旅人委托板自动刷新失败（世界 {}）：{}", world.getId(), e.getMessage());
+            }
+        }
+        return refreshed;
+    }
+
+    /**
+     * 委托板是否到了刷新时间：
+     * 间隔 ≥ 24 小时 → 按每天的起始时间对齐（每天固定在某个时间刷一次）；
+     * 间隔 &lt; 24 小时 → 距上一批满 N 小时就刷（一天可以刷多次）。
+     */
+    private boolean questRefreshDue(Long worldId) {
+        int hours = Math.max(1, intConfig("sandbox_quest_interval_hours", 24));
+        LocalTime start = timeConfig("sandbox_quest_auto_time", LocalTime.of(9, 0));
+        LocalDateTime latest = latestBatchTime(worldId);
+        LocalDateTime due;
+        if (latest == null) {
+            due = LocalDate.now().atTime(start);
+        } else if (hours >= 24) {
+            due = latest.toLocalDate().plusDays(hours / 24L).atTime(start);
+        } else {
+            due = latest.plusHours(hours);
+        }
+        return !LocalDateTime.now().isBefore(due);
+    }
+
+    /**
+     * 冷却期内返回 false（防止 AI 一直失败时每分钟重试一次）；
+     * 放行时顺手记下本次尝试时间。集市/委托板/纪闻各自独立计数。
+     */
+    private boolean autoRefreshAllowed(String kind, Long worldId) {
+        String key = kind + ":" + worldId;
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime last = autoRefreshAttempt.get(key);
+        if (last != null && last.isAfter(now.minusMinutes(AUTO_REFRESH_RETRY_MINUTES))) {
+            return false;
+        }
+        autoRefreshAttempt.put(key, now);
+        return true;
+    }
+
+    /** 把上一批"没人接、没置顶、AI 生成"的委托下架（status = expired），由数据清理任务负责最终删除 */
+    private int expirePreviousBatch(Long worldId) {
+        return questMapper.update(null, new LambdaUpdateWrapper<SandboxQuest>()
+                .eq(SandboxQuest::getWorldId, worldId)
+                .eq(SandboxQuest::getStatus, "open")
+                .eq(SandboxQuest::getSource, "ai")
+                .eq(SandboxQuest::getPinned, 0)
+                .set(SandboxQuest::getStatus, "expired"));
+    }
+
+    /** AI 给的 reward_items 是数组，统一转成对象列表（最多 2 件，防止 varchar(500) 写不下） */
+    private List<SandboxQuestReward> parseQuestRewardsFromAi(Object raw) {
+        List<SandboxQuestReward> list = new ArrayList<>();
+        if (raw instanceof JSONArray) {
+            for (Object element : (JSONArray) raw) {
+                if (!(element instanceof JSONObject)) {
+                    continue;
+                }
+                JSONObject obj = (JSONObject) element;
+                String name = SandboxItemName.normalize(obj.getStr("name"));
+                if (name == null || name.trim().isEmpty()) {
+                    continue;
+                }
+                SandboxQuestReward reward = new SandboxQuestReward();
+                reward.setName(truncate(name, 60));
+                reward.setRarity(clampInt(Convert.toInt(obj.get("rarity"), 1), 1, 5, 1));
+                reward.setQuantity(Math.max(1, Math.min(9, Convert.toInt(obj.get("quantity"), 1))));
+                reward.setDescription(truncate(trimToEmpty(obj.getStr("description")), 40));
+                list.add(reward);
+                if (list.size() >= 2) {
+                    break;
+                }
+            }
+        }
+        return list;
+    }
+
     // ============================== 存档：导出 / 清空 ==============================
+
+    /** 角色清空后的默认状态 */
+    /**
+     * 处理这一步 AI 给出的委托动作：接取 / 更新进度 / 放弃 / 完成结算。
+     *
+     * AI 只负责叙述与给数字，规则由服务端兜住：
+     *   1. 一人一委托：已经有进行中的委托时忽略 quest_take；
+     *   2. 进度只增不减，单步最多 +N%（防止"一步从 0 写到 100"）；
+     *   3. 进度满 100 还要过两道轻校验（真的到了目标地区 / 采集类真的拿到东西），
+     *      不过就压回 99% 并把"还差什么"写进进度说明，等下一步补上；
+     *   4. 放弃 → 委托回到板上、进度清零、记下放弃者的名字；
+     *   5. 完成 → 结算奖励（金币由调用方走原子增减 + 流水，物品在这里进背包）。
+     */
+    private QuestActResult applyQuestActions(SandboxCharacter character, JSONObject obj,
+                                             String locationName, LocalDateTime now,
+                                             SandboxAct act, boolean manual) {
+        QuestActResult result = new QuestActResult();
+        if (!questOn() || character == null) {
+            return result;
+        }
+        SandboxQuest current = currentQuestOf(character.getId());
+        String takeTitle = truncate(trimToEmpty(obj == null ? null : obj.getStr("quest_take")), 120);
+        if (current == null && !takeTitle.isEmpty()) {
+            SandboxQuest taken = takeQuest(character, takeTitle, now);
+            if (taken != null) {
+                current = taken;
+                result.event = "接取委托：" + taken.getTitle();
+            }
+        }
+        if (current == null) {
+            return result;
+        }
+        String note = truncate(trimToEmpty(obj == null ? null : obj.getStr("quest_note")), 200);
+        if (obj != null && Convert.toBool(obj.get("quest_abandon"), false)) {
+            abandonQuest(current, character, note);
+            result.event = "放弃委托：" + current.getTitle();
+            return result;
+        }
+        int old = questProgress(current);
+        int aiProgress = obj == null ? -1 : Convert.toInt(obj.get("quest_progress"), -1);
+        // 单步上限按难度分档（难度 1 的杂活允许一步做完；难度越高越"磨"）
+        int stepMax = questStepMax(current);
+        int applied = SandboxQuestRule.apply(old, aiProgress, stepMax);
+        if (applied >= 100) {
+            String blocked = questBlockReason(current, character, locationName, obj);
+            if (blocked != null) {
+                // 两道轻校验没过：先让 AI 自己回看一步、把"其实没完成"这件事改回来（可选），
+                // 再压回 99% 并写明还差什么
+                applied = Math.min(applied, 99);
+                note = truncate("还差一点：" + blocked + (note == null || note.isEmpty() ? "" : "（" + note + "）"), 200);
+                int[] progressHolder = new int[]{applied};
+                String corrected = selfCheckBlockedCompletion(character, current, obj, blocked,
+                        locationName, old, applied, act, manual, progressHolder, result);
+                applied = progressHolder[0];
+                if (corrected != null) {
+                    note = corrected;
+                }
+            } else {
+                String finishNote = note == null || note.isEmpty() ? "顺利办完" : note;
+                completeQuest(current, character, finishNote, now, result);
+                return result;
+            }
+        } else if (aiProgress >= 100) {
+            // 更隐蔽的一种情况：AI 声称"完成"了，但被**单步上限**挡住（进度没到 100）。
+            // 以前这里是静默截断——既不结算、也不写原因、也不自检，
+            // 结果就是实测看到的「剧情说完成并领了报酬、状态却停在 55%」。
+            // 现在写清原因，并让 AI 把这一步改口成"还没做完"。
+            String reason = "这一步最多只能推进到 " + stepMax + "%，你写的完成度被截断了，还剩 "
+                    + (100 - applied) + "% 没做完";
+            note = truncate("这一步推进到 " + applied + "%（单步上限 " + stepMax + "%），还剩 "
+                    + (100 - applied) + "%：下一步接着做", 200);
+            int[] progressHolder = new int[]{applied};
+            String corrected = selfCheckBlockedCompletion(character, current, obj, reason,
+                    locationName, old, applied, act, manual, progressHolder, result);
+            applied = progressHolder[0];
+            if (corrected != null) {
+                note = corrected;
+            }
+        }
+        if (applied != old || (note != null && !note.isEmpty() && !note.equals(current.getProgressNote()))) {
+            questMapper.update(null, new LambdaUpdateWrapper<SandboxQuest>()
+                    .eq(SandboxQuest::getId, current.getId())
+                    .set(SandboxQuest::getProgress, applied)
+                    .set(SandboxQuest::getProgressNote, note));
+            if (applied != old) {
+                // 自检修正已经写过更准确的事件说明时，不要用通用文案盖掉它
+                if (result.event == null || result.event.isEmpty()) {
+                    result.event = "委托进度 " + applied + "%：" + current.getTitle();
+                }
+            }
+        }
+        return result;
+    }
+
+    /**
+     * 完成校验没过时的「自检修正」二次调用（后台可用 sandbox_quest_selfcheck 关闭）。
+     *
+     * 为什么需要：被拦下时，AI 那一步的叙述里往往已经写着"委托完成、拿到报酬"，
+     * 服务端却把进度压回 99%——剧情和状态就对不上了（实测：卡恩在驿站"完成交接"、进账 80 金币，
+     * 委托却停在 99%）。这里把"哪里不对"原样告诉 AI，让它自己回看一步并改口。
+     *
+     * 三条硬约束（防止它借"自检"之名乱改）：
+     *   1. 不许改地点/坐标——不能靠"瞬移"把校验糊过去，在路上就是在路上；
+     *   2. 不许写"已经拿到报酬/奖励"这类已发生的事；
+     *   3. 进度不许比这一步之前更高（写高了会被再打回）。
+     *
+     * @return 修正后的进度说明；开关关掉、调用失败或返回不可解析时返回 null（调用方沿用兜底说明）
+     */
+    private String selfCheckBlockedCompletion(SandboxCharacter character, SandboxQuest quest, JSONObject obj,
+                                              String reason, String locationName, int oldProgress,
+                                              int maxProgress, SandboxAct act, boolean manual, int[] progressHolder,
+                                              QuestActResult result) {
+        if (!"1".equals(configService.getConfigValue("sandbox_quest_selfcheck", "1"))) {
+            return null;
+        }
+        int safeOld = Math.max(0, Math.min(99, oldProgress));
+        // 修正后的进度必须落在 [这一步之前, 服务端允许的上限] 之间：
+        // 「完成校验没过」时上限是 99%，「被单步上限截断」时上限就是那个截断值
+        int safeMax = Math.max(safeOld, Math.min(100, maxProgress));
+        AiProvider provider = manual ? aiProviderService.resolveManualProvider(character.getProviderId())
+                : sandboxSystemProvider(character);
+        StringBuilder sys = new StringBuilder();
+        sys.append("你是同一个角色的扮演者，现在要修正你刚才那一步的输出。\n")
+                .append("你刚才那一步里声明要「完成委托」，但服务端校验没有通过，这次完成无效。\n")
+                .append("请诚实地把这一步改成「还没完成」的样子，而不是换个说法继续声称完成。\n")
+                .append("硬性要求：\n")
+                .append("1. 只输出一个 JSON 对象，不要解释文字、不要 Markdown 代码块；\n")
+                .append("2. 不要把角色挪到别的地区：这一步的地点就是它现在所在的地方，在路上就是在路上；\n")
+                .append("3. 不要写「已经拿到报酬 / 已经交付 / 拿到了奖励」这类已经发生的事；\n")
+                .append("4. quest_progress 要诚实反映真实进度：不要低于 ").append(safeOld)
+                .append("%（那是你上一步的进度），也**不要高于 ").append(safeMax)
+                .append("%**（这是服务端这一步允许的上限）；\n")
+                .append("5. 只输出这四个字段：quest_progress、quest_note、actions、summary；\n")
+                .append("6. actions 保持 3~6 条，写清这一步实际做了什么、还差什么。\n")
+                .append("输出格式：{\"quest_progress\":").append(safeMax)
+                .append(",\"quest_note\":\"一句话说明现在到哪一步了\",\"actions\":[\"……\",\"……\"],")
+                .append("\"summary\":\"30 字以内概括\"}\n");
+        StringBuilder user = new StringBuilder();
+        user.append("【委托】").append(quest.getTitle())
+                .append("（").append(questTypeText(quest.getQuestType())).append("）\n")
+                .append("· 目标：").append(blankToDefault(quest.getTarget(), "（没有写具体目标）")).append("\n");
+        if (notBlank(quest.getLocationName())) {
+            user.append("· 必须到达的地区：").append(quest.getLocationName()).append("\n");
+        }
+        user.append("· 这一步你所在：")
+                .append(blankToDefault(placeText(locationName, act == null ? null : act.getSubLocation()), "未知"))
+                .append("\n")
+                .append("· 服务端判定没通过的原因：").append(reason).append("\n")
+                .append("· 这一步之前的进度：").append(safeOld).append("%\n")
+                .append("\n【你刚才那一步的输出】\n")
+                .append(truncate(obj == null ? "" : obj.toString(), 2000)).append("\n");
+        // 单独打审计标签，后台能看清这次行动到底花了几次调用
+        String prevAction = AuditContext.action();
+        boolean prevScheduled = AuditContext.isSchedule();
+        boolean preset = AuditContext.isSet();
+        applyAudit(prevAction, prevScheduled, "沙盒·委托自检修正");
+        String raw;
+        try {
+            raw = aiProviderService.chat(provider, character.getModel(), sys.toString(), user.toString(), 0.3d);
+        } catch (Exception e) {
+            log.warn("沙盒角色「{}」的委托自检修正调用失败：{}", character.getName(), e.getMessage());
+            return null;
+        } finally {
+            if (preset) {
+                applyAudit(prevAction, prevScheduled, prevAction);
+            } else {
+                AuditContext.clear();
+            }
+        }
+        JSONObject fix = parseJson(raw);
+        if (fix == null) {
+            log.info("沙盒角色「{}」的委托自检修正没有返回可用 JSON，沿用兜底说明", character.getName());
+            return null;
+        }
+        // 修正值夹在 [上一步进度, 服务端上限] 之间：既不能借自检把进度抬上去，也不该被压回到低于原来的值
+        int corrected = Math.max(safeOld, Math.min(safeMax,
+                Convert.toInt(fix.get("quest_progress"), safeMax)));
+        int finalProgress = Math.max(progressHolder == null || progressHolder.length == 0
+                ? safeOld : progressHolder[0], corrected);
+        if (progressHolder != null && progressHolder.length > 0) {
+            progressHolder[0] = finalProgress;
+        }
+        String note = truncate(trimToEmpty(fix.getStr("quest_note")), 200);
+        if (act != null) {
+            String actions = joinActions(fix.getJSONArray("actions"));
+            if (actions != null && !actions.trim().isEmpty()) {
+                act.setActions(truncate(actions, 1000));
+            }
+            String summary = truncate(trimToEmpty(fix.getStr("summary")), 280);
+            if (summary != null && !summary.isEmpty()) {
+                act.setSummary(summary);
+            }
+        }
+        if (result != null) {
+            result.event = "委托被拦下·已自检修正：" + quest.getTitle() + "（" + corrected + "%）";
+        }
+        log.info("沙盒角色「{}」的委托「{}」完成校验没过（{}），已让 AI 自检修正到 {}%",
+                character.getName(), quest.getTitle(), reason, corrected);
+        // 进度修正值由调用方写库（这里返回的是说明文字；进度已经通过 applied 夹到 99 以下）
+        return note == null || note.isEmpty() ? "已自检修正：" + reason : note;
+    }
+
+    /**
+     * 完成前的两道轻校验（返回 null 表示通过，否则返回"还差什么"的一句话）。
+     *   ① 配了目标地区的（讨伐 / 护送 / 探索 / 杂活）：人必须真的在那个地区；
+     *   ② 采集类：这一步必须真的拿到东西（items_change 里有正数）。
+     *
+     * 注意「杂活」不再要求物品：清点库房、誊抄账本、送信这类活儿本来就不产出东西，
+     * 以前和采集类共用"必须有物品增量"的校验，结果全靠 AI 顺手写个"获得 黑面包 +2"才过——
+     * 那是它在旁边买的面包，属于误判（实测踩到，见 2026-09-19 芙萝蕾娜那条委托）。
+     */
+    private String questBlockReason(SandboxQuest quest, SandboxCharacter character,
+                                    String locationName, JSONObject obj) {
+        String type = quest.getQuestType() == null ? "other" : quest.getQuestType();
+        String target = quest.getLocationName();
+        // 采集类的目标地区由"有没有真的采到东西"来保证，不重复校验地区
+        if (notBlank(target) && !"gather".equals(type)) {
+            String here = notBlank(locationName) ? locationName : character.getLocationName();
+            if (here == null || !here.equals(target)) {
+                return "你还没到「" + target + "」，别的地方办不了这件事";
+            }
+        }
+        if ("gather".equals(type) && !hasItemGain(obj)) {
+            return "要的东西还没到手（items_change 里没有获得物品）";
+        }
+        return null;
+    }
+
+    /** 这一步有没有"真的拿到东西"（items_change 里存在正数增量） */
+    private boolean hasItemGain(JSONObject obj) {
+        if (obj == null) {
+            return false;
+        }
+        Object change = obj.get("items_change");
+        if (!(change instanceof JSONObject)) {
+            return false;
+        }
+        JSONObject items = (JSONObject) change;
+        for (String key : items.keySet()) {
+            // 必须和 applyItemChanges 用**同一个解析器**：
+            // 那边认 delta / count / quantity 三种写法，这里原先只认 delta，
+            // 于是会出现"背包确实进了银叶草 +2、完成校验却说没拿到东西"的矛盾（实测踩过，
+            // 采集类委托因此卡在 99% 永远做不完）。
+            if (SandboxOutputRepair.itemDelta(items.get(key)) > 0) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 接取委托：按标题在同一个世界里找一条可接的。
+     * 用条件更新（status='open'）落库，保证同一条不会同时被两个角色接走；
+     * 标题先精确匹配，匹配不到再退一步用包含匹配（AI 常把标题写长或写短）。
+     */
+    private SandboxQuest takeQuest(SandboxCharacter character, String title, LocalDateTime now) {
+        List<SandboxQuest> open = questMapper.selectList(new LambdaQueryWrapper<SandboxQuest>()
+                .eq(SandboxQuest::getWorldId, character.getWorldId())
+                .eq(SandboxQuest::getStatus, "open")
+                .eq(SandboxQuest::getEnabled, 1)
+                .orderByDesc(SandboxQuest::getPinned)
+                .orderByAsc(SandboxQuest::getId));
+        if (open.isEmpty()) {
+            return null;
+        }
+        String wanted = title.trim();
+        SandboxQuest hit = null;
+        for (SandboxQuest quest : open) {
+            if (wanted.equals(quest.getTitle())) {
+                hit = quest;
+                break;
+            }
+        }
+        if (hit == null) {
+            for (SandboxQuest quest : open) {
+                String questTitle = quest.getTitle();
+                if (questTitle != null && (questTitle.contains(wanted) || wanted.contains(questTitle))) {
+                    hit = quest;
+                    break;
+                }
+            }
+        }
+        if (hit == null) {
+            log.info("沙盒角色「{}」想接的委托「{}」不在可接列表里，已忽略", character.getName(), title);
+            return null;
+        }
+        int updated = questMapper.update(null, new LambdaUpdateWrapper<SandboxQuest>()
+                .eq(SandboxQuest::getId, hit.getId())
+                .eq(SandboxQuest::getStatus, "open")
+                .set(SandboxQuest::getStatus, "taken")
+                .set(SandboxQuest::getTakerId, character.getId())
+                .set(SandboxQuest::getTakerName, character.getName())
+                .set(SandboxQuest::getTakenAt, now)
+                .set(SandboxQuest::getProgress, 0)
+                .set(SandboxQuest::getProgressNote, null)
+                .set(SandboxQuest::getCompletedAt, null)
+                .set(SandboxQuest::getCompletionNote, null));
+        if (updated <= 0) {
+            // 刚好被别人接走了：这一步就当没接
+            return null;
+        }
+        hit.setStatus("taken");
+        hit.setTakerId(character.getId());
+        hit.setTakerName(character.getName());
+        hit.setTakenAt(now);
+        hit.setProgress(0);
+        hit.setProgressNote(null);
+        return hit;
+    }
+
+    /** 放弃：委托回到板上、进度清零；放弃过的角色名记下来，下次提示词里点一句 */
+    private void abandonQuest(SandboxQuest quest, SandboxCharacter character, String note) {
+        String names = quest.getAbandonedBy();
+        if (notBlank(character.getName()) && (names == null || !names.contains(character.getName()))) {
+            names = names == null || names.trim().isEmpty() ? character.getName() : names + "、" + character.getName();
+        }
+        // 和「重新上板」同理：要挂回**当前最新批次**，否则如果这期间委托板刷新过，
+        // 它回到可接也落在旧批次里——前台看不到、别的角色也接不到，等于凭空消失
+        questMapper.update(null, new LambdaUpdateWrapper<SandboxQuest>()
+                .eq(SandboxQuest::getId, quest.getId())
+                .eq(SandboxQuest::getStatus, "taken")
+                .set(SandboxQuest::getStatus, "open")
+                .set(SandboxQuest::getBatchTime, currentBatchOf(quest.getWorldId()))
+                .set(SandboxQuest::getTakerId, null)
+                .set(SandboxQuest::getTakerName, null)
+                .set(SandboxQuest::getTakenAt, null)
+                .set(SandboxQuest::getProgress, 0)
+                .set(SandboxQuest::getProgressNote, note)
+                .set(SandboxQuest::getAbandonedBy, truncate(names, 200)));
+    }
+
+    /**
+     * 完成结算：改状态 + 发奖励（金币走原子增减与流水、物品进背包），结果回填进 result。
+     *
+     * 奖励发放只在这一个地方做，而且只有一条路径会走到这里：**角色自己的行动**把它推到 100%。
+     * （管理员不再有"强制完成"入口——那条路会绕过两道校验，还会和角色正在执行的那一步抢结算。）
+     *
+     * 关键：**只有状态真的从 taken 改成功（影响 1 行）才发奖励**。
+     * 否则一旦出现并发（同一角色被重复结算、或有人手工调接口），奖励会被重复发出去。
+     */
+    private boolean completeQuest(SandboxQuest quest, SandboxCharacter character, String note,
+                                  LocalDateTime now, QuestActResult result) {
+        int updated = questMapper.update(null, new LambdaUpdateWrapper<SandboxQuest>()
+                .eq(SandboxQuest::getId, quest.getId())
+                .eq(SandboxQuest::getStatus, "taken")
+                .set(SandboxQuest::getStatus, "completed")
+                .set(SandboxQuest::getProgress, 100)
+                .set(SandboxQuest::getProgressNote, note)
+                .set(SandboxQuest::getCompletionNote, note)
+                .set(SandboxQuest::getCompletedAt, now));
+        if (updated <= 0) {
+            // 状态已经不是"接取中"了（别人刚结算过 / 被下架了）：一个字都不改，也不发奖
+            log.info("委托 #{} 结算时状态已不是接取中，跳过结算与发奖", quest.getId());
+            return false;
+        }
+        if (result == null) {
+            return true;
+        }
+        result.event = "完成委托：" + quest.getTitle();
+        result.title = quest.getTitle();
+        if (character == null) {
+            return true;
+        }
+        int coins = Math.max(0, quest.getRewardCoins() == null ? 0 : quest.getRewardCoins());
+        if (coins > 0) {
+            payQuestCoins(character, coins, quest.getTitle());
+            result.coinReward = coins;
+        }
+        result.itemNote = grantQuestItems(quest, character);
+        return true;
+    }
+
+    /**
+     * 奖励物品进角色的背包（带描述）。
+     * 背包已满时仍然发放——"完成委托却什么都没拿到"比"背包多一件"更难解释，
+     * 背包种类上限本来是给 AI 生成物品用的软约束。
+     */
+    private String grantQuestItems(SandboxQuest quest, SandboxCharacter character) {
+        if (character == null) {
+            return null;
+        }
+        List<String> notes = new ArrayList<>();
+        for (SandboxQuestReward reward : parseQuestRewards(quest.getRewardItems())) {
+            String name = SandboxItemName.normalize(reward.getName());
+            if (name == null || name.trim().isEmpty()) {
+                continue;
+            }
+            int quantity = Math.max(1, Math.min(9, reward.getQuantity() == null ? 1 : reward.getQuantity()));
+            // 品质跟着委托奖励走（后台可填，AI 生成时也会给），缺省按普通
+            int rarity = reward.getRarity() == null ? 1 : Math.max(1, Math.min(5, reward.getRarity()));
+            addToBackpack(character, name, quantity, rarity, null, truncate(reward.getDescription(), 120));
+            notes.add("获得 " + name + " ×" + quantity);
+        }
+        return notes.isEmpty() ? null : String.join("、", notes);
+    }
+
+    /** 角色被删除/停用时，把他接取中的委托放回委托板（接取人清空、进度清零） */
+    private void releaseTakenQuests(Long characterId) {
+        if (characterId == null) {
+            return;
+        }
+        questMapper.update(null, new LambdaUpdateWrapper<SandboxQuest>()
+                .eq(SandboxQuest::getTakerId, characterId)
+                .eq(SandboxQuest::getStatus, "taken")
+                .set(SandboxQuest::getStatus, "open")
+                .set(SandboxQuest::getTakerId, null)
+                .set(SandboxQuest::getTakerName, null)
+                .set(SandboxQuest::getTakenAt, null)
+                .set(SandboxQuest::getProgress, 0)
+                .set(SandboxQuest::getProgressNote, null));
+    }
+
+    /** 发委托奖励金币：原子增减 + 余额流水（余额写的是发放之后的真实余额） */
+    private void payQuestCoins(SandboxCharacter character, int coins, String title) {
+        int balance = addCoins(character.getId(), coins);
+        addCoinLog(character.getId(), null, null, "quest", coins, 0, balance,
+                truncate("完成委托：" + title, 190));
+    }
+
+    @Override
+    public SandboxQuest resetQuest(Long id) {
+        questOrThrow(id);
+        // 「重新上板」：状态回到可接、允许展示、进度清零，并**加入当前这一批**。
+        // 注意这里绝对不能把批次时间写成"现在"：那等于凭空开了一批新的，
+        // 原来在板上的委托会瞬间全部变成"旧批次、不在板上"（用户实测踩过这个坑）。
+        SandboxQuest quest = questOrThrow(id);
+        questMapper.update(null, new LambdaUpdateWrapper<SandboxQuest>()
+                .eq(SandboxQuest::getId, id)
+                .set(SandboxQuest::getStatus, "open")
+                .set(SandboxQuest::getEnabled, 1)
+                .set(SandboxQuest::getBatchTime, currentBatchOf(quest.getWorldId()))
+                .set(SandboxQuest::getTakerId, null)
+                .set(SandboxQuest::getTakerName, null)
+                .set(SandboxQuest::getTakenAt, null)
+                .set(SandboxQuest::getCompletedAt, null)
+                .set(SandboxQuest::getCompletionNote, null)
+                .set(SandboxQuest::getProgress, 0)
+                .set(SandboxQuest::getProgressNote, null));
+        return questMapper.selectById(id);
+    }
+
+    /**
+     * 把一条委托放进"当前这一批"用的批次时间。
+     *
+     * 委托板的规则是"只有最新一批的可接委托在板上"，所以重新上板 / 角色放弃之后，
+     * 必须挂到**当前最新批次**（而不是当前时间）——否则会把这一批整个顶掉，
+     * 导致原来在板上的其他委托全部掉下板。一条委托都没有时才用现在开一批。
+     */
+    private LocalDateTime currentBatchOf(Long worldId) {
+        LocalDateTime latest = latestBatchTime(worldId);
+        return latest == null ? clock() : latest;
+    }
+
+    /**
+     * 「下架」：把一条委托从板上撤下来（status = expired）。
+     * 与"刷新委托板时自动下架上一批"是同一件事，所以语义只有一个：已下架 = 不在板上。
+     *
+     * 允许对**接取中**的委托下架——这是管理员收拾"卡住的委托"的唯一出口
+     * （角色可能永远做不完、也永远不放弃，那样这个角色就再也接不了别的委托了）。
+     * 下架会同时解除接取关系：接取人清空、进度清零，角色下一步就会重新看到委托列表。
+     * 这里**不结算任何奖励**——奖励只在角色自己行动完成时发放。
+     */
+    @Override
+    public SandboxQuest expireQuest(Long id) {
+        SandboxQuest quest = questOrThrow(id);
+        if ("completed".equals(quest.getStatus())) {
+            throw new BusinessException("已完成的委托不用下架；想让它重新可接，用「重新上板」");
+        }
+        boolean wasTaken = "taken".equals(quest.getStatus());
+        // 接取人只清 id（currentQuestOf 按 id 匹配，清掉即解除接取关系）；名字留着，
+        // 后台还能看出"这条原本是谁在做的"
+        String note = wasTaken
+                ? truncate("管理员下架（原接取人：" + blankToDefault(quest.getTakerName(), "未知") + "）", 200)
+                : quest.getProgressNote();
+        questMapper.update(null, new LambdaUpdateWrapper<SandboxQuest>()
+                .eq(SandboxQuest::getId, id)
+                .set(SandboxQuest::getStatus, "expired")
+                .set(SandboxQuest::getTakerId, null)
+                .set(SandboxQuest::getTakenAt, null)
+                .set(SandboxQuest::getProgress, wasTaken ? 0 : quest.getProgress())
+                .set(SandboxQuest::getProgressNote, note));
+        return questMapper.selectById(id);
+    }
+
+    /**
+     * 管理员改进度：**只对"接取中"的委托开放**，而且最多只能改到 99%。
+     *
+     * 为什么限制这么紧：
+     *   · 没人接的委托改进度毫无意义——角色一接取，takeQuest 就会把进度重置成 0（实测白改过）；
+     *   · 100% 必须由角色的行动推上去，这样"到没到目标地区 / 有没有真拿到东西"两道校验
+     *     一定会走一遍，不会被人为绕过，也不会在角色毫无参与的情况下把奖励发出去；
+     *   · 进度只增不减（防 AI 把进度写回去），所以这里也不会往下调。
+     */
+    @Override
+    public SandboxQuest setQuestProgress(Long id, Integer progress, String note) {
+        SandboxQuest quest = questOrThrow(id);
+        if (!"taken".equals(quest.getStatus())) {
+            throw new BusinessException("只能改「接取中」委托的进度：没人接的委托一旦被接取，进度就会从头开始");
+        }
+        int old = questProgress(quest);
+        int target = progress == null ? old : Math.max(old, clampInt(progress, 0, QUEST_PROGRESS_MAX, old));
+        target = Math.min(QUEST_PROGRESS_MAX, target);
+        questMapper.update(null, new LambdaUpdateWrapper<SandboxQuest>()
+                .eq(SandboxQuest::getId, id)
+                .set(SandboxQuest::getProgress, target)
+                .set(SandboxQuest::getProgressNote, truncate(trimToEmpty(note), 200)));
+        return questMapper.selectById(id);
+    }
+
+    /** 角色清空后的默认状态 */
+    /**
+     * 往用户提示词里追加旅人委托板。三种情况：
+     *   1. 有进行中的委托 → 只给这一条（一人一委托：此时其他委托对他不可见，省 token 也防误判）；
+     *   2. 没有进行中 → 给最新一批可接的（最多 N 条，带距离），再补一句"刚刚完成的那条"；
+     *   3. 委托板关闭 → 整段不注入。
+     */
+    private void appendQuestPrompt(StringBuilder sb, SandboxCharacter c) {
+        if (!questOn()) {
+            return;
+        }
+        SandboxQuest current = currentQuestOf(c.getId());
+        if (current != null) {
+            sb.append("\n【当前委托】").append(current.getTitle())
+                    .append("（").append(questTypeText(current.getQuestType()))
+                    .append("，难度：").append(questDifficultyText(current.getDifficulty())).append("）\n");
+            if (notBlank(current.getLocationName())) {
+                sb.append("· 目标地区：").append(current.getLocationName());
+                double km = questDistanceKm(current, c);
+                if (km >= 0) {
+                    sb.append("（离你约 ").append(SandboxGeo.kmText(km)).append("）");
+                }
+                sb.append("\n");
+            }
+            if (notBlank(current.getTarget())) {
+                sb.append("· 目标：").append(current.getTarget()).append("\n");
+            }
+            if (current.getPower() != null && current.getPower() > 0) {
+                sb.append("· 对手战斗力约 ").append(current.getPower()).append("（按第 23 条的实力对比来写战况）\n");
+            }
+            sb.append("· 报酬：").append(questRewardText(current)).append("\n");
+            sb.append("· 当前进度：").append(questProgress(current)).append("%");
+            if (notBlank(current.getProgressNote())) {
+                sb.append("（上次判断：").append(current.getProgressNote()).append("）");
+            }
+            sb.append("\n");
+            if (current.getTakenAt() != null) {
+                long hours = Math.max(0, java.time.Duration.between(current.getTakenAt(), clock()).toHours());
+                sb.append("· 你已经为它奔波了 ").append(hours < 1 ? "不到 1 小时" : hours + " 小时").append("。\n");
+            }
+            if (notBlank(current.getDescription())) {
+                sb.append("· 委托详情：").append(truncate(current.getDescription(), 220)).append("\n");
+            }
+            sb.append("（按第 36 条推进，把完成度写进 quest_progress；做不下去就把 quest_abandon 填 true）");
+            if (notBlank(current.getAbandonedBy())) {
+                sb.append("。这条委托曾经被 ").append(current.getAbandonedBy()).append(" 放弃过");
+            }
+            sb.append("。\n");
+            return;
+        }
+        int limit = questVisibleCount();
+        List<SandboxQuest> open = latestOpenBatch(c.getWorldId(), limit);
+        String title = configService.getConfigValue("sandbox_quest_title", "旅人委托板");
+        if (open.isEmpty()) {
+            sb.append("\n【").append(title).append("】暂时没有新的委托。\n");
+        } else {
+            sb.append("\n【").append(title).append("】现在挂着这些委托（最多列 ").append(open.size()).append(" 条）：\n");
+            for (SandboxQuest quest : open) {
+                sb.append("- ").append(quest.getTitle())
+                        .append("（").append(questTypeText(quest.getQuestType()))
+                        .append("，难度：").append(questDifficultyText(quest.getDifficulty()));
+                if (notBlank(quest.getLocationName())) {
+                    sb.append("，").append(quest.getLocationName());
+                    double km = questDistanceKm(quest, c);
+                    if (km >= 0) {
+                        sb.append("，约 ").append(SandboxGeo.kmText(km));
+                    }
+                }
+                sb.append("）");
+                if (notBlank(quest.getTarget())) {
+                    sb.append("：").append(truncate(quest.getTarget(), 40));
+                }
+                sb.append("；报酬 ").append(questRewardText(quest));
+                if (Boolean.TRUE.equals(quest.getAbandonedByMe())) {
+                    sb.append("（**你之前放弃过它**）");
+                }
+                sb.append("\n");
+            }
+            sb.append("（想接就把标题**一字不差**写进 quest_take，一次只能接一条；不接就留空。")
+                    .append("接下之后，其余的委托不再展示给你。）\n");
+        }
+        // 刚刚完成的那条：只说一句，填掉"委托一完成就从提示词里消失"的记忆空档
+        SandboxQuest recent = recentlyCompletedQuest(c.getId(), QUEST_RECENT_HOURS);
+        if (recent != null) {
+            sb.append("\n【刚刚完成的委托】").append(recent.getTitle()).append("——已经结算过了（")
+                    .append(notBlank(recent.getCompletionNote()) ? truncate(recent.getCompletionNote(), 60) : "顺利办完")
+                    .append("），报酬已经到你手上，这一步不要再去做它。\n");
+        }
+    }
+
+    /** 角色清空后的默认状态 */
+    @Override
+    public SandboxQuest saveQuest(SandboxQuest quest) {
+        if (quest == null || !notBlank(quest.getTitle())) {
+            throw new BusinessException("委托标题不能为空");
+        }
+        quest.setTitle(truncate(quest.getTitle().trim(), 120));
+        if (!QUEST_TYPES.contains(quest.getQuestType())) {
+            quest.setQuestType("other");
+        }
+        quest.setDifficulty(clampInt(quest.getDifficulty(), 1, QUEST_DIFFICULTY_MAX, 1));
+        quest.setRewardCoins(Math.max(0, quest.getRewardCoins() == null ? 0 : quest.getRewardCoins()));
+        quest.setDescription(truncate(trimToEmpty(quest.getDescription()), 500));
+        quest.setTarget(truncate(trimToEmpty(quest.getTarget()), 200));
+        quest.setLocationName(truncate(trimToEmpty(quest.getLocationName()), 90));
+        // 奖励物品：只有传了 rewards 列表才重新序列化（没传表示"这次不改动奖励"，
+        // 传了空数组就表示"清空奖励"，两者语义不同）
+        if (quest.getRewards() != null) {
+            quest.setRewardItems(serializeQuestRewards(quest.getRewards()));
+        }
+        if (quest.getEnabled() == null) {
+            quest.setEnabled(1);
+        }
+        if (quest.getPinned() == null) {
+            quest.setPinned(0);
+        }
+        if (!notBlank(quest.getStatus())) {
+            quest.setStatus("open");
+        }
+        quest.setProgress(clampInt(quest.getProgress(), 0, 100, 0));
+        quest.setPower(clampQuestPower(quest));
+        if (quest.getId() == null) {
+            if (quest.getWorldId() == null) {
+                quest.setWorldId(worldId(null));
+            }
+            // 管理员手动新增的委托挂到当前最新批次；还没有批次就用现在的时间开一批
+            if (quest.getBatchTime() == null) {
+                SandboxQuest latest = questMapper.selectOne(new LambdaQueryWrapper<SandboxQuest>()
+                        .eq(SandboxQuest::getWorldId, quest.getWorldId())
+                        .orderByDesc(SandboxQuest::getBatchTime)
+                        .last("limit 1"));
+                quest.setBatchTime(latest == null || latest.getBatchTime() == null
+                        ? LocalDateTime.now() : latest.getBatchTime());
+            }
+            if (quest.getSource() == null) {
+                quest.setSource("admin");
+            }
+            quest.setCreateTime(LocalDateTime.now());
+            questMapper.insert(quest);
+        } else {
+            // 编辑时不改批次时间；接取人、进度与完成时间由流程维护，这里不覆盖
+            LambdaUpdateWrapper<SandboxQuest> update = new LambdaUpdateWrapper<SandboxQuest>()
+                    .eq(SandboxQuest::getId, quest.getId())
+                    .set(SandboxQuest::getTitle, quest.getTitle())
+                    .set(SandboxQuest::getDescription, quest.getDescription())
+                    .set(SandboxQuest::getQuestType, quest.getQuestType())
+                    .set(SandboxQuest::getDifficulty, quest.getDifficulty())
+                    .set(SandboxQuest::getLocationName, quest.getLocationName())
+                    .set(SandboxQuest::getTarget, quest.getTarget())
+                    .set(SandboxQuest::getPower, quest.getPower())
+                    .set(SandboxQuest::getRewardCoins, quest.getRewardCoins())
+                    .set(SandboxQuest::getRewardItems, quest.getRewardItems())
+                    .set(SandboxQuest::getPinned, quest.getPinned());
+            // enabled 只有显式传了才改：前端表单里已经没有这个开关了（下架/重新上板走专用接口），
+            // 传 null 就保持原值，避免把"允许展示"写成 NULL 导致委托莫名消失
+            if (quest.getEnabled() != null) {
+                update.set(SandboxQuest::getEnabled, quest.getEnabled());
+            }
+            questMapper.update(null, update);
+        }
+        return questMapper.selectById(quest.getId());
+    }
+
+    @Override
+    public void deleteQuest(Long id) {
+        questMapper.deleteById(id);
+    }
+
+    /**
+     * 讨伐类委托的对手战斗力：夹到目标地点的战力区间内。
+     * 用户明确要求"对手强度写在委托上，且必须落在该地点的区间里"——否则同一个地点会出现
+     * 「凶险之地只有 3 战斗力的野狗」这种自相矛盾的委托。
+     */
+    private Integer clampQuestPower(SandboxQuest quest) {
+        Integer power = quest.getPower();
+        if (power == null || power <= 0 || !notBlank(quest.getLocationName())) {
+            return power;
+        }
+        Long wid = quest.getWorldId() == null ? worldId(null) : quest.getWorldId();
+        for (SandboxLocation location : locations(wid)) {
+            if (!quest.getLocationName().equals(location.getName())) {
+                continue;
+            }
+            int min = location.getPowerMin() == null ? 0 : location.getPowerMin();
+            int max = location.getPowerMax() == null ? 0 : location.getPowerMax();
+            return SandboxQuestRule.clampPower(power, min, max);
+        }
+        return power;
+    }
+
+    private SandboxQuest questOrThrow(Long id) {
+        SandboxQuest quest = id == null ? null : questMapper.selectById(id);
+        if (quest == null) {
+            throw new BusinessException("委托不存在或已被删除");
+        }
+        return quest;
+    }
+
+    /** 奖励物品文本 → 列表 */
+    private List<SandboxQuestReward> parseQuestRewards(String json) {
+        List<SandboxQuestReward> list = new ArrayList<>();
+        if (json == null || json.trim().isEmpty()) {
+            return list;
+        }
+        try {
+            JSONArray array = JSONUtil.parseArray(json);
+            for (Object element : array) {
+                if (!(element instanceof JSONObject)) {
+                    continue;
+                }
+                JSONObject obj = (JSONObject) element;
+                String name = obj.getStr("name");
+                if (name == null || name.trim().isEmpty()) {
+                    continue;
+                }
+                SandboxQuestReward reward = new SandboxQuestReward();
+                reward.setName(truncate(name.trim(), 60));
+                reward.setRarity(clampInt(Convert.toInt(obj.get("rarity"), 1), 1, 5, 1));
+                reward.setQuantity(Math.max(1, Math.min(9, Convert.toInt(obj.get("quantity"), 1))));
+                reward.setDescription(truncate(trimToEmpty(obj.getStr("description")), 120));
+                list.add(reward);
+            }
+        } catch (Exception e) {
+            log.warn("委托奖励物品 JSON 解析失败：{}", json);
+        }
+        return list;
+    }
+
+    /** 奖励物品列表 → JSON 文本；返回 null 表示"这次不改动"，空数组文本表示"清空" */
+    private String serializeQuestRewards(List<SandboxQuestReward> rewards) {
+        if (rewards == null) {
+            return null;
+        }
+        List<SandboxQuestReward> cleaned = new ArrayList<>();
+        for (SandboxQuestReward reward : rewards) {
+            if (reward == null || reward.getName() == null || reward.getName().trim().isEmpty()) {
+                continue;
+            }
+            SandboxQuestReward item = new SandboxQuestReward();
+            item.setName(SandboxItemName.normalize(truncate(reward.getName().trim(), 60)));
+            item.setRarity(clampInt(reward.getRarity(), 1, 5, 1));
+            item.setQuantity(Math.max(1, Math.min(9, reward.getQuantity() == null ? 1 : reward.getQuantity())));
+            item.setDescription(truncate(trimToEmpty(reward.getDescription()), 40));
+            cleaned.add(item);
+            if (cleaned.size() >= 5) {
+                break;
+            }
+        }
+        String json = JSONUtil.toJsonStr(cleaned);
+        // reward_items 是 varchar(500)：超了就从后往前丢，宁可少给一件也不能写坏 JSON
+        while (json.length() > 500 && !cleaned.isEmpty()) {
+            cleaned.remove(cleaned.size() - 1);
+            json = JSONUtil.toJsonStr(cleaned);
+        }
+        return json;
+    }
+
+    /** 委托报酬的一句话说明（前台与提示词共用） */
+    private String questRewardText(SandboxQuest quest) {
+        List<String> parts = new ArrayList<>();
+        int coins = quest.getRewardCoins() == null ? 0 : quest.getRewardCoins();
+        if (coins > 0) {
+            parts.add(coins + " 金币");
+        }
+        for (SandboxQuestReward reward : parseQuestRewards(quest.getRewardItems())) {
+            int qty = reward.getQuantity() == null ? 1 : Math.max(1, reward.getQuantity());
+            parts.add(qty > 1 ? reward.getName() + "×" + qty : reward.getName());
+        }
+        return parts.isEmpty() ? "（没有报酬）" : String.join("、", parts);
+    }
 
     /** 角色清空后的默认状态 */
     private static final String RESET_STATUS_JSON = "{\"体力\":100,\"魔力\":100,\"饥饿度\":0,\"心情\":\"平静\"}";
@@ -6230,6 +8575,8 @@ public class SandboxServiceImpl implements SandboxService {
             o.set("title", c.getTitle());
             o.set("avatar", c.getAvatar());
             o.set("appearance", c.getAppearance());
+            // 此刻的样子：属于角色状态，存档里也要带上（否则导入后这一项会丢）
+            o.set("currentLook", c.getCurrentLook());
             o.set("persona", c.getPersona());
             o.set("providerName", providerNameOf(c.getProviderId()));
             o.set("model", c.getModel());
@@ -6262,6 +8609,8 @@ public class SandboxServiceImpl implements SandboxService {
             o.set("y", act.getY());
             o.set("actions", act.getActions());
             o.set("innerVoice", act.getInnerVoice());
+            // 此刻的样子（这一步结束时）
+            o.set("look", act.getLook());
             o.set("summary", act.getSummary());
             o.set("statusJson", act.getStatusJson());
             o.set("coinChange", act.getCoinChange());
@@ -6590,6 +8939,7 @@ public class SandboxServiceImpl implements SandboxService {
                 character.setTitle(truncate(o.getStr("title"), 90));
                 character.setAvatar(truncate(o.getStr("avatar"), 500));
                 character.setAppearance(truncate(o.getStr("appearance"), 500));
+                character.setCurrentLook(truncate(o.getStr("currentLook"), 200));
                 character.setPersona(o.getStr("persona"));
                 String providerName = o.getStr("providerName");
                 if (notBlank(providerName)) {
@@ -6652,6 +9002,7 @@ public class SandboxServiceImpl implements SandboxService {
                 act.setY(o.getInt("y"));
                 act.setActions(truncate(o.getStr("actions"), 1000));
                 act.setInnerVoice(truncate(o.getStr("innerVoice"), 1000));
+                act.setLook(truncate(o.getStr("look"), 200));
                 act.setSummary(truncate(o.getStr("summary"), 280));
                 act.setStatusJson(truncate(o.getStr("statusJson"), 1000));
                 act.setCoinChange(o.getInt("coinChange"));
@@ -7037,6 +9388,8 @@ public class SandboxServiceImpl implements SandboxService {
                 .eq(SandboxShopOrder::getWorldId, worldId)));
         stats.put("shopItems", shopItemMapper.delete(new LambdaQueryWrapper<SandboxShopItem>()
                 .eq(SandboxShopItem::getWorldId, worldId)));
+        stats.put("quests", questMapper.delete(new LambdaQueryWrapper<SandboxQuest>()
+                .eq(SandboxQuest::getWorldId, worldId)));
 
         // 位置：每个角色随机分配到一个地点、并在该地点范围内随机落点（避免清空后全挤在同一个地方）
         List<SandboxLocation> locations = locations(worldId);
@@ -7125,6 +9478,12 @@ public class SandboxServiceImpl implements SandboxService {
             return 0;
         }
         return Math.min(v, 100);
+    }
+
+    /** 把可空的整数夹到 [min, max]；为空时用 fallback */
+    private int clampInt(Integer value, int min, int max, int fallback) {
+        int v = value == null ? fallback : value;
+        return Math.max(min, Math.min(max, v));
     }
 
     private String truncate(String text, int max) {

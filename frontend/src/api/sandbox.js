@@ -125,6 +125,11 @@ export function runAllSandboxCharacters(worldId) {
   return request.post('/admin/sandbox/run-all', null, { params: { worldId }, timeout: 600000 })
 }
 
+/** 查询「全员行动一轮」的进度：后端改成异步执行后，前端轮询这个接口 */
+export function sandboxRunAllProgress() {
+  return request.get('/admin/sandbox/run-all/progress')
+}
+
 // 行动日志
 export function sandboxActs(params) {
   return request.get('/admin/sandbox/acts', { params })
@@ -280,4 +285,44 @@ export function deleteSandboxNews(id) {
 // 由 AI 生成若干条当天事件（耗时长一些）
 export function generateSandboxNews(data) {
   return request.post('/admin/sandbox/news/generate', data, { timeout: 180000 })
+}
+
+// ---------------- 后台：旅人委托板 ----------------
+
+/** 委托列表（status 为空或 all 时给全部） */
+export function sandboxQuests(params) {
+  return request.get('/admin/sandbox/quests', { params })
+}
+
+export function saveSandboxQuest(data) {
+  return request.post('/admin/sandbox/quests', data)
+}
+
+export function deleteSandboxQuest(id) {
+  return request.delete(`/admin/sandbox/quests/${id}`)
+}
+
+/** 立即生成一批委托（会保留接取中的，只补足到「每次生成条数」） */
+export function generateSandboxQuests(data) {
+  return request.post('/admin/sandbox/quests/generate', data, { timeout: 180000 })
+}
+
+/** 重新上板：回到「可接」并加入当前这一批（清接取人、进度清零；已发过的奖励不回收） */
+export function resetSandboxQuest(id) {
+  return request.post(`/admin/sandbox/quests/${id}/reset`)
+}
+
+/** 下架（撤下委托；对「接取中」的会同时解除接取关系，不结算奖励） */
+export function expireSandboxQuest(id) {
+  return request.post(`/admin/sandbox/quests/${id}/expire`)
+}
+
+/** 手动改进度与说明（进度只能往上调） */
+export function setSandboxQuestProgress(id, progress, note) {
+  return request.post(`/admin/sandbox/quests/${id}/progress`, { progress, note })
+}
+
+/** 委托板管理页保存设置：只写委托相关配置 */
+export function saveSandboxQuestSettings(data) {
+  return request.put('/admin/sandbox/quests/settings', data)
 }

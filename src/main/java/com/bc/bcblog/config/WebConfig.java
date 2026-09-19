@@ -67,11 +67,12 @@ public class WebConfig implements WebMvcConfigurer {
         MENU_PATHS.put("background", new String[]{"/api/admin/background/**", "/api/admin/config/admin-bg-opacity/**"});
         MENU_PATHS.put("live2d", new String[]{"/api/admin/live2d/**", "/api/admin/config/live2d-enabled"});
         MENU_PATHS.put("music", new String[]{"/api/admin/music/**"});
-        // 沙盒四个子菜单共用同一批接口：拥有任意一个子菜单即可访问
+        // 沙盒各子菜单共用同一批接口：拥有任意一个子菜单即可访问
         MENU_PATHS.put("sandboxWorld", new String[]{"/api/admin/sandbox/**"});
         MENU_PATHS.put("sandboxCharacters", new String[]{"/api/admin/sandbox/**"});
         MENU_PATHS.put("sandboxActs", new String[]{"/api/admin/sandbox/**"});
         MENU_PATHS.put("sandboxShop", new String[]{"/api/admin/sandbox/**"});
+        MENU_PATHS.put("sandboxQuests", new String[]{"/api/admin/sandbox/**"});
         MENU_PATHS.put("points", new String[]{"/api/admin/point/**"});
         MENU_PATHS.put("levels", new String[]{"/api/admin/level/**"});
         MENU_PATHS.put("logs", new String[]{"/api/admin/log/**"});

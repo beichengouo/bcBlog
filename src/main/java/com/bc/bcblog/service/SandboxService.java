@@ -10,6 +10,7 @@ import com.bc.bcblog.entity.SandboxItem;
 import com.bc.bcblog.entity.SandboxLocation;
 import com.bc.bcblog.entity.SandboxMemory;
 import com.bc.bcblog.entity.SandboxNews;
+import com.bc.bcblog.entity.SandboxQuest;
 import com.bc.bcblog.entity.SandboxRelation;
 import com.bc.bcblog.entity.SandboxShopItem;
 import com.bc.bcblog.entity.SandboxShopOrder;
@@ -68,6 +69,9 @@ public interface SandboxService {
     /** 行动日志页的「旅人纪闻设置」专用：只写纪闻相关配置 */
     void saveNewsSettings(SandboxSettingVO vo);
 
+    /** 委托板管理页专用：只写委托相关配置（世界运行参数仍归超级管理员） */
+    void saveQuestSettings(SandboxSettingVO vo);
+
     // ---------------- 角色 ----------------
 
     /** 某个世界的角色；worldId 为空时取第一个世界 */
@@ -103,6 +107,9 @@ public interface SandboxService {
     SandboxRunAllVO runAll();
     /** 让某个世界里所有启用的角色立刻各行动一次 */
     SandboxRunAllVO runAll(Long worldId);
+
+    /** 查询「全员行动一轮」的进度（异步执行，前端轮询） */
+    SandboxRunAllVO runAllProgress();
 
     // ---------------- 旅人低语 ----------------
 
@@ -187,6 +194,9 @@ public interface SandboxService {
     /** 定时任务入口：按后台配置自动生成当天纪闻（失败只记日志，不抛异常） */
     void autoGenerateNews(Long worldId);
 
+    /** 按配置的「刷新间隔 + 当天首次时间」自动生成纪闻（定时任务调用），返回刷新了几个世界 */
+    int autoRefreshNews();
+
     // ---------------- 前台聚合 ----------------
 
     SandboxPortalVO portal(Long worldId);
@@ -217,6 +227,47 @@ public interface SandboxService {
 
     /** 今日集市统计：卖出件数 / 回收积分 */
     Map<String, Object> shopStats(Long worldId);
+
+    // ---------------- 旅人委托板 ----------------
+
+    /**
+     * 前台委托板：最新一批可接 + 所有接取中 + 近三天已完成。
+     * characterId 传了就给每条算出"离这个角色多少公里"，并标记他曾经放弃过哪几条。
+     */
+    List<SandboxQuest> questBoard(Long worldId, Long characterId);
+
+    /**
+     * 后台委托列表。
+     * scope = board（默认）：只看"当前板面"——最新一批可接 + 所有接取中 + 近三天已完成，和前台完全一致；
+     * scope = all：连旧批次没人接的、以及被下架的委托一起看（排查历史用）。
+     * status 传具体状态（open/taken/completed/expired）时再按状态筛一层。
+     */
+    List<SandboxQuest> questsForAdmin(Long worldId, String status, String scope);
+
+    /** 后台列表（按"当前板面"口径，等价于 scope = board） */
+    List<SandboxQuest> questsForAdmin(Long worldId, String status);
+
+    SandboxQuest saveQuest(SandboxQuest quest);
+
+    void deleteQuest(Long id);
+
+    /** 立即生成一批委托，返回新增条数（新生成条数 = 委托板总数 − 接取中条数） */
+    int generateQuests(Integer count, Long providerId, String model, Long worldId);
+
+    /** 按配置的「刷新间隔 + 当天首次时间」自动刷新委托板（定时任务调用），返回刷新了几个世界 */
+    int autoRefreshQuests();
+
+    /** 后台：重置回「可接」（清接取人、进度清零；已发过的奖励不回收） */
+    SandboxQuest resetQuest(Long id);
+
+    /**
+     * 后台：下架（status = expired，等价于"刷新时被换下来"）。
+     * 对「接取中」的委托也允许——会同时解除接取关系，用于收拾卡住的委托；不结算奖励。
+     */
+    SandboxQuest expireQuest(Long id);
+
+    /** 后台：手动改进度与说明（只有「接取中」可改；只能往上调，最多到 99） */
+    SandboxQuest setQuestProgress(Long id, Integer progress, String note);
 
     // ---------------- 存档 ----------------
 

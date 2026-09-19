@@ -62,6 +62,7 @@ public class ConfigServiceImpl implements ConfigService {
     private static final String KEY_CLEANUP_SANDBOX_ACT_DAYS = "cleanup_sandbox_act_days";
     private static final String KEY_CLEANUP_SANDBOX_MEMORY_DAYS = "cleanup_sandbox_memory_days";
     private static final String KEY_CLEANUP_SANDBOX_NEWS_DAYS = "cleanup_sandbox_news_days";
+    private static final String KEY_CLEANUP_SANDBOX_QUEST_DAYS = "cleanup_sandbox_quest_days";
     private static final String KEY_CLEANUP_ADMIN_API_LOG_DAYS = "cleanup_admin_api_log_days";
 
     private final SysConfigMapper configMapper;
@@ -101,6 +102,7 @@ public class ConfigServiceImpl implements ConfigService {
         vo.setCleanupSandboxActDays(parseInt(map.get(KEY_CLEANUP_SANDBOX_ACT_DAYS), 7));
         vo.setCleanupSandboxMemoryDays(parseInt(map.get(KEY_CLEANUP_SANDBOX_MEMORY_DAYS), 30));
         vo.setCleanupSandboxNewsDays(parseInt(map.get(KEY_CLEANUP_SANDBOX_NEWS_DAYS), 1));
+        vo.setCleanupSandboxQuestDays(parseInt(map.get(KEY_CLEANUP_SANDBOX_QUEST_DAYS), 3));
         vo.setCleanupAdminApiLogDays(parseInt(map.get(KEY_CLEANUP_ADMIN_API_LOG_DAYS), 3));
         return vo;
     }
@@ -173,6 +175,9 @@ public class ConfigServiceImpl implements ConfigService {
         }
         if (vo.getCleanupSandboxNewsDays() != null) {
             upsert(KEY_CLEANUP_SANDBOX_NEWS_DAYS, String.valueOf(vo.getCleanupSandboxNewsDays()));
+        }
+        if (vo.getCleanupSandboxQuestDays() != null) {
+            upsert(KEY_CLEANUP_SANDBOX_QUEST_DAYS, String.valueOf(vo.getCleanupSandboxQuestDays()));
         }
         if (vo.getCleanupAdminApiLogDays() != null) {
             upsert(KEY_CLEANUP_ADMIN_API_LOG_DAYS, String.valueOf(vo.getCleanupAdminApiLogDays()));
