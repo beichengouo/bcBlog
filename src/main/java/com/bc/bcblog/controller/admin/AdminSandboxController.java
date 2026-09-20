@@ -304,9 +304,10 @@ public class AdminSandboxController {
 
     @GetMapping("/memories")
     public Result<PageResult<SandboxMemory>> memories(@RequestParam(required = false) Long characterId,
+                                                      @RequestParam(required = false) String date,
                                                       @RequestParam(defaultValue = "1") long page,
                                                       @RequestParam(defaultValue = "10") long size) {
-        return Result.ok(sandboxService.memoryPage(characterId, page, size));
+        return Result.ok(sandboxService.memoryPage(characterId, date, page, size));
     }
 
     @PostMapping("/memories")
@@ -321,11 +322,13 @@ public class AdminSandboxController {
         return Result.ok();
     }
 
-    /** 立即为所有角色生成当天记忆（调试用，不等定时任务） */
+    /**
+     * 为所有角色生成指定日期（yyyy-MM-dd，不传 = 今天）的记忆，用于补昨天没生成的那种情况；
+     * 同一天已有记忆会被覆盖。返回实际生成/覆盖的条数。
+     */
     @PostMapping("/memories/summarize")
-    public Result<Void> summarize(@RequestParam(required = false) String date) {
-        sandboxService.summarizeOn(date);
-        return Result.ok();
+    public Result<Integer> summarize(@RequestParam(required = false) String date) {
+        return Result.ok(sandboxService.summarizeOn(date));
     }
 
     // ---------------- 角色背包 ----------------
@@ -344,6 +347,26 @@ public class AdminSandboxController {
     public Result<Void> deleteItem(@PathVariable Long id) {
         sandboxService.deleteItem(id);
         return Result.ok();
+    }
+
+    // ---------------- 装备栏 ----------------
+
+    /** 装备（equipped=1）或卸下（equipped=0）某件物品；「拿不动」等规则由服务端校验 */
+    @PutMapping("/items/{id}/equip")
+    public Result<SandboxItem> setEquip(@PathVariable Long id, @RequestParam Integer equipped) {
+        return Result.ok(sandboxService.setEquip(id, equipped));
+    }
+
+    /** 修复破损装备 */
+    @PostMapping("/items/{id}/repair")
+    public Result<SandboxItem> repairItem(@PathVariable Long id) {
+        return Result.ok(sandboxService.repairItem(id));
+    }
+
+    /** 按装备栏重算某个角色的装备加成（救场用：数据被人为改动后对不上账时点一下） */
+    @PostMapping("/characters/{id}/equip-power/refresh")
+    public Result<Integer> refreshEquipPower(@PathVariable Long id) {
+        return Result.ok(sandboxService.recalcEquipPower(id));
     }
 
     // ---------------- 旅人纪闻 ----------------

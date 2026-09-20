@@ -82,6 +82,8 @@ class SandboxSceneRun {
     private SandboxCharacterMapper characterMapper;
     @Autowired
     private JdbcTemplate jdbc;
+    @Autowired
+    private com.bc.bcblog.service.ConfigService configService;
 
     private final StringBuilder report = new StringBuilder();
     private final Map<Long, LocalDateTime> simTimes = new LinkedHashMap<>();
@@ -105,6 +107,10 @@ class SandboxSceneRun {
     private final java.util.Set<LocalDate> summarizedDays = new java.util.LinkedHashSet<>();
     /** 记忆总结的耗时，单独统计（它也走 AI，但不属于角色行动） */
     private final List<Long> memoryMillis = new ArrayList<>();
+    /** 跑之前已经发生过的"每步自检"调用数（跑完再取一次，差值就是本轮消耗的） */
+    private int selfChecksBefore = 0;
+    /** 复制过来的历史行动里最大的那个 id：统计与总表要把它和"本轮新增"区分开 */
+    private long copiedActMaxId = 0;
 
     @Test
     void run() throws Exception {
@@ -116,6 +122,11 @@ class SandboxSceneRun {
         boolean withQuests = boolProp("sandbox.scene.quests", true);
         boolean keep = boolProp("sandbox.scene.keep", false);
         String out = strProp("sandbox.scene.out", "scene.md");
+        // 复制正式世界的角色（而不是用内置的临时角色）：用来做"正式人物数据"的模拟
+        boolean realChars = boolProp("sandbox.scene.realChars", false);
+        int realActs = intProp("sandbox.scene.realActs", 3);
+        // 每一步自检的模式：suspicious（命中才查，默认）/ always（每步都查）/ off
+        String selfcheckMode = strProp("sandbox.scene.selfcheck", "suspicious");
         // 把每一次 AI 调用的完整请求与返回都落盘（默认开；不想要就 -Dsandbox.scene.logAi=false）
         boolean logAi = boolProp("sandbox.scene.logAi", true);
         if (logAi) {
@@ -124,38 +135,54 @@ class SandboxSceneRun {
         }
 
         Long worldId = null;
+        String selfcheckBefore = configService.getConfigValue("sandbox_step_selfcheck_mode", "suspicious");
         try {
             worldId = createWorld(withNews);
             if (withQuests) {
                 seedQuests(worldId);
             }
             start = LocalDate.now().atTime(12, 0);
+            LocalDateTime realStart = start;
             // 模拟时间整体挪到两年前：记忆总结（summarizeOn）会遍历**所有**世界，
             // 放在"肯定没有正式数据"的日期上，就不会动到真实世界的记忆。
             start = start.minusYears(2);
+            // 每次行动的"每步自检"模式由参数决定（跑完还原）
+            configService.setConfigValue("sandbox_step_selfcheck_mode", selfcheckMode);
             report.append("# 沙盒场景模拟（").append(style).append("）\n\n")
-                    .append("- 角色 ").append(chars).append(" 人；起始地点 ").append(location)
+                    .append("- 角色 ").append(realChars ? "（复制正式世界）" : chars + " 人").append("；起始地点 ").append(location)
                     .append("；模拟 ").append(minutes).append(" 分钟（")
                     .append(String.format("%.2f", minutes / 1440.0)).append(" 天）\n")
                     .append("- 模型 ").append(MODEL).append("；纪闻 ").append(withNews ? "有" : "无")
                     .append("；委托板 ").append(withQuests ? (questIds.size() + " 条") : "关闭")
+                    .append("；**每步自检=").append(selfcheckMode).append("**")
                     .append("；临时世界 id=").append(worldId).append('\n');
             if (logAi) {
                 report.append("- 每一次 AI 调用的完整请求与返回已记录到 ")
                         .append("target/probe/ai-log-").append(out.replace(".md", "")).append(".md\n");
             }
-            for (int i = 0; i < chars; i++) {
-                String[] c = CAST[i];
-                String goal = "danger".equals(style) ? DANGER_GOALS[i % DANGER_GOALS.length] : c[2];
-                Long id = create(worldId, c[0], c[1], goal, c[3], location);
-                castIds.add(id);
-                simTimes.put(id, start);
-                names.put(id, c[0]);
+            if (realChars) {
+                int copied = copyRealCharacters(worldId, realStart, realActs);
+                Integer maxCopied = jdbc.queryForObject(
+                        "select ifnull(max(id), 0) from sandbox_act where world_id = ?", Integer.class, worldId);
+                copiedActMaxId = maxCopied == null ? 0 : maxCopied;
+                report.append("- 已复制正式世界（id=").append(SOURCE_WORLD).append("）的角色 ")
+                        .append(copied).append(" 个：背包、装备、好感度、最近 ").append(realActs)
+                        .append(" 条行动与每日记忆都一起带过来了（时间整体前移两年，与模拟时钟对齐）\n");
+            } else {
+                for (int i = 0; i < chars; i++) {
+                    String[] c = CAST[i];
+                    String goal = "danger".equals(style) ? DANGER_GOALS[i % DANGER_GOALS.length] : c[2];
+                    Long id = create(worldId, c[0], c[1], goal, c[3], location);
+                    castIds.add(id);
+                    simTimes.put(id, start);
+                    names.put(id, c[0]);
+                }
             }
             for (Long id : castIds) {
                 promptChars.put(id, promptChars(id));
             }
             selfCheckSocialGuard(worldId);
+            selfChecksBefore = countSelfChecks();
             report.append('\n');
 
             int maxSteps = Math.max(1, intProp("sandbox.scene.maxSteps", DEFAULT_MAX_STEPS));
@@ -171,6 +198,7 @@ class SandboxSceneRun {
             summary(worldId);
         } finally {
             System.clearProperty(OFFSET_KEY);
+            configService.setConfigValue("sandbox_step_selfcheck_mode", selfcheckBefore);
             if (worldId != null && !keep) {
                 cleanup(worldId);
             } else if (worldId != null) {
@@ -223,10 +251,11 @@ class SandboxSceneRun {
                 .append(safe(act.getLocationName())).append(" · ").append(safe(act.getSubLocation()))
                 .append(" ｜ ").append(act.getNextAfterMinutes()).append(" 分钟（")
                 .append(safe(act.getNextAfterReason())).append("）")
-                .append(" ｜ 耗时 ").append(millis).append(" ms / ").append(calls).append(" 次调用\n")
+                        .append(" ｜ 耗时 ").append(millis).append(" ms / ").append(calls).append(" 次调用\n")
                 .append("    - ").append(safe(act.getSummary())).append('\n')
                 .append("    - 运气：").append(luckText(act.getLuck()))
-                .append("；遭遇：").append(act.getEncounter() == null ? "无" : act.getEncounter())
+                .append("；遭遇：").append(act.getEncounter() == null ? "无"
+                        : (act.getEncounterFoe() == null ? "" : "对手「" + act.getEncounterFoe() + "」") + act.getEncounter())
                 .append('\n')
                 .append("    - 伤势：").append(injuryOf(before.getStatusJson())).append(" → ").append(injury)
                 .append("；体力 ").append(value(before.getStatusJson(), "体力")).append(" → ")
@@ -272,7 +301,7 @@ class SandboxSceneRun {
                 "select a.id, c.name, a.reaction, a.location_name, a.sub_location, a.next_after_minutes,"
                         + " a.next_after_reason, a.companions, a.coin_change, a.combat_change, a.luck, a.encounter,"
                         + " a.news_ref, a.item_change, a.favor_change, a.status_json, left(a.summary,50) as summary,"
-                        + " a.create_time, a.raw_response"
+                        + " a.create_time, a.raw_response, a.encounter_foe"
                         + " from sandbox_act a join sandbox_character c on c.id = a.character_id"
                         + " where a.world_id = ? order by a.id", worldId);
         int reactions = 0;
@@ -281,6 +310,14 @@ class SandboxSceneRun {
         int luckSum = 0;
         int luckCount = 0;
         for (Map<String, Object> row : rows) {
+            // 复制过来的历史行动只标出来，不计入本轮统计
+            if (((Number) row.get("id")).longValue() <= copiedActMaxId) {
+                report.append("- [复制] [").append(row.get("create_time")).append("] ")
+                        .append(row.get("name")).append(" ｜ ").append(row.get("location_name"))
+                        .append(" · ").append(row.get("sub_location")).append(" ｜ ")
+                        .append(row.get("summary")).append('\n');
+                continue;
+            }
             if (((Number) row.get("reaction")).intValue() == 1) {
                 reactions++;
             }
@@ -322,7 +359,9 @@ class SandboxSceneRun {
                 .append("- 在集市买东西的行动：").append(purchases).append('\n')
                 .append("- 平均运气：").append(luckCount == 0 ? "—" : String.format("%.2f", luckSum * 1.0 / luckCount))
                 .append("（样本 ").append(luckCount).append("）\n")
-                .append("- 总请求数：").append(requests).append('\n');
+                .append("- 总请求数：").append(requests).append('\n')
+                .append("- 每步自检调用：").append(countSelfChecks() - selfChecksBefore).append(" 次（模式 ")
+                .append(strProp("sandbox.scene.selfcheck", "suspicious")).append("）\n");
         performanceSection();
         questSection(worldId);
         memorySection(worldId);
@@ -353,9 +392,55 @@ class SandboxSceneRun {
                         .eq(SandboxCharacter::getWorldId, worldId))) {
             report.append("- ").append(c.getName()).append("：").append(c.getLocationName()).append(" · ")
                     .append(c.getSubLocation()).append(" ｜金币 ").append(c.getCoins())
-                    .append(" ｜战斗力 ").append(c.getCombatPower())
+                    .append(" ｜战斗力 ").append(c.getCombatPower() == null ? 10 : c.getCombatPower())
+                    .append(c.getEquipPower() == null || c.getEquipPower() == 0 ? ""
+                            : " + 装备 " + c.getEquipPower() + " = "
+                            + ((c.getCombatPower() == null ? 10 : c.getCombatPower()) + c.getEquipPower()))
                     .append(" ｜状态 ").append(c.getStatusJson()).append('\n');
         }
+        appendEquipmentReport(worldId);
+    }
+
+    /** 装备栏体检：谁穿了什么、加成合计对不对、有没有把"拿不动"的东西穿上 */
+    private void appendEquipmentReport(Long worldId) {
+        List<Map<String, Object>> rows = jdbc.queryForList(
+                "select c.name as character_name, i.name, i.slot, i.power_bonus, i.equipped, i.broken,"
+                        + " c.combat_power, c.equip_power"
+                        + " from sandbox_item i join sandbox_character c on c.id = i.character_id"
+                        + " where c.world_id = ? and i.slot <> 'none' order by c.name, i.slot, i.id", worldId);
+        report.append("\n### 装备栏与背包里的装备\n\n");
+        if (rows.isEmpty()) {
+            report.append("- （没有装备类物品）\n");
+            return;
+        }
+        int equippedCount = 0;
+        StringBuilder mismatch = new StringBuilder();
+        for (Map<String, Object> row : rows) {
+            boolean equipped = row.get("equipped") != null && ((Number) row.get("equipped")).intValue() == 1;
+            boolean broken = row.get("broken") != null && ((Number) row.get("broken")).intValue() == 1;
+            if (equipped) {
+                equippedCount++;
+            }
+            report.append("- ").append(row.get("character_name")).append(" ｜ ")
+                    .append(equipped ? "【已装备】" : "背包里").append(' ')
+                    .append(row.get("name")).append("（").append(row.get("slot")).append(" +")
+                    .append(row.get("power_bonus")).append("）")
+                    .append(broken ? " 破损" : "").append('\n');
+        }
+        report.append("- 已装备件数：").append(equippedCount).append('\n');
+        // 装备加成合计对不对：拿角色的 equip_power 跟"已装备且未破损的加成之和"对一遍
+        for (Map<String, Object> row : jdbc.queryForList(
+                "select id, name, combat_power, equip_power from sandbox_character where world_id = ?", worldId)) {
+            Long id = ((Number) row.get("id")).longValue();
+            Integer stored = row.get("equip_power") == null ? 0 : ((Number) row.get("equip_power")).intValue();
+            Integer live = jdbc.queryForObject("select coalesce(sum(power_bonus), 0) from sandbox_item"
+                    + " where character_id = ? and equipped = 1 and broken = 0", Integer.class, id);
+            if (live != null && !live.equals(stored)) {
+                mismatch.append(row.get("name")).append("（存储 ").append(stored).append(" / 实算 ").append(live).append("）");
+            }
+        }
+        report.append(mismatch.length() == 0 ? "- ✅ 各角色装备加成合计与装备栏一致\n"
+                : "- ❌ 装备加成对不上： " + mismatch + "\n");
     }
 
     private String luckText(Integer luck) {
@@ -439,7 +524,36 @@ class SandboxSceneRun {
         c.setIntervalMin(45);
         c.setIntervalMax(75);
         c.setEnabled(1);
-        return service.saveCharacter(c).getId();
+        Long id = service.saveCharacter(c).getId();
+        if (boolProp("sandbox.scene.equip", false)) {
+            seedEquipment(id, worldId);
+        }
+        return id;
+    }
+
+    /**
+     * 给测试角色塞几件装备，逼出装备栏相关的行为（默认关闭，用 -Dsandbox.scene.equip=true 打开）。
+     *
+     * 这里刻意放三种不同的东西：
+     *   · 一件拿得动的武器（加成 12 < 自身实力 18）→ 应该会被穿上；
+     *   · 一件拿不动的传说武器（加成 90 > 18）→ 应该触发"拿不动"的拦截与二次自检；
+     *   · 一件破损的护具 → 应该穿不上（除非 AI 先"修复"，服务端不允许直接穿）。
+     * 另外还放一件普通防具（加成落在品质区间内）。
+     */
+    private void seedEquipment(Long characterId, Long worldId) {
+        insertItem(characterId, worldId, "精钢长剑", "weapon", 12, 2, 0, "剑身笔直、开过锋的长剑");
+        insertItem(characterId, worldId, "黑铁胸甲", "armor", 15, 2, 0, "沉甸甸的黑铁胸甲，边角有磕碰");
+        insertItem(characterId, worldId, "寒铁重剑", "weapon", 25, 3, 0, "比寻常长剑沉一倍的寒铁剑，挥起来很吃力");
+        insertItem(characterId, worldId, "龙鳞重剑", "weapon", 90, 5, 0, "剑身布满龙鳞纹路的古剑，重得吓人");
+        insertItem(characterId, worldId, "破损的旧斗篷", "armor", 0, 1, 1, "已经破得透风的旧斗篷");
+    }
+
+    private void insertItem(Long characterId, Long worldId, String name, String slot, int bonus,
+                            int rarity, int broken, String description) {
+        jdbc.update("insert into sandbox_item (world_id, character_id, name, quantity, rarity, slot,"
+                + " power_bonus, equipped, broken, description, create_time, update_time)"
+                + " values (?, ?, ?, 1, ?, ?, ?, 0, ?, ?, now(), now())",
+                worldId, characterId, name, rarity, slot, bonus, broken, description);
     }
 
     private void cleanup(Long worldId) {
@@ -469,6 +583,141 @@ class SandboxSceneRun {
         } catch (Exception e) {
             report.append("\n清理失败：").append(e.getMessage()).append("\n");
         }
+    }
+
+    /**
+     * 把正式世界（SOURCE_WORLD）的角色数据整份复制到模拟世界：
+     * 角色本身 + 背包物品（含装备状态）+ 角色之间的好感度 + 每日记忆 + 最近若干条行动。
+     *
+     * 时间处理：模拟时钟整体前移了两年（见 run()），所以复制过来的行动与记忆的时间
+     * 也一起前移两年，保证"最近行动 / 最近的记忆"落在模拟时间的**过去**。
+     * 只复制 realStart（真实世界当天 12:00）之前的行动，避免把"未来"的事写进历史。
+     */
+    private int copyRealCharacters(Long worldId, LocalDateTime realStart, int recentActs) {
+        long shiftMinutes = java.time.Duration.between(realStart, start).toMinutes();
+        List<Map<String, Object>> rows = jdbc.queryForList(
+                "select * from sandbox_character where world_id = ? order by id", SOURCE_WORLD);
+        Map<Long, Long> idMap = new java.util.LinkedHashMap<>();
+        for (Map<String, Object> row : rows) {
+            Long oldId = ((Number) row.get("id")).longValue();
+            Map<String, Object> overrides = new java.util.HashMap<>();
+            overrides.put("world_id", worldId);
+            overrides.put("next_run_time", start);
+            overrides.put("next_reason", null);
+            overrides.put("last_run_time", null);
+            overrides.put("running_at", null);
+            overrides.put("fail_count", 0);
+            overrides.put("enabled", 1);
+            Long newId = copyRow("sandbox_character", oldId, overrides);
+            idMap.put(oldId, newId);
+            castIds.add(newId);
+            simTimes.put(newId, start);
+            names.put(newId, String.valueOf(row.get("name")));
+        }
+        // 背包（含装备栏状态）
+        int items = 0;
+        for (Map<String, Object> row : jdbc.queryForList(
+                "select * from sandbox_item where world_id = ?", SOURCE_WORLD)) {
+            Long newOwner = idMap.get(((Number) row.get("character_id")).longValue());
+            if (newOwner == null) {
+                continue;
+            }
+            Map<String, Object> overrides = new java.util.HashMap<>();
+            overrides.put("world_id", worldId);
+            overrides.put("character_id", newOwner);
+            copyRow("sandbox_item", ((Number) row.get("id")).longValue(), overrides);
+            items++;
+        }
+        // 好感度（两端都要映射）
+        int relations = 0;
+        for (Map<String, Object> row : jdbc.queryForList(
+                "select * from sandbox_relation where world_id = ?", SOURCE_WORLD)) {
+            Long from = idMap.get(((Number) row.get("character_id")).longValue());
+            Long to = idMap.get(((Number) row.get("target_id")).longValue());
+            if (from == null || to == null) {
+                continue;
+            }
+            Map<String, Object> overrides = new java.util.HashMap<>();
+            overrides.put("world_id", worldId);
+            overrides.put("character_id", from);
+            overrides.put("target_id", to);
+            copyRow("sandbox_relation", ((Number) row.get("id")).longValue(), overrides);
+            relations++;
+        }
+        // 每日记忆
+        int memories = 0;
+        for (Map<String, Object> row : jdbc.queryForList(
+                "select * from sandbox_memory where world_id = ?", SOURCE_WORLD)) {
+            Long newOwner = idMap.get(((Number) row.get("character_id")).longValue());
+            if (newOwner == null) {
+                continue;
+            }
+            Object date = row.get("memory_date");
+            Map<String, Object> overrides = new java.util.HashMap<>();
+            overrides.put("world_id", worldId);
+            overrides.put("character_id", newOwner);
+            if (date instanceof java.sql.Date) {
+                overrides.put("memory_date", ((java.sql.Date) date).toLocalDate().plusYears(2));
+            }
+            copyRow("sandbox_memory", ((Number) row.get("id")).longValue(), overrides);
+            memories++;
+        }
+        // 最近几条行动（只看 realStart 之前的，时间一起前移）
+        int acts = 0;
+        for (Long oldId : idMap.keySet()) {
+            List<Map<String, Object>> recent = jdbc.queryForList(
+                    "select * from sandbox_act where character_id = ? and create_time <= ?"
+                            + " order by create_time desc limit " + Math.max(0, recentActs),
+                    oldId, java.sql.Timestamp.valueOf(realStart));
+            for (Map<String, Object> row : recent) {
+                Map<String, Object> overrides = new java.util.HashMap<>();
+                overrides.put("world_id", worldId);
+                overrides.put("character_id", idMap.get(oldId));
+                Object created = row.get("create_time");
+                if (created instanceof java.sql.Timestamp) {
+                    overrides.put("create_time", java.sql.Timestamp.valueOf(
+                            ((java.sql.Timestamp) created).toLocalDateTime().plusMinutes(shiftMinutes)));
+                }
+                copyRow("sandbox_act", ((Number) row.get("id")).longValue(), overrides);
+                acts++;
+            }
+        }
+        System.out.println("已复制正式世界角色到模拟世界 " + worldId + "：角色 " + idMap.size()
+                + " 个、物品 " + items + " 件、好感 " + relations + " 条、记忆 " + memories
+                + " 条、行动 " + acts + " 条");
+        return idMap.size();
+    }
+
+    /**
+     * 复制一行：列名与取值都从 Map 里来，只覆盖 overrides 里指定的列，主键重新生成。
+     * 这样不用手写列清单，表结构加了字段也不会漏复制。
+     */
+    private Long copyRow(String table, Long oldId, Map<String, Object> overrides) {
+        Map<String, Object> row = jdbc.queryForMap("select * from " + table + " where id = ?", oldId);
+        List<String> columns = new ArrayList<>();
+        List<Object> values = new ArrayList<>();
+        for (Map.Entry<String, Object> entry : row.entrySet()) {
+            if ("id".equalsIgnoreCase(entry.getKey())) {
+                continue;
+            }
+            columns.add(entry.getKey());
+            values.add(overrides.containsKey(entry.getKey()) ? overrides.get(entry.getKey()) : entry.getValue());
+        }
+        StringBuilder sql = new StringBuilder("insert into ").append(table).append(" (")
+                .append(String.join(",", columns)).append(") values (");
+        for (int i = 0; i < columns.size(); i++) {
+            sql.append(i == 0 ? "?" : ",?");
+        }
+        sql.append(')');
+        jdbc.update(sql.toString(), values.toArray());
+        return jdbc.queryForObject("select max(id) from " + table, Long.class);
+    }
+
+    /** 已经发生过的"每步自检"调用次数（审计日志里按动作名数） */
+    private int countSelfChecks() {
+        Integer count = jdbc.queryForObject(
+                "select count(*) from admin_api_log where action = '沙盒·每步自检'", Integer.class);
+        return count == null ? 0 : count;
     }
 
     private int apiCalls() {

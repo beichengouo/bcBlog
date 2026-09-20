@@ -162,8 +162,8 @@
             >：{{ act.summary }}</template>
           </span>
           <!-- 这一步和旅人委托有关时（接取 / 推进 / 完成）挂一个小徽章，完成的那条最显眼 -->
-          <span v-if="act.questEvent" class="latest-quest" :class="{ done: act.questEvent.indexOf('完成') === 0 }">
-            ✓ {{ act.questEvent }}
+          <span v-if="act.questEvent" class="latest-quest" :class="questTagClass(act.questEvent)">
+            {{ questTagIcon(act.questEvent) }}{{ act.questEvent }}
           </span>
           <button type="button" class="ghost-btn latest-btn" @click="viewCharacterActs(act.characterId)">
             查看 TA 的行动
@@ -234,7 +234,14 @@
             </div>
             <div class="status">
               <span class="chip coin-chip">金币 {{ active.coins || 0 }}</span>
-              <span class="chip combat-chip">战斗力 {{ active.combatPower == null ? 10 : active.combatPower }}</span>
+              <span
+                class="chip combat-chip"
+                :title="`自身实力 ${active.combatPower == null ? 10 : active.combatPower}`
+                  + (active.equipPower ? ` + 装备 ${active.equipPower}` : '')"
+              >
+                战斗力 {{ active.totalPower == null ? (active.combatPower == null ? 10 : active.combatPower) : active.totalPower }}
+                <template v-if="active.equipPower">（含装备 +{{ active.equipPower }}）</template>
+              </span>
               <span class="chip goal-chip">目标 {{ active.goal || '还没有明确目标' }}</span>
               <span v-for="(value, key) in active.status || {}" :key="key" class="chip">
                 {{ key }} {{ value }}
@@ -310,7 +317,12 @@
                   }"
                   :title="r.description || r.name"
                 >
-                  {{ emojiForItem(r.name) }} {{ r.name }}<template v-if="(r.quantity || 1) > 1">×{{ r.quantity }}</template>
+                  {{ itemEmoji(r) }} {{ r.name }}<template v-if="(r.quantity || 1) > 1">×{{ r.quantity }}</template>
+                  <template v-if="isEquipItem(r)">
+                    <em class="quest-item-equip" :title="equipBadgeText(r)">
+                      {{ slotEmoji(r.slot) }}{{ equipChipText(r) }}
+                    </em>
+                  </template>
                 </span>
                 <span v-if="!activeQuest.rewardCoins && !(activeQuest.rewards || []).length" class="quest-no-reward">没有报酬</span>
               </div>
@@ -408,11 +420,52 @@
             </div>
           </div>
 
+          <!-- 装备栏：4 格（武器 / 副手 / 护具 / 饰品），加成已经算进上面的战斗力 -->
+          <div class="equip-panel">
+            <div class="backpack-head">
+              <h3>装备栏</h3>
+              <span class="backpack-meta">
+                装备加成 +{{ active.equipPower || 0 }}
+                · 战斗力 {{ active.totalPower == null ? (active.combatPower == null ? 10 : active.combatPower) : active.totalPower }}
+                （自身实力 {{ active.combatPower == null ? 10 : active.combatPower }}）
+              </span>
+            </div>
+            <div class="equip-grid">
+              <div
+                v-for="slot in equipmentSlots"
+                :key="'equip-' + slot.key"
+                class="equip-slot"
+                :class="[
+                  slot.item ? 'rarity-' + (slot.item.rarity || 1) : 'empty',
+                  { on: slot.item && selectedItem && selectedItem.id === slot.item.id }
+                ]"
+                :title="slot.item ? slot.item.name : slot.label + '（空着）'"
+                @click="slot.item && (selectedItem = slot.item)"
+              >
+                <span class="equip-label">{{ slot.label }}</span>
+                <span class="slot-icon">
+                  <template v-if="slot.item">
+                    <img v-if="slot.item.icon" :src="slot.item.icon" :alt="slot.item.name" />
+                    <template v-else>{{ itemEmoji(slot.item) }}</template>
+                  </template>
+                  <template v-else>{{ slot.emoji }}</template>
+                </span>
+                <span class="slot-name">{{ slot.item ? slot.item.name : '空' }}</span>
+                <span v-if="slot.item" class="equip-bonus">
+                  {{ (slot.item.powerBonus || 0) > 0 ? '战斗力 +' + slot.item.powerBonus : '无加成' }}
+                </span>
+              </div>
+            </div>
+          </div>
+
           <div class="backpack">
             <div class="backpack-head">
               <h3>背包</h3>
               <span class="backpack-meta">
                 {{ (active.items || []).length }} 种 · 共 {{ totalItemCount }} 件
+                <template v-if="(active.items || []).some((i) => isEquipItem(i))">
+                  · 带角标的是装备（点开看加成）
+                </template>
               </span>
             </div>
             <div v-if="(active.items || []).length" class="item-grid">
@@ -425,9 +478,18 @@
                 :title="item.name"
                 @click="selectedItem = item"
               >
+                <!-- 装备角标：一眼看出背包里哪些是能穿的（破损的会标出来） -->
+                <span
+                  v-if="isEquipItem(item)"
+                  class="equip-corner"
+                  :class="{ broken: item.broken === 1 }"
+                  :title="equipBadgeText(item)"
+                >
+                  {{ item.broken === 1 ? '破' : slotEmoji(item.slot) }}
+                </span>
                 <span class="slot-icon">
                   <img v-if="item.icon" :src="item.icon" :alt="item.name" />
-                  <template v-else>{{ emojiForItem(item.name) }}</template>
+                  <template v-else>{{ itemEmoji(item) }}</template>
                 </span>
                 <span class="slot-name">{{ item.name }}</span>
                 <span v-if="(item.quantity || 1) > 1" class="slot-qty">{{ item.quantity }}</span>
@@ -442,7 +504,7 @@
             >
               <span class="detail-item-icon">
                 <img v-if="selectedItem.icon" :src="selectedItem.icon" :alt="selectedItem.name" />
-                <template v-else>{{ emojiForItem(selectedItem.name) }}</template>
+                <template v-else>{{ itemEmoji(selectedItem) }}</template>
               </span>
               <div class="detail-main">
                 <div class="detail-name">
@@ -450,6 +512,18 @@
                   <span class="rarity-tag">{{ rarityMeta(selectedItem.rarity).name }}</span>
                 </div>
                 <div class="detail-qty">数量：{{ selectedItem.quantity || 1 }}</div>
+                <div v-if="isEquipItem(selectedItem)" class="detail-equip">
+                  <span class="equip-tag" :class="{ broken: selectedItem.broken === 1 }">
+                    {{ equipBadgeText(selectedItem) }}
+                  </span>
+                  <span class="muted">
+                    {{
+                      selectedItem.broken === 1
+                        ? '已经破损：不再提供加成，需要修复后才能重新装备'
+                        : '装备栏里穿上它，加成会计入战斗力'
+                    }}
+                  </span>
+                </div>
                 <div class="detail-desc">
                   {{ selectedItem.description || '还没有关于这件物品的说明。' }}
                 </div>
@@ -506,6 +580,22 @@
                 <span v-if="act.combatChange" class="combat-tag inline">战斗力 {{ act.combatChange > 0 ? "+" : "" }}{{ act.combatChange }}</span>
                 <span v-if="moveKmOf(act) >= 1" class="move-tag inline">移动 {{ formatKm(moveKmOf(act)) }}</span>
                 <span v-if="act.newsRef" class="news-tag inline">听闻 · {{ act.newsRef }}</span>
+                <!-- 本步遭遇：服务端掷出来的对手，带上它是什么、多少战斗力 -->
+                <span
+                  v-if="act.encounter"
+                  class="encounter-tag inline"
+                  :title="act.encounter"
+                >
+                  {{ encounterTag(act) }}
+                </span>
+                <!-- 这一步和旅人委托有关（接取 / 推进 / 完成 / 放弃）时挂一个徽章，和金币、物品一样排在标题行 -->
+                <span
+                  v-if="act.questEvent"
+                  class="quest-tag inline"
+                  :class="questTagClass(act.questEvent)"
+                >
+                  {{ questTagIcon(act.questEvent) }}{{ act.questEvent }}
+                </span>
                 <!-- 本步运气：-3 大凶 ~ +3 大吉，让用户一眼看出这一天顺不顺 -->
                 <span v-if="act.luck != null" class="luck-tag inline" :class="luckClass(act.luck)">
                   运气 · {{ luckText(act.luck) }}{{ act.luck > 0 ? ' +' : ' ' }}{{ act.luck }}
@@ -605,9 +695,12 @@
           <span class="shop-ribbon"></span>
           <span class="shop-rarity-badge">{{ rarityMeta(item.rarity).name }}</span>
           <span class="shop-icon-wrap">
-            <span class="shop-icon">{{ emojiForItem(item.name) }}</span>
+            <span class="shop-icon">{{ itemEmoji(item) }}</span>
           </span>
           <span class="shop-name">{{ item.name }}</span>
+          <span v-if="isEquipItem(item)" class="shop-equip-tag" :title="equipBadgeText(item)">
+            <i class="shop-equip-slot">{{ slotEmoji(item.slot) }}</i>{{ equipBadgeText(item) }}
+          </span>
           <span class="shop-desc">{{ item.description || '' }}</span>
           <span class="shop-price"><span class="coin-dot">✦</span>{{ item.price }} 金币</span>
           <span class="shop-stockbar"><i :style="{ width: stockPercent(item) + '%' }"></i></span>
@@ -679,7 +772,12 @@
                   }"
                   :title="r.description || r.name"
                 >
-                  {{ emojiForItem(r.name) }} {{ r.name }}<template v-if="(r.quantity || 1) > 1">×{{ r.quantity }}</template>
+                  {{ itemEmoji(r) }} {{ r.name }}<template v-if="(r.quantity || 1) > 1">×{{ r.quantity }}</template>
+                  <template v-if="isEquipItem(r)">
+                    <em class="quest-item-equip" :title="equipBadgeText(r)">
+                      {{ slotEmoji(r.slot) }}{{ equipChipText(r) }}
+                    </em>
+                  </template>
                 </span>
                 <span v-if="!quest.rewardCoins && !(quest.rewards || []).length" class="quest-no-reward">没有报酬</span>
               </div>
@@ -708,13 +806,17 @@
     <el-dialog v-model="buyVisible" :title="buyItem ? '赠送「' + buyItem.name + '」' : '赠送'" width="520px">
       <div v-if="buyItem" class="buy-body">
         <div class="buy-top">
-          <span class="shop-icon big">{{ emojiForItem(buyItem.name) }}</span>
+          <span class="shop-icon big">{{ itemEmoji(buyItem) }}</span>
           <div class="buy-info">
             <div class="buy-name" :style="{ color: rarityMeta(buyItem.rarity).color }">
               {{ buyItem.name }}
               <span class="buy-rarity">{{ rarityMeta(buyItem.rarity).name }}</span>
             </div>
             <p class="buy-desc">{{ buyItem.description || '（这件商品没有留下描述）' }}</p>
+            <p v-if="isEquipItem(buyItem)" class="buy-equip">
+              <span class="equip-tag">{{ equipBadgeText(buyItem) }}</span>
+              <span class="muted">买下送给 TA 之后，角色可以把它穿进装备栏（加成计入战斗力）</span>
+            </p>
             <div class="buy-price">
               <span>{{ buyItem.price }} 金币</span>
               <span class="muted">≈ {{ pointsOfItem(buyItem.price) }} 积分</span>
@@ -774,7 +876,16 @@ import { storeToRefs } from 'pinia'
 import LocationIcon from '@/components/sandbox/LocationIcon.vue'
 import SandboxMapViewer from '@/components/sandbox/SandboxMapViewer.vue'
 import { useMemberStore } from '@/store/member'
-import { emojiForItem, rarityMeta } from '@/utils/sandboxItems'
+import {
+  emojiForItem,
+  rarityMeta,
+  EQUIP_SLOTS,
+  isEquipItem,
+  equipBadgeText,
+  equipChipText,
+  slotEmoji,
+  itemEmoji
+} from '@/utils/sandboxItems'
 import { bbox, labelPoint, locationOfCharacter, polygonOf } from '@/utils/sandboxGeo'
 import {
   portalSandbox,
@@ -900,6 +1011,15 @@ const active = computed(() => {
   if (!activeId.value) return null
   return characters.value.find((c) => c.id === activeId.value) || null
 })
+
+/** 装备栏：4 格按固定顺序排好，空位也显示（让用户知道有几格、缺什么） */
+const equipmentSlots = computed(() => {
+  const list = (active.value && active.value.equipment) || []
+  return EQUIP_SLOTS.map((slot) => ({
+    ...slot,
+    item: list.find((item) => (item.slot || 'none') === slot.key) || null
+  }))
+})
 /** 背包物品总件数 */
 const totalItemCount = computed(() => {
   const items = (active.value && active.value.items) || []
@@ -1003,6 +1123,42 @@ const distanceBase = computed(() => {
   }
   return characters.value[0] || null
 })
+
+/** 委托徽章的颜色档位：接取（蓝）/ 推进（紫）/ 完成（绿）/ 放弃（灰）/ 被拦下自检（橙） */
+function questTagClass(event) {
+  if (!event) return ''
+  if (event.indexOf('完成') >= 0) return 'done'
+  if (event.indexOf('接取') >= 0) return 'take'
+  if (event.indexOf('放弃') >= 0) return 'drop'
+  if (event.indexOf('拦下') >= 0 || event.indexOf('自检') >= 0) return 'warn'
+  return 'progress'
+}
+
+/** 委托徽章的图标：和颜色档位对应 */
+function questTagIcon(event) {
+  if (!event) return ''
+  if (event.indexOf('完成') >= 0) return '✅ '
+  if (event.indexOf('接取') >= 0) return '📜 '
+  if (event.indexOf('放弃') >= 0) return '✖ '
+  if (event.indexOf('拦下') >= 0 || event.indexOf('自检') >= 0) return '⚠ '
+  return '➤ '
+}
+
+/**
+ * 本步遭遇的显示文案：`遭遇：雾隐豹 · 战斗力 455（比你强）`
+ * 对手名字来自 AI 的 encounter_foe；战力与强弱对比从服务端写的 encounter 文本里抠出来。
+ */
+function encounterTag(act) {
+  const text = String((act && act.encounter) || '')
+  const power = /战斗力\s*(\d+)/.exec(text)
+  const compare = /，(比你强|比你弱|和你差不多)/.exec(text)
+  const foe = (act && act.encounterFoe) ? String(act.encounterFoe).trim() : ''
+  const parts = []
+  parts.push(foe ? `遭遇：${foe}` : '遭遇')
+  if (power) parts.push(`战斗力 ${power[1]}`)
+  if (compare) parts.push(`（${compare[1]}）`)
+  return parts.join(' · ').replace(' · （', '（')
+}
 
 /** 本步运气的文字档位（-3 大凶 ~ +3 大吉），与后端 luckText 保持一致 */
 function luckText(luck) {
@@ -2179,6 +2335,132 @@ onBeforeUnmount(() => {
 }
 /* 背包：二次元游戏风格的物品格子 */
 .backpack { margin-top: 18px; }
+/* 装备栏：4 个固定格子，比背包格子宽一点、带槽位标签与加成 */
+.equip-panel { margin-top: 18px; }
+.equip-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+  gap: 10px;
+}
+.equip-slot {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 8px 6px 9px;
+  border-radius: 14px;
+  border: 1.5px solid var(--border);
+  background: var(--glass-bg);
+  color: var(--text-strong);
+  cursor: pointer;
+  transition: transform 0.18s ease, border-color 0.18s ease;
+}
+.equip-slot::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 14px;
+  background: linear-gradient(140deg, rgba(255, 255, 255, 0.2), transparent 55%);
+  pointer-events: none;
+}
+.equip-slot.empty { cursor: default; opacity: 0.62; border-style: dashed; }
+.equip-slot:hover { transform: translateY(-3px); }
+.equip-slot.empty:hover { transform: none; }
+.equip-slot.on { transform: translateY(-3px); }
+.equip-label {
+  font-size: 11px;
+  letter-spacing: 1px;
+  color: var(--text-muted);
+}
+.equip-bonus {
+  margin-top: 1px;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  line-height: 17px;
+  color: #7a4a2e;
+  background: rgba(255, 176, 120, 0.22);
+  border: 1px solid rgba(255, 176, 120, 0.5);
+}
+/* 装备角标：背包格子左上角的小圆标，只放槽位图标（破损时变红写「破」）。
+   战斗力的具体数值不占格子，点开物品详情看 */
+.equip-corner {
+  position: absolute;
+  left: 4px;
+  top: 4px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  font-size: 10px;
+  line-height: 16px;
+  text-align: center;
+  color: #fff;
+  background: rgba(74, 134, 200, 0.85);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.22);
+}
+.equip-corner.broken { background: rgba(194, 91, 91, 0.85); }
+.detail-equip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0;
+  font-size: 12px;
+  flex-wrap: wrap;
+}
+.equip-tag {
+  padding: 1px 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  color: #2f5d8a;
+  background: rgba(111, 168, 220, 0.18);
+  border: 1px solid rgba(111, 168, 220, 0.5);
+}
+.equip-tag.broken {
+  color: #a4443c;
+  background: rgba(200, 90, 80, 0.14);
+  border-color: rgba(200, 90, 80, 0.5);
+}
+.shop-equip-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  align-self: flex-start;
+  margin: 1px 0 5px;
+  padding: 1px 9px 1px 6px;
+  border-radius: 6px;
+  font-size: 11px;
+  line-height: 17px;
+  color: #3a6b96;
+  background: rgba(111, 168, 220, 0.14);
+  border: 1px solid rgba(111, 168, 220, 0.35);
+}
+.shop-equip-slot {
+  font-style: normal;
+  font-size: 12px;
+  line-height: 1;
+}
+.buy-equip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 6px 0 0;
+  font-size: 12px;
+}
+.quest-item-equip {
+  margin-left: 6px;
+  padding: 0;
+  font-style: normal;
+  font-size: 10px;
+  opacity: 0.85;
+  letter-spacing: 0.2px;
+}
+.quest-item-equip::before {
+  content: '·';
+  margin-right: 4px;
+  opacity: 0.6;
+}
 .backpack h3, .memories h3 { margin: 0 0 10px; font-size: 15px; color: var(--text-strong); }
 .backpack-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
 .backpack-head h3 { margin-bottom: 10px; }
@@ -2886,6 +3168,40 @@ onBeforeUnmount(() => {
   color: #3f8f63;
   background: rgba(99, 192, 122, 0.2);
   font-weight: 600;
+}
+.latest-quest.take { color: #3a6b96; background: rgba(111, 168, 220, 0.2); }
+.latest-quest.progress { color: #6a5a9a; background: rgba(150, 130, 220, 0.18); }
+.latest-quest.drop { color: var(--text-muted); background: rgba(150, 150, 150, 0.16); }
+
+/* 行动记录里的委托徽章：和小金币、物品标签并排，一眼看出这一步接了 / 推了多少 / 完成了 */
+.quest-tag {
+  display: inline-block;
+  vertical-align: bottom;
+  margin-left: 6px;
+  padding: 1px 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border: 1px solid transparent;
+}
+.quest-tag.take { color: #3a6b96; background: rgba(111, 168, 220, 0.18); border-color: rgba(111, 168, 220, 0.5); }
+.quest-tag.progress { color: #6a5a9a; background: rgba(150, 130, 220, 0.16); border-color: rgba(150, 130, 220, 0.45); }
+.quest-tag.done { color: #3f7d5a; background: rgba(99, 192, 122, 0.18); border-color: rgba(99, 192, 122, 0.5); font-weight: 600; }
+.quest-tag.drop { color: var(--text-muted); background: rgba(150, 150, 150, 0.14); border-color: rgba(150, 150, 150, 0.35); }
+.quest-tag.warn { color: #b07a3a; background: rgba(200, 150, 90, 0.16); border-color: rgba(200, 150, 90, 0.45); }
+/* 本步遭遇：偏红，和"运气"一样是环境事件 */
+.encounter-tag {
+  margin-left: 6px;
+  padding: 1px 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  white-space: nowrap;
+  color: #a4443c;
+  background: rgba(200, 90, 80, 0.14);
+  border: 1px solid rgba(200, 90, 80, 0.45);
 }
 
 @media (max-width: 720px) {

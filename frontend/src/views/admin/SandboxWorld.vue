@@ -462,8 +462,27 @@
         <el-form-item label="限同一级地点">
           <el-switch v-model="settings.socialSameAreaOnly" active-value="1" inactive-value="0" />
           <span class="tip">
-            开启后（推荐）：**只有处在同一个一级地点的角色才能互动**。地图上有些一级地点彼此不到 30km，
+            开启后（推荐）：<b>只有处在同一个一级地点的角色才能互动</b>。地图上有些一级地点彼此不到 30km，
             不限制的话会出现"明明隔着另一个地区、却因为离得近而互相触发互动"的情况
+          </span>
+        </el-form-item>
+        <el-form-item label="装备栏">
+          <el-switch v-model="settings.equipEnabled" active-value="1" inactive-value="0" />
+          <span class="tip">
+            开启后角色有装备栏（武器 / 副手 / 护具 / 饰品 各一格），可以从背包里穿上装备、把加成加进战斗力；
+            关掉后提示词里不给装备规则，AI 的装备动作一律忽略，前台也不显示装备栏
+          </span>
+        </el-form-item>
+        <el-form-item label="装备加成区间">
+          <el-input
+            v-model="settings.equipBonusByRarity"
+            style="width: 300px"
+            placeholder="1-10,10-20,20-30,30-60,60-120"
+          />
+          <span class="tip">
+            按<b>品质 1~5</b>（普通 / 精良 / 稀有 / 史诗 / 传说）依次填写，格式「下限-上限」，逗号分隔。
+            AI 给装备的加成会被夹进对应区间；某一档写坏就用默认值顶替。
+            另外无论区间怎么填，<b>装备加成都不能超过角色的自身实力</b>（服务端会拦下来并让 AI 改写这一步）
           </span>
         </el-form-item>
         <el-form-item label="失败退避">
@@ -494,22 +513,43 @@
           <el-input v-model="settings.reactionCooldownMinutes" style="width: 90px" />
           <span class="tip">刚行动过的角色在这段时间内不再被立即触发回应，避免同一角色连着说话；0 表示不限制</span>
         </el-form-item>
-        <el-form-item label="AI 输出自查">
+        <el-form-item label="输出字段校验">
           <el-select v-model="settings.verifyMode" style="width: 240px">
             <el-option label="仅可疑时查（推荐）" value="suspicious" />
             <el-option label="每次都查" value="always" />
             <el-option label="关闭" value="off" />
           </el-select>
           <span class="tip">
-            行动输出后要不要再调一次 AI 做校验修正（不改写剧情）。
-            「仅可疑时查」只在这几种情况才多花一次调用：物品名混了英文、花费超过单次上限、
-            地点/角色名对不上、状态数值越界；「每次都查」最稳但每次行动都要多一次调用
+            <b>管"这份 JSON 合不合法"</b>（与下面「故事逻辑校对」的分工：这个管数据，那个管故事）。<br />
+            检查的是：物品名混了英文、花费超过单次上限、地点/角色名不在世界里、状态数值越界——
+            <b>只修字段值，明确不许改写剧情</b>（actions / inner_voice / summary 一个字都不动）。<br />
+            「仅可疑时查」只在这几条命中时才多花一次调用；「每次都查」最稳但每步多一次调用。<br />
+            实话：其中大多数问题服务端自己已经能兜（物品名规范化、花费截断、状态夹到 0~100、
+            同行者按距离过滤、地点名对不上还能按坐标兜底），所以实测它很少触发；
+            留着是为了兜"地点名和坐标都落在空处"这类极小概率的漏网
+          </span>
+        </el-form-item>
+        <el-form-item label="故事逻辑校对">
+          <el-radio-group v-model="settings.stepSelfcheckMode">
+            <el-radio-button value="suspicious">命中才查</el-radio-button>
+            <el-radio-button value="always">每步都查</el-radio-button>
+            <el-radio-button value="off">关闭</el-radio-button>
+          </el-radio-group>
+          <span class="tip">
+            <b>管"这段故事讲不讲得通"</b>：与前一步/同伴的最新一步是否矛盾、有没有凭空出现的信息、
+            有没有重复叙述、地点跳变、状态与叙述冲突。<b>只改叙述</b>（动作、概括、心声、此刻的模样），
+            地点、时间、金币、物品、战斗力、委托进度一律不动。<br />
+            · <b>命中才查</b>（推荐）：先由服务端规则检查——同伴位置对不上、遭遇被无视、金币没交代、
+            原地踏步、与上一步叙述重复、地点变了没写赶路、物品变化没在叙述里出现、状态突变、饥饿与叙述矛盾——
+            命中才多调一次模型，几乎不增加延迟。<br />
+            · <b>每步都查</b>：每一步都过一遍，更稳；实测平均 16.5 秒/步 → 41.7 秒/步，调用量翻倍。<br />
+            · <b>关闭</b>：完全不查，最省。
           </span>
         </el-form-item>
         <el-form-item label="行动分段输出">
           <el-switch v-model="settings.draftMode" active-value="on" inactive-value="off" />
           <span class="tip">
-            **仅对角色行动生效**。开启后要求 AI 在同一次回复里按「回看 → 思考 → 草稿 → 自审 → 终稿」五段输出：
+            <b>仅对角色行动生效</b>。开启后要求 AI 在同一次回复里按「回看 → 思考 → 草稿 → 自审 → 终稿」五段输出：
             先对齐自己此刻在哪、正在做什么，再权衡这一步怎么做，然后写草稿、对照清单自检，最后才给 JSON。
             服务端只取终稿，前面几段不会出现在前台。角色行动保持五段式，是因为行动要权衡的东西更多
             （位置、间隔、收支、目标、记忆…）；代价是输出变长（免费接口不心疼，按量计费的接口注意成本）
@@ -525,7 +565,7 @@
         <el-form-item label="生成器三段式">
           <el-switch v-model="settings.generatorFlow" active-value="three" inactive-value="off" />
           <span class="tip">
-            **仅对四个生成器生效**（AI 创作角色 / 旅人纪闻 / 旅人集市 / 旅人委托）。
+            <b>仅对四个生成器生效</b>（AI 创作角色 / 旅人纪闻 / 旅人集市 / 旅人委托）。
             开启后它们也按「思考 &lt;think&gt; → 草稿 &lt;draft&gt; → 终稿 &lt;final&gt;」三段输出：
             先结合世界观与地图地点（含描述、危险度）权衡，再写草稿，最后才落 JSON。
             生成器原来是一次调用直接吐 JSON，模型常常不多想就编；加上思考段后内容会更贴地图与世界
@@ -588,6 +628,22 @@
         <el-form-item label="提示词携带记忆">
           <el-input v-model="settings.memoryPromptDays" style="width: 90px" />
           <span class="tip">天。每次行动时把最近几天的记忆写进提示词</span>
+        </el-form-item>
+        <el-form-item label="最近几步给完整动作">
+          <el-input v-model="settings.fullActSteps" style="width: 90px" />
+          <span class="tip">
+            步。<b>【最近行动】里最近这几步给完整动作（逐条 + 心声，不截断），更早的只给一句话摘要</b>。
+            默认 1：只把刚刚那一步的完整经过交给 AI，避免下一步"不知道上一步做到哪"而前后接不上；
+            填 0 表示全部只给摘要，填 2~5 可以给更多（越多个别角色越容易复述旧内容，一般 1~2 就够）
+          </span>
+        </el-form-item>
+        <el-form-item label="安全地点遭遇概率">
+          <el-input v-model="settings.encounterChance0" style="width: 90px" />
+          <span class="tip">
+            %。<b>危险度 0（安全）</b>地点的遭遇概率，默认 0 = 这种地方完全不刷遭遇
+            （魔王城、城镇中心这类"不该被袭击"的地方，把地点的危险度设成「安全」即可）。
+            危险度 1（较低）也默认不刷，想让它也危险就配 sandbox_encounter_chance_1
+          </span>
         </el-form-item>
         <el-form-item label="总结后删当天日志">
           <el-switch v-model="settings.memoryDeleteActs" active-value="1" inactive-value="0" />
@@ -694,6 +750,10 @@ const settings = reactive({
   memoryTime: '23:50',
   memoryPromptDays: '5',
   memoryDeleteActs: '0',
+  fullActSteps: '1',
+  stepSelfcheck: '1',
+  stepSelfcheckMode: 'suspicious',
+  encounterChance0: '0',
   aiIntervalEnabled: '1',
   aiIntervalMin: '15',
   aiIntervalMax: '720',
@@ -705,7 +765,9 @@ const settings = reactive({
   kmMapWidth: '200',
   travelSpeeds: '步行:4,骑乘:20,车船:12,飞行:60',
   socialMaxKm: '30',
-  socialSameAreaOnly: '1'
+  socialSameAreaOnly: '1',
+  equipEnabled: '1',
+  equipBonusByRarity: '1-10,10-20,20-30,30-60,60-120'
 })
 
 const loading = ref(false)

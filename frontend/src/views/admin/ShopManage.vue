@@ -44,11 +44,14 @@
       <el-table-column label="商品" min-width="200">
         <template #default="{ row }">
           <div class="item-cell">
-            <span class="item-emoji">{{ emojiForItem(row.name) }}</span>
+            <span class="item-emoji">{{ itemEmoji(row) }}</span>
             <div>
               <div class="item-name" :style="{ color: rarityMeta(row.rarity).color }">
                 {{ row.name }}
                 <span class="item-rarity">{{ rarityMeta(row.rarity).name }}</span>
+                <span v-if="isEquipItem(row)" class="item-equip" :title="equipBadgeText(row)">
+                  {{ equipBadgeText(row) }}
+                </span>
               </div>
               <div class="item-desc">{{ row.description || '（没有描述）' }}</div>
             </div>
@@ -233,6 +236,23 @@
           <span class="range-sep">积分 · 库存</span>
           <el-input-number v-model="form.stock" :min="0" :max="999" controls-position="right" />
         </el-form-item>
+        <el-form-item label="装备">
+          <el-select v-model="form.slot" style="width: 110px">
+            <el-option v-for="s in SLOT_OPTIONS" :key="s.key" :label="s.label" :value="s.key" />
+          </el-select>
+          <el-input-number
+            v-model="form.powerBonus"
+            :min="0"
+            :max="999"
+            controls-position="right"
+            style="margin-left: 8px"
+            :disabled="!form.slot || form.slot === 'none'"
+          />
+          <span class="tip">
+            能穿戴的商品选槽位并填加成（角色买下后才穿得上）；不是装备就保持「非装备」。
+            加成会按品质区间自动夹取
+          </span>
+        </el-form-item>
         <el-form-item label="上架 / 置顶">
           <el-switch v-model="form.enabled" :active-value="1" :inactive-value="0" />
           <el-switch v-model="form.pinned" :active-value="1" :inactive-value="0" style="margin-left: 12px" />
@@ -249,7 +269,15 @@
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { emojiForItem, rarityMeta, ITEM_RARITIES } from '@/utils/sandboxItems'
+import {
+  emojiForItem,
+  rarityMeta,
+  ITEM_RARITIES,
+  SLOT_OPTIONS,
+  isEquipItem,
+  equipBadgeText,
+  itemEmoji
+} from '@/utils/sandboxItems'
 import { useSandboxWorld } from '@/composables/useSandboxWorld'
 import { aiProviderList, aiProviderModels } from '@/api/ai'
 import {
@@ -311,6 +339,8 @@ const FORM_DEFAULTS = {
   name: '',
   description: '',
   rarity: 1,
+  slot: 'none',
+  powerBonus: 0,
   price: 3,
   stock: 2,
   enabled: 1,
@@ -437,6 +467,8 @@ function openEdit(row) {
   form.name = row.name || ''
   form.description = row.description || ''
   form.rarity = row.rarity || 1
+  form.slot = row.slot || 'none'
+  form.powerBonus = row.powerBonus == null ? 0 : row.powerBonus
   form.price = row.price == null ? 1 : row.price
   form.stock = row.stock == null ? 0 : row.stock
   form.enabled = row.enabled == null ? 1 : row.enabled
@@ -519,6 +551,16 @@ onMounted(async () => {
 .item-emoji { font-size: 22px; }
 .item-name { font-weight: 600; }
 .item-rarity { font-size: 11px; color: var(--el-text-color-secondary); margin-left: 6px; }
+.item-equip {
+  margin-left: 6px;
+  padding: 0 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  line-height: 17px;
+  color: #2f5d8a;
+  background: rgba(111, 168, 220, 0.16);
+  border: 1px solid rgba(111, 168, 220, 0.45);
+}
 .item-desc { font-size: 12px; color: var(--el-text-color-secondary); }
 .soldout { color: var(--el-color-danger); font-weight: 600; }
 .setting-form { max-width: 760px; }

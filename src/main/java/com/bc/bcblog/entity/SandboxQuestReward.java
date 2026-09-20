@@ -18,4 +18,11 @@ public class SandboxQuestReward {
     private Integer quantity;
     /** 一句说明，进背包时会写进物品描述 */
     private String description;
+    /**
+     * 装备槽位：none / weapon / offhand / armor / accessory。
+     * 空或 none 表示这不是装备（药水、材料之类）——**是不是装备由这个字段决定，不看名字**。
+     */
+    private String slot;
+    /** 装备加成（战斗力）：只有 slot 是装备时才有意义 */
+    private Integer powerBonus;
 }

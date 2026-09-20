@@ -307,8 +307,11 @@ class SandboxQuestProbe {
         check("提示词里列出了可接委托", open.contains("【旅人委托板】") && open.contains("【探针】采些药草"));
         check("可接清单带上了报酬", open.contains("报酬"));
         check("提示词里有接取指引（quest_take）", open.contains("quest_take"));
-        check("提示词里提到刚刚完成的委托", open.contains("【刚刚完成的委托】")
-                && open.contains("【探针】清除镇外的野狼"));
+        // 这一段取的是**最近**完成的那一条，而本探针前面完成过好几条委托
+        // （野狼 / 清点库房 / 誊抄账本…），写死具体标题会变成随机失败。
+        // 这里只断言"这一段确实渲染出来了、并且是完成口径的说明"。
+        check("提示词里提到刚刚完成的委托",
+                open.contains("【刚刚完成的委托】") && open.contains("已经结算过了"));
 
         applyQuestActions(hero, obj("quest_take", "【探针】采些药草"));
         String current = appendQuestPrompt(hero);
@@ -583,7 +586,10 @@ class SandboxQuestProbe {
     private SandboxQuest newQuest(Long worldId, String title, String type, String location, Integer power) {
         SandboxQuest quest = new SandboxQuest();
         quest.setWorldId(worldId);
-        quest.setBatchTime(LocalDateTime.now());
+        // 不设批次时间：交给 saveQuest 按线上规则挂到"当前这一批"（没有批次才用现在）。
+        // 以前这里写 now()，而 batch_time 存库精度是秒——跨秒创建的委托各自成一批，
+        // "最新一批"就只剩最后一条，探针偶尔会误报（跑得慢一点就中招）
+        quest.setBatchTime(null);
         quest.setTitle(title);
         quest.setDescription("（探针委托）");
         quest.setQuestType(type);

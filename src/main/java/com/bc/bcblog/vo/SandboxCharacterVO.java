@@ -31,8 +31,14 @@ public class SandboxCharacterVO {
     private Map<String, Object> status;
     /** 金币余额 */
     private Integer coins;
-    /** 战斗力：综合实力（战斗技巧、魔力、装备），默认 10 */
+    /** 自身实力（不含装备），默认 10 */
     private Integer combatPower;
+    /** 装备栏带来的战斗力加成合计 */
+    private Integer equipPower;
+    /** 有效战斗力 = 自身实力 + 装备加成（前台展示用，服务端算好） */
+    private Integer totalPower;
+    /** 装备栏（4 格：武器 / 副手 / 护具 / 饰品，按槽位顺序） */
+    private List<SandboxItem> equipment;
     /** 当前目标（AI 维护，管理员可改） */
     private String goal;
     /** 最近几条金币流水（贡献 / 赚取 / 消耗） */

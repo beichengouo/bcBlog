@@ -61,8 +61,15 @@ public class SandboxCharacter {
     private String wealthView;
     /** 正在执行行动的抢锁时间：非空表示有行动在跑，执行结束会清空（并发保护） */
     private LocalDateTime runningAt;
-    /** 战斗力：综合实力（战斗技巧、魔力、装备），默认 10 */
+    /** 自身实力（战斗技巧、魔力、天赋的底子，不含装备），默认 10；有效战斗力 = 这个 + equipPower */
     private Integer combatPower;
+    /** 装备加成合计（按装备栏实时重算的冗余列）：有效战斗力 = combatPower + equipPower */
+    private Integer equipPower;
+    /**
+     * 免遭遇地点（一级地点名，英文逗号分隔）：这个角色在这些地方不会触发遭遇。
+     * 典型用法：魔王待在自己的魔王城、商人在自家商会所在的城市。
+     */
+    private String encounterExemptLocations;
     /** 下次 AI 行动时间 */
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     private LocalDateTime nextRunTime;

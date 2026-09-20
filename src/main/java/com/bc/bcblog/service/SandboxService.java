@@ -152,7 +152,8 @@ public interface SandboxService {
     // ---------------- 每日记忆 ----------------
 
     /** 记忆列表（后台，characterId 为空时查全部） */
-    PageResult<SandboxMemory> memoryPage(Long characterId, long page, long size);
+    /** 记忆分页；date 传 yyyy-MM-dd 时只看那一天的（用于确认"某天到底生成没有"） */
+    PageResult<SandboxMemory> memoryPage(Long characterId, String date, long page, long size);
 
     /** 新增/修改一条记忆（管理员可直接编辑角色记忆） */
     void saveMemory(SandboxMemory memory);
@@ -162,8 +163,13 @@ public interface SandboxService {
     /** 定时任务入口：到点后为当天有行动的角色生成记忆总结 */
     void summarizeDaily();
 
-    /** 手动补生成指定日期（yyyy-MM-dd）的记忆，用于修正或测试；同一天会覆盖已有记录 */
-    void summarizeOn(String date);
+    /**
+     * 手动补生成指定日期（yyyy-MM-dd，空 = 今天）的记忆，用于补昨天没生成的那种情况；
+     * 同一天会覆盖已有记录。
+     *
+     * @return 实际写入 / 覆盖的记忆条数（那天没有行动的角色不计入）
+     */
+    int summarizeOn(String date);
 
     // ---------------- 背包 ----------------
 
@@ -172,6 +178,17 @@ public interface SandboxService {
     SandboxItem saveItem(SandboxItem item);
 
     void deleteItem(Long id);
+
+    // ---------------- 装备栏 ----------------
+
+    /** 后台：装备（equipped=1）或卸下（equipped=0）某件物品，服务端会校验槽位与「拿不动」并重算装备加成 */
+    SandboxItem setEquip(Long itemId, Integer equipped);
+
+    /** 后台：修复破损装备（去「破损的」前缀、清破损标记、按品质区间补回加成） */
+    SandboxItem repairItem(Long itemId);
+
+    /** 按装备栏重算某个角色的装备加成合计并写回，返回合计 */
+    int recalcEquipPower(Long characterId);
 
     // ---------------- 旅人纪闻 ----------------
 

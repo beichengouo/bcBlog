@@ -27,6 +27,7 @@ import com.bc.bcblog.common.SandboxMemoryText;
 import com.bc.bcblog.common.SandboxNewsRef;
 import com.bc.bcblog.common.SandboxSocial;
 import com.bc.bcblog.common.SandboxQuestRule;
+import com.bc.bcblog.common.SandboxEquip;
 import com.bc.bcblog.dto.ChatMessage;
 import com.bc.bcblog.dto.SandboxCharacterGenerateDTO;
 import com.bc.bcblog.component.SensitiveWordFilter;
@@ -566,6 +567,14 @@ public class SandboxServiceImpl implements SandboxService {
         vo.setTravelSpeeds(configService.getConfigValue("sandbox_travel_speeds", DEFAULT_TRAVEL_SPEEDS));
         vo.setSocialMaxKm(configService.getConfigValue("sandbox_social_max_km", "30"));
         vo.setSocialSameAreaOnly(configService.getConfigValue("sandbox_social_same_area_only", "1"));
+        // 装备栏：开关 + 加成区间（管理员可随时改，改完下一步行动就生效）
+        vo.setEquipEnabled(configService.getConfigValue("sandbox_equip_enabled", "1"));
+        vo.setEquipBonusByRarity(configService.getConfigValue("sandbox_equip_bonus_by_rarity",
+                SandboxEquip.DEFAULT_BONUS_TABLE));
+        vo.setFullActSteps(configService.getConfigValue("sandbox_prompt_full_act_steps", "1"));
+        vo.setStepSelfcheck(configService.getConfigValue("sandbox_step_selfcheck", "1"));
+        vo.setStepSelfcheckMode(configService.getConfigValue("sandbox_step_selfcheck_mode", "suspicious"));
+        vo.setEncounterChance0(configService.getConfigValue("sandbox_encounter_chance_0", "0"));
         return vo;
     }
 
@@ -643,6 +652,12 @@ public class SandboxServiceImpl implements SandboxService {
         writeSetting("sandbox_travel_speeds", vo.getTravelSpeeds());
         writeSetting("sandbox_social_max_km", vo.getSocialMaxKm());
         writeSetting("sandbox_social_same_area_only", vo.getSocialSameAreaOnly());
+        writeSetting("sandbox_equip_enabled", vo.getEquipEnabled());
+        writeSetting("sandbox_equip_bonus_by_rarity", vo.getEquipBonusByRarity());
+        writeSetting("sandbox_prompt_full_act_steps", vo.getFullActSteps());
+        writeSetting("sandbox_step_selfcheck", vo.getStepSelfcheck());
+        writeSetting("sandbox_step_selfcheck_mode", vo.getStepSelfcheckMode());
+        writeSetting("sandbox_encounter_chance_0", vo.getEncounterChance0());
     }
 
     /**
@@ -818,6 +833,13 @@ public class SandboxServiceImpl implements SandboxService {
                 Integer rarity = Convert.toInt(itemObj.get("rarity"), null);
                 item.setRarity(rarity == null ? inferRarity(itemName) : Math.max(1, Math.min(5, rarity)));
                 item.setDescription(truncate(trimToEmpty(itemObj.getStr("description")), 200));
+                // 随身装备：AI 可以给 slot / power_bonus（名字随它取），服务端按品质区间夹取
+                String itemSlot = SandboxEquip.normalizeSlot(itemObj.getStr("slot"));
+                item.setSlot(itemSlot);
+                item.setPowerBonus(SandboxEquip.wearable(itemSlot)
+                        ? SandboxEquip.clampBonus(equipBonusTable(), item.getRarity(),
+                        Convert.toInt(itemObj.get("power_bonus"), Convert.toInt(itemObj.get("powerBonus"), null)))
+                        : 0);
                 items.add(item);
             }
         }
@@ -842,7 +864,9 @@ public class SandboxServiceImpl implements SandboxService {
                 .append("\"combat_power\":10,")
                 .append("\"power_view\":\"对自身实力的看法（4~12 字，例如 不甘平庸，想变强 / 够用就行）\",")
                 .append("\"wealth_view\":\"对金钱财富的看法（4~12 字，例如 穷怕了，拼命攒钱 / 钱是身外之物）\",")
-                .append("\"items\":[{\"name\":\"干粮\",\"quantity\":2,\"rarity\":1,\"description\":\"用油纸包着的干粮\"}]}\n")
+                .append("\"items\":[{\"name\":\"干粮\",\"quantity\":2,\"rarity\":1,\"description\":\"用油纸包着的干粮\"},")
+                .append("{\"name\":\"旧法杖\",\"quantity\":1,\"rarity\":2,\"slot\":\"weapon\",\"power_bonus\":6,")
+                .append("\"description\":\"握柄缠着布条的木杖\"}]}\n")
                 .append("要求：\n")
                 .append("1. 角色名不要与【已有角色】重复，人设也不要去撞已有角色的定位与身份；\n")
                 .append("2. 必须符合【世界观】的风格；location 只能从【地图地点】里挑一个；\n")
@@ -861,8 +885,11 @@ public class SandboxServiceImpl implements SandboxService {
                 .append("6. power_view 与 wealth_view 是这名角色对「实力」和「金钱」的态度，必须与身份经历自洽，")
                 .append("并且**每个角色都要有明显差异**：有人想变强、有人只想安稳过日子；有人视钱如命、有人视钱财如粪土。")
                 .append("这两条会写进行动提示词，直接影响角色平时是去修炼/接委托，还是摸鱼、散财；要能一眼看出性格；\n")
-                .append("7. items 是背包里的初始物品，2~4 件，都是符合身份的日常小物件；")
+                .append("7. items 是背包里的初始物品，2~4 件，都是符合身份的随身物件；")
                 .append("rarity 用 1~5（1 普通 / 2 精良 / 3 稀有 / 4 史诗 / 5 传说），不要给神器；\n")
+                .append("   如果这件东西是能穿戴的装备（武器 / 副手 / 防具 / 饰品，例如法杖、短剑、护符、斗篷），")
+                .append("请再给出 \"slot\"（weapon / offhand / armor / accessory）与 \"power_bonus\"（它带来的战斗力加成）；")
+                .append("名字随你取，符合人设与世界观就好；不是装备（干粮、药水、材料、信物……）就别写这两个字段；\n")
                 .append("8. 不要输出立绘、绘图关键词、英文名或任何与 JSON 无关的内容。");
         return sb.toString();
     }
@@ -921,6 +948,12 @@ public class SandboxServiceImpl implements SandboxService {
         // 状态里的「伤势」统一成四档：后台手填、历史数据都不会留下"死亡"这类值
         if (notBlank(character.getStatusJson())) {
             character.setStatusJson(normalizeStatusJson(character.getStatusJson()));
+        }
+        // 免遭遇地点：只保留这个世界里真实存在的地区名，去重后存回（逗号分隔）
+        if (character.getEncounterExemptLocations() != null) {
+            character.setEncounterExemptLocations(normalizeExemptLocations(
+                    character.getEncounterExemptLocations(),
+                    character.getWorldId() == null ? worldId(null) : character.getWorldId()));
         }
         if (character.getTemperature() != null) {
             if (character.getTemperature().compareTo(BigDecimal.ZERO) < 0) {
@@ -1469,16 +1502,18 @@ public class SandboxServiceImpl implements SandboxService {
         String encounter = buildEncounter(character);
         // 本步运气：只影响偶然因素（怎么脱身、碰上什么小事），不影响会不会遭遇、也不改变实力差距
         Integer luck = buildLuck(character);
+        // 「刚刚有人把你写进了 TA 的行动」：提示词末尾要给全文，自检也要用它判断衔接
+        SandboxAct mentioned = reaction ? null : actThatMentionedMe(character);
         String userPrompt = buildUserPrompt(character, recent, whispers, companions, companionActs, reaction,
                 trigger == null ? null : characterNameOf(companions, trigger.getCharacterId()), trigger,
-                memories, backpack, news, encounter, luck);
+                memories, backpack, news, encounter, luck, mentioned);
         // 提示词预算守护：超过上限时砍掉"氛围类"内容重来一次，避免数据增长后提示词无限膨胀
         int promptBudget = intConfig("sandbox_prompt_char_limit", 9000);
         if (systemPrompt.length() + userPrompt.length() > promptBudget) {
             List<SandboxAct> shortRecent = recent.size() > 6 ? new ArrayList<>(recent.subList(0, 6)) : recent;
             String compact = buildUserPrompt(character, shortRecent, whispers, companions, new ArrayList<>(),
                     reaction, trigger == null ? null : characterNameOf(companions, trigger.getCharacterId()), trigger,
-                    memories, backpack, new ArrayList<>(), encounter, luck);
+                    memories, backpack, new ArrayList<>(), encounter, luck, mentioned);
             if (compact.length() < userPrompt.length()) {
                 log.info("沙盒提示词超出预算（{}+{} > {} 字符），已精简：去掉其他居民动静与今日要闻、最近行动取 6 条",
                         systemPrompt.length(), userPrompt.length(), promptBudget);
@@ -1666,6 +1701,8 @@ public class SandboxServiceImpl implements SandboxService {
             act.setNewsRef(matchNewsRefs(obj.getJSONArray("news_refs"), news));
             // 本步遭遇：记下来，方便以后回溯"他这一步到底遇上了什么"，也用于统计当天遭遇次数
             act.setEncounter(encounter);
+            // 遭遇的对手是谁：由 AI 按地点与世界观自己定（前台会显示成"遭遇：雾隐豹 · 战斗力 455"）
+            act.setEncounterFoe(truncate(trimToEmpty(obj.getStr("encounter_foe")), 60));
             // 本步运气：前台会展示，方便回看"他这天为什么这么顺/这么惨"
             act.setLuck(luck);
             // 服务端兜底：AI 忘了填 news_refs，但行动文本里明确出现了某条要闻标题中的事件名词时补上
@@ -1754,6 +1791,16 @@ public class SandboxServiceImpl implements SandboxService {
             if (shopChange != null) {
                 itemChange = itemChange == null ? shopChange : truncate(itemChange + "、" + shopChange, 290);
             }
+            // 装备栏：装备 / 卸下 / 破损。违反「拿不动」时这一步的装备无效，并二次调用 AI 改写这一步
+            EquipActResult equipResult = applyEquipChanges(character, obj, act, manual, true);
+            if (equipResult.note != null && !equipResult.note.isEmpty()) {
+                itemChange = itemChange == null ? equipResult.note
+                        : truncate(itemChange + "、" + equipResult.note, 290);
+            }
+            // 背包里被用掉/丢掉的装备要让装备栏跟着变：每次行动后都按装备栏重算一遍加成
+            if (equipOn()) {
+                recalcEquipPower(characterId);
+            }
 
             // 旅人委托板：接取 / 更新进度 / 放弃 / 完成结算。
             // 放在物品变化之后——完成校验要看这一步到底有没有真的拿到东西（items_change）。
@@ -1781,6 +1828,9 @@ public class SandboxServiceImpl implements SandboxService {
         }
         act.setCoinChange(coinChange);
         act.setCombatChange(combatChange);
+
+        // 每步自检（L1 规则 + 可选 L3 二次调用）：只允许改叙述字段，数值一律不动
+        stepSelfCheck(character, act, recent, mentioned, encounter, obj, manual);
 
         // 赶路时间兜底：防止 AI 让角色"一步跨过 80 km 却只花 30 分钟"
         aiNextMinutes = applyTravelFloor(character, x, y, locationName, aiNextMinutes);
@@ -2040,8 +2090,8 @@ public class SandboxServiceImpl implements SandboxService {
                 .append("\"summary\":\"30 字以内概括这一步\"}\n")
                 .append("字段要求：next_after_minutes 是大于 0 的整数分钟；next_after_reason 是 2~6 个字；")
                 .append("status 必须有体力、魔力、饥饿度（0~100 整数）与心情；x / y 是 0~100 的地图百分比。\n")
-                .append("combat_change 是这一步战斗力的变化（整数，日常填 0，只有学会新魔法、得到强力装备、受伤这类才给 ±1~±3），")
-                .append("给非 0 时原因必须写在 actions 里；原文已有的 combat_change 要原样保留。\n")
+                .append("combat_change 是这一步**自身实力**的变化（整数，日常填 0，只有学会新魔法、练成新招、受伤这类才给 ±1~±3），")
+                .append("给非 0 时原因必须写在 actions 里；原文已有的 combat_change 要原样保留（穿装备不算自身实力变化）。\n")
                 .append("items_change 里每一项是 {\"delta\": 数量变化, \"description\": \"物品描述\"}：")
                 .append("新获得的物品（delta 为正）**必须**补上 6~20 字的 description；只是消耗已有物品时 description 可省略。\n")
                 .append("间隔要与 actions 描述相符：睡觉/过夜 360~600（午睡 30~90）、长途赶路 120~240、")
@@ -2752,6 +2802,19 @@ public class SandboxServiceImpl implements SandboxService {
         vo.setStatus(parseStatus(character.getStatusJson()));
         vo.setCoins(character.getCoins() == null ? 0 : character.getCoins());
         vo.setCombatPower(character.getCombatPower() == null ? COMBAT_POWER_DEFAULT : character.getCombatPower());
+        // 装备栏与有效战斗力：自身实力 + 装备加成（前台档案里分开展示，方便看出"变强"是哪来的）
+        List<SandboxItem> equipment = equipOn() ? equipmentOf(character.getId()) : new ArrayList<>();
+        vo.setEquipment(equipment);
+        // 加成现算（而不是读角色身上的冗余列）：前台看到的装备栏与加成永远对得上，
+        // 即使有人直接改过数据库、或者某次写入漏了重算
+        int equipPower = 0;
+        for (SandboxItem item : equipment) {
+            if (item.getBroken() == null || item.getBroken() != 1) {
+                equipPower += item.getPowerBonus() == null ? 0 : Math.max(0, item.getPowerBonus());
+            }
+        }
+        vo.setEquipPower(equipPower);
+        vo.setTotalPower(vo.getCombatPower() + equipPower);
         vo.setGoal(character.getGoal());
         vo.setPowerView(character.getPowerView());
         vo.setWealthView(character.getWealthView());
@@ -3031,6 +3094,7 @@ public class SandboxServiceImpl implements SandboxService {
                 .append("\"actions\":[\"具体动作一\",\"具体动作二\",\"具体动作三\",\"具体动作四\"],")
                 .append("\"inner_voice\":\"角色此刻的心里话（第一人称，15~40 字，写清这一刻的念头或情绪）\",")
                 .append("\"look\":\"角色此刻的样子（20~40 字，见规则 33）\",")
+                .append("\"encounter_foe\":\"只有这一步有【本步遭遇】时才填：对手的名字或种类（例如 雾隐豹 / 劫匪头目），没有遭遇留空\",")
                 .append("\"status\":{\"体力\":80,\"魔力\":45,\"饥饿度\":30,\"心情\":\"平静\",\"伤势\":\"无恙\"},")
                 // 位置放在 status 后面（靠前），才不会被模型忽略；示例给的是"真的变了"的样子，
                 // 但下面规则 26 会强调：没有变化时必须把 kind 与 view 留空，不要照抄示例
@@ -3041,6 +3105,7 @@ public class SandboxServiceImpl implements SandboxService {
                 .append("\"news_refs\":[\"晨雾森林的商队遭遇魔物袭击，正在招募护卫随行\"],")
                 .append("\"coins_change\":0,\"combat_change\":0,\"companions\":[],\"favor_changes\":{\"角色名\":3},")
                 .append("\"items_change\":{\"物品名\":{\"delta\":1,\"description\":\"6~20 字说明它是什么、有什么用\"}},")
+                .append("\"equip_change\":{\"equip\":[],\"unequip\":[],\"broken\":[]},")
                 .append("\"shop_buy\":[{\"name\":\"旅人集市里的商品名\",\"quantity\":1,\"reason\":\"为什么买\"}],")
                 .append("\"quest_take\":\"\",\"quest_progress\":0,\"quest_note\":\"\",\"quest_abandon\":false,")
                 .append("\"summary\":\"30 字以内概括这一步\"}\n")
@@ -3069,9 +3134,10 @@ public class SandboxServiceImpl implements SandboxService {
                 .append("   · **同一件东西不要重复付钱**：在旅人集市买的东西只写进 shop_buy（服务端按标价扣款），")
                 .append("**绝对不要再把它算进 coins_change**；集市里没有、但你确实买了的小东西才写进 items_change，")
                 .append("并按上面的参考价在 coins_change 里扣钱；\n")
-                .append("   · combat_change 战斗力（整数，综合实力）：只有学会新魔法、得到强力装备（+1~+3）、")
+                .append("   · combat_change 自身实力（整数）：只有学会新魔法、练成新招（+1~+3）、")
                 .append("受伤或力量受损（-1~-3）、**战斗惨败或重伤（-2~-5）**这类才给非 0，")
-                .append("日常行动一律 0，且原因必须写进 actions。\n")
+                .append("日常行动一律 0，且原因必须写进 actions。**捡到/穿上装备不算自身实力变化**：")
+                .append("装备的加成走 equip_change，服务端会自动把它加进有效战斗力。\n")
                 .append("4. 行动必须符合当前时间与时段，作息要像真人：清晨 5~8 点起床准备，上午到下午适合赶路、做工或交易，")
                 .append("傍晚 18~21 点适合吃饭、收尾、闲逛、赶路或去酒馆坐坐，23 点以后多是休息或守夜。")
                 .append("**晚上 21 点之前一般不要进入整夜睡眠**——除非有明确理由：体力低于 30、受伤或生病、")
@@ -3099,6 +3165,10 @@ public class SandboxServiceImpl implements SandboxService {
                 .append("没有变化填 {}。物品是具体的小东西（干粮、草药、萤石灯、旧地图、戒指……），")
                 .append("金币请写在 coins_change 里、不要当成物品；物品名要简短且与 actions 描述一致，")
                 .append("单次数量变化不超过 ±9，不要凭空得到贵重或神器的东西。\n")
+                .append("   · 如果新得到的东西**是能穿戴的装备**（武器 / 副手 / 护具 / 饰品），")
+                .append("请顺便在它的对象里给出 \"slot\" 与 \"bonus\"：slot 取 weapon / offhand / armor / accessory，")
+                .append("bonus 是它带来的战斗力加成（普通 1~10、精良 10~20、稀有 20~30、史诗 30~60、传说 60~120）；")
+                .append("不是装备的东西不要写这两个字段。\n")
                 .append("8. 背包里已有的物品可以继续使用或送人；【最近的记忆】是你对过去几天的印象，")
                 .append("请保持人设与记忆连贯，不要做出与记忆矛盾的事。\n")
                 .append("9. 整体风格真实、有生活感：该平和的地方就平和，该危险的地方就有危险——")
@@ -3132,9 +3202,22 @@ public class SandboxServiceImpl implements SandboxService {
                 .append("⑤ **但不要为了填而填**：这一步只是顺带路过、随口一提，或者这件事在这一步并没有任何新进展时，")
                 .append("就填 [] ——**同一条要闻不要连续多步反复引用**（服务端也会把最近三步已经记过的丢掉）；")
                 .append("只有这件事真的推进了才继续填：真的到了那个地方、真的动手处理、拿到了新线索或新消息。");
-        sb.append("\n14. 背包管理：每次行动都顺便看一眼背包——能用掉的就用掉（吃掉干粮、喝掉药水等，")
+        sb.append("\n14. 背包与装备：每次行动都顺便看一眼背包——能用掉的就用掉（吃掉干粮、喝掉药水等，")
                 .append("让饥饿度或体力、魔力得到恢复），用不上的可以丢掉或送人（在 items_change 里写负数，")
                 .append("数量减到 0 会自动从背包移除）；不要长期囤积用不上的东西，也不要一次丢光所有物资。");
+        if (equipOn()) {
+            sb.append("\n    装备栏有 **4 格：武器 / 副手 / 护具 / 饰品**，一格一件：")
+                    .append("拿到、买到或做出来的装备想穿上，就写进 equip_change：{\"equip\":[\"背包里的物品名\"]}；")
+                    .append("想换下或不需要了写 {\"unequip\":[\"物品名\"]}；")
+                    .append("这一步有装备被砍坏、烧坏、摔坏、耗尽（破损）时写 {\"broken\":[\"物品名\"]}——")
+                    .append("服务端会把它从装备栏取下、加成归零，名字会变成「破损的X」留在背包里。")
+                    .append("三项都没有变化就都填 []，不要写别的字。")
+                    .append("\n    **拿不动的规则**：装备的 bonus 不能超过你的**自身实力**（上面【当前状态】里给了这个数字），")
+                    .append("超了这次装备直接无效、这一步还要被重写——所以遇到加成高于自身实力的东西，")
+                    .append("就写「试着拿起来 / 看了看 / 只好放下」，别硬穿。")
+                    .append("\n    注意：**装备带来的战力变化不要写进 combat_change**（那是自身实力的变化），")
+                    .append("穿上装备后有效战斗力会自动加上装备加成；装备也不是消耗品，不要因为穿上就写进 items_change。");
+        }
         sb.append("\n15. 保持活跃、别一直待着：除非有明确理由（睡觉或休息、受伤养伤、专心研究或看守某个东西、")
                 .append("被人缠住脱不开身），不要连续多次停在同一个二级地点。")
                 .append("每一步尽量让位置发生变化——可以换一个新的二级地点、在地区内走动，")
@@ -3476,7 +3559,7 @@ public class SandboxServiceImpl implements SandboxService {
         // 明明正在赶路（位置还没结算），却又写一次"我动身出发"，故事线就散了。
         sb.append("第一段【回看】<recap>：先别急着想这一步做什么，用 2~5 句话把自己现在的处境对齐一遍——\n");
         sb.append("· 我此刻到底在哪儿：一级地点 + 二级地点，以【当前状态】里的位置为准，不是你希望的、也不是记忆里的位置；\n");
-        sb.append("· 我正在做的那件事做到哪一步了：看【最近行动】的第一条（那就是刚刚发生的事）——做完了、正在路上、还是刚起头；\n");
+        sb.append("· 我正在做的那件事做到哪一步了：看【最近行动】的最后一条（那就是刚刚发生的事）——做完了、正在路上、还是刚起头；\n");
         sb.append("· 今天/最近几天的记忆里有什么会影响这一刻的事（没有就跳过）。\n");
         sb.append("**赶路要特别说清楚**：【当前状态】的位置是「人此刻真实所在」，【最近行动】里写的才是「那一步结束时要去的地方」——")
                 .append("两者不一致，就说明你还在路上、人没到：这一步要么继续往那儿赶（方向别变、别再写一遍出发），")
@@ -3496,6 +3579,10 @@ public class SandboxServiceImpl implements SandboxService {
         sb.append("· 地点与坐标是否落在【地图地点】的范围内；\n");
         sb.append("· 下一步间隔是否和做的事相符、是否符合当前时间与作息；\n");
         sb.append("· 物品是否有合理来源、名称是否为纯中文（不得出现 of / the / and 这类英文）；\n");
+        if (equipOn()) {
+            sb.append("· 装备：想穿的东西是不是真在背包里、槽位对不对（武器/副手/护具/饰品各一件）、")
+                    .append("它的加成有没有超过你的自身实力、这一步有没有装备破损要报；\n");
+        }
         sb.append("· 金币收支是否与 actions 里真正买的东西相称（参考价），有没有把集市买的东西重复算进 coins_change；\n");
         sb.append("· 是否符合人设、态度、记忆与当前目标，有没有和上一轮矛盾。\n");
         sb.append("自审的最后一行必须给出**最终决定**（后面 JSON 要照着它写）：地点与二级地点、");
@@ -3694,7 +3781,8 @@ public class SandboxServiceImpl implements SandboxService {
                                    List<SandboxCharacter> companions, List<SandboxAct> companionActs,
                                    boolean reaction, String triggerName, SandboxAct trigger,
                                    List<SandboxMemory> memories, List<SandboxItem> backpack,
-                                   List<SandboxNews> news, String encounter, Integer luck) {
+                                   List<SandboxNews> news, String encounter, Integer luck,
+                                   SandboxAct mentioned) {
         StringBuilder sb = new StringBuilder();
         // 提示词里的"现在时间"：默认等于真实时间，调试时可整体平移，见 clock()
         LocalDateTime now = clock();
@@ -3709,6 +3797,11 @@ public class SandboxServiceImpl implements SandboxService {
             sb.append("，所在地区危险度：").append(localDanger);
         }
         sb.append("\n");
+        // 免遭遇地点：把"这里不会有人来袭击你"直接写出来，免得 AI 自己安排敌人
+        if (encounterExempt(c, currentLocation(c))) {
+            sb.append("免遭遇：这里是你的地盘/安全区（管理员设定）——本地不会有人来袭击你，")
+                    .append("这一步不要安排战斗或敌人，安心做你自己的事。\n");
+        }
         // 行程状态：把"人还在路上、还没到"直接写出来，避免 AI 一遍遍重写"我动身出发"
         String travelStatus = travelStatusText(c);
         if (travelStatus != null) {
@@ -3724,8 +3817,11 @@ public class SandboxServiceImpl implements SandboxService {
                 .append(SandboxSpendLimit.maxSpend(c.getCoins() == null ? 0 : c.getCoins(),
                         intConfig("sandbox_max_spend_per_act", 10)))
                 .append(" 金币）\n")
-                .append("战斗力：").append(c.getCombatPower() == null ? COMBAT_POWER_DEFAULT : c.getCombatPower())
-                .append("（只有真正影响实力的事情才需要改：学会新魔法、得到强力装备、受伤等；日常行动填 0）\n")
+                .append("战斗力：").append(totalPower(c)).append("（自身实力 ")
+                .append(c.getCombatPower() == null ? COMBAT_POWER_DEFAULT : c.getCombatPower())
+                .append(" + 装备加成 ").append(c.getEquipPower() == null ? 0 : c.getEquipPower())
+                .append("；combat_change 只管**自身实力**的变化：学会新魔法、练成新招、受伤变弱等，"
+                        + "装备带来的变化不写这里——穿了什么装备，有效战斗力会自动加上去）\n")
                 .append("当前目标：").append(blankToDefault(c.getGoal(), "（还没有明确目标，可以自己定一个要去做的事）")).append("\n");
         // 对实力 / 财富的态度：让"战斗力"与"金币"的变化带着性格走，而不是谁都拼命变强、拼命攒钱
         if (notBlank(c.getPowerView()) || notBlank(c.getWealthView())) {
@@ -3770,13 +3866,39 @@ public class SandboxServiceImpl implements SandboxService {
         } else {
             List<String> itemTexts = new ArrayList<>();
             for (SandboxItem item : backpack) {
-                itemTexts.add(item.getName() + " x" + (item.getQuantity() == null ? 1 : item.getQuantity()));
+                String text = item.getName() + " x" + (item.getQuantity() == null ? 1 : item.getQuantity());
+                // 能穿戴的东西标上槽位与加成，AI 才知道"这件穿上能加多少"，也免得它重复装备
+                if (equipOn() && SandboxEquip.wearable(item.getSlot())) {
+                    if (item.getBroken() != null && item.getBroken() == 1) {
+                        text += "（已破损，穿不了）";
+                    } else {
+                        text += "（" + SandboxEquip.slotLabel(item.getSlot()) + " +"
+                                + (item.getPowerBonus() == null ? 0 : item.getPowerBonus()) + "）";
+                    }
+                }
+                itemTexts.add(text);
             }
             sb.append(String.join("、", itemTexts)).append("\n");
             if (backpack.size() >= 12) {
                 sb.append("（背包已经有 ").append(backpack.size())
                         .append(" 种物品，比较满了：这一步可以顺手用掉、送人或丢掉一些不常用的东西）\n");
             }
+        }
+        // 装备栏：AI 得知道自己身上穿着什么，才不会"重新穿一遍"或者忘了加成
+        if (equipOn()) {
+            sb.append("装备栏：");
+            List<SandboxItem> equipment = equipmentOf(c.getId());
+            if (equipment.isEmpty()) {
+                sb.append("（4 格都空着：武器 / 副手 / 护具 / 饰品）\n");
+            } else {
+                List<String> equipTexts = new ArrayList<>();
+                for (SandboxItem item : equipment) {
+                    equipTexts.add(SandboxEquip.slotLabel(item.getSlot()) + "：" + item.getName()
+                            + "（+" + (item.getPowerBonus() == null ? 0 : item.getPowerBonus()) + "）");
+                }
+                sb.append(String.join("、", equipTexts)).append("\n");
+            }
+            sb.append("装备加成合计：+").append(c.getEquipPower() == null ? 0 : c.getEquipPower()).append("\n");
         }
         // 旅人集市：只列「今天买得起」的商品，控制 token（名称 + 金币价 + 库存 + 极短描述）
         appendShopPrompt(sb, c);
@@ -3825,7 +3947,10 @@ public class SandboxServiceImpl implements SandboxService {
                     .append("（服务端也会按它校正，你另写别处是无效的）；")
                     .append("next_after_minutes 不要超过对方的 ")
                     .append(trigger.getNextAfterMinutes() == null ? 60 : trigger.getNextAfterMinutes())
-                    .append(" 分钟——两人这一步的时间跨度要对得上，不要各写各的。\n");
+                    .append(" 分钟——两人这一步的时间跨度要对得上，不要各写各的。\n")
+                    .append("**不要替对方决定行动**：对方下一步做什么由 TA 自己决定，你只写自己的部分；")
+                    .append("如果你和上面这段描述对不上（例如 TA 其实已经离开、你还留在原地），")
+                    .append("要在 actions 里把这个矛盾说清楚，而不是装作没发生。\n");
         }
         // 活跃度引导：连续多次停在同一个地区时，明确提醒该动一动了（比笼统要求"多走动"有效）
         int stayStreak = stayStreak(recent);
@@ -3892,15 +4017,44 @@ public class SandboxServiceImpl implements SandboxService {
             sb.append("（可以自然地收下、提起或使用它，但不要追问送礼的人是谁）\n");
         }
         // 最近行动放到最末尾：离生成点越近，模型越会参考刚刚发生的事
-        sb.append("\n【最近行动】按时间从新到旧排列，**第一条就是刚刚发生的**，越往下越早：\n");
+        // 按时间**从旧到新**排列：读起来就是一条时间线，最后一条是刚刚发生的那一步。
+        // （以前是从新到旧，模型容易把"最早的事"当成刚刚发生的，也让"接着往下写"不直观）
+        sb.append("\n【最近行动】按时间从旧到新排列，**最后一条就是刚刚发生的**，越往下越新：\n");
         if (recent.isEmpty()) {
             sb.append("（这是角色在这个世界的第一步，可以自由展开）\n");
         } else {
-            for (SandboxAct act : recent) {
+            // 最近几步给**完整动作**（默认 1 步，后台可调）：只给一句话摘要时，
+            // 下一步的 AI 其实不知道上一步具体做了什么、走到哪一步了——实测会出现
+            // "上一次刚说要走、这一次又重新动身出发"这类前后接不上的情况。
+            // 注意：这里**不做字数截断**，而是靠 sandbox_prompt_char_limit 的整体预算兜底。
+            int fullSteps = Math.max(0, Math.min(5, intConfig("sandbox_prompt_full_act_steps", 1)));
+            // recent 本身是"从新到旧"：倒着遍历就是时间顺序，而 i < fullSteps 正好是最新的那几条
+            for (int i = recent.size() - 1; i >= 0; i--) {
+                SandboxAct act = recent.get(i);
                 sb.append("- ").append(act.getCreateTime() == null ? "" : act.getCreateTime().format(DATE_TIME_FORMATTER))
-                        .append(" 在").append(blankToDefault(placeText(act.getLocationName(), act.getSubLocation()), "某处")).append("：")
-                        .append(blankToDefault(act.getSummary(), blankToDefault(act.getActions(), "")))
-                        .append("\n");
+                        .append(" 在").append(blankToDefault(placeText(act.getLocationName(), act.getSubLocation()), "某处"));
+                if (i < fullSteps) {
+                    sb.append("（这一步的完整动作）\n");
+                    String actions = trimToEmpty(act.getActions());
+                    if (actions.isEmpty()) {
+                        sb.append("    ").append(blankToDefault(act.getSummary(), "（这一步没有留下细节）")).append("\n");
+                    } else {
+                        for (String line : actions.split("\n")) {
+                            if (notBlank(line)) {
+                                sb.append("    ").append(line.trim()).append("\n");
+                            }
+                        }
+                    }
+                    if (notBlank(act.getInnerVoice())) {
+                        sb.append("    · 当时的心声：").append(act.getInnerVoice().trim()).append("\n");
+                    }
+                    if (notBlank(act.getSummary())) {
+                        sb.append("    · 一句话概括：").append(act.getSummary()).append("\n");
+                    }
+                } else {
+                    sb.append("：").append(blankToDefault(act.getSummary(), blankToDefault(act.getActions(), "")))
+                            .append("\n");
+                }
             }
         }
         // 本步遭遇：服务端掷骰命中时给出的"这一步必然发生的事"，必须处理，不能当作没看见
@@ -3908,9 +4062,11 @@ public class SandboxServiceImpl implements SandboxService {
             sb.append("\n【本步遭遇·必须处理】\n").append(encounter).append("\n")
                     .append("对方具体是什么，请你按这个地点与世界观自己定（丛林里的野兽或魔物、荒野的劫匪、遗迹的守卫、")
                     .append("恶劣天候、塌方之类的意外都可以），**但强度必须符合上面给的战斗力数字**。\n")
-                    .append("**这一步必须应对它**：迎战、逃跑、躲藏、扔下东西脱身、花钱消灾、或者用别的方式化解都行，")
-                    .append("不能视而不见、也不能当它不存在。打不打得过、会不会受伤、要付出什么代价，")
-                    .append("都要按你和对方的实力差来写（第 23 条）。\n");
+                .append("**这一步必须应对它**：迎战、逃跑、躲藏、扔下东西脱身、花钱消灾、或者用别的方式化解都行，")
+                .append("不能视而不见、也不能当它不存在。打不打得过、会不会受伤、要付出什么代价，")
+                .append("都要按你和对方的实力差来写（第 23 条）。\n")
+                .append("另外请在 encounter_foe 里写出这个对手**是什么**（10 字以内，例如「雾隐豹」「劫匪头目」）——")
+                .append("服务端会把它和上面的战力一起显示在行动记录里；没有遭遇时这一项留空字符串。\n");
         }
         // 本步运气：只影响偶然因素，不改变实力对比、也不影响"会不会遭遇"
         if (luck != null) {
@@ -3931,6 +4087,37 @@ public class SandboxServiceImpl implements SandboxService {
             }
             sb.append("注意：运气只影响**偶然因素**（时机、天气、有没有人恰好出现、对手是否失误），")
                     .append("**不能凭空改变你和对方的实力差距**（第 23 条），更**不会让你死**（第 25 条）。\n");
+        }
+        // 【刚刚有人写到了你】——解决"两个人各写各的、故事接不上"
+        // 实测：希希芙那一步写了"两人回到潮声集市"，18 秒后特蕾莎那一步却还留在挖掘区，
+        // 两条行动互相矛盾。放在【本次要求】之前（模型读到的最后一段信息），要求必须衔接。
+        if (mentioned != null) {
+            String who = characterNameOf(companions, mentioned.getCharacterId());
+            sb.append("\n【刚刚有人写到了你】（做这一步之前先看这段，它比你的猜测更权威）\n")
+                    .append(blankToDefault(who, "另一位居民")).append(" 于 ")
+                    .append(mentioned.getCreateTime() == null ? "" : mentioned.getCreateTime().format(DATE_TIME_FORMATTER))
+                    .append(" 在 ").append(blankToDefault(placeText(mentioned.getLocationName(),
+                            mentioned.getSubLocation()), "某处")).append(" 把你写进了 TA 的行动：\n");
+            String mentionedActions = trimToEmpty(mentioned.getActions());
+            if (mentionedActions.isEmpty()) {
+                sb.append("    ").append(blankToDefault(mentioned.getSummary(), "（没有留下细节）")).append("\n");
+            } else {
+                for (String line : mentionedActions.split("\n")) {
+                    if (notBlank(line)) {
+                        sb.append("    ").append(line.trim()).append("\n");
+                    }
+                }
+            }
+            if (notBlank(mentioned.getSummary())) {
+                sb.append("    · 一句话概括：").append(mentioned.getSummary()).append("\n");
+            }
+            sb.append("硬性要求：\n")
+                    .append("1. 上面这段是**已经发生的事实**，你的这一步必须与它衔接——不能装作没发生、也不能当成没看见；\n")
+                    .append("2. 以你的客观处境为准（你现在的位置、时间、体力与手头的事）：如果你和 TA 的叙述对不上")
+                    .append("（例如 TA 已经离开、而你其实还在原地），就必须在 actions 里把这个矛盾圆过去——")
+                    .append("说清你们什么时候分开的、你为什么还在原地，或者你追了上去；\n")
+                    .append("3. **不要替 TA 决定行动**：TA 下一步做什么、在哪、什么心情，都由 TA 自己那一步写，")
+                    .append("你只写自己这一部分（例外：你们这一步确实在同一处、且有对话，可以写你听到/看到什么）。\n");
         }
         sb.append("\n【本次要求】\n请推进 1 步剧情：角色可以移动到一个新的地点、留在原地做一件事，")
                 .append("或与这个世界里的事物互动；不要重复最近已经做过的内容，要有新的细节。\n")
@@ -4214,14 +4401,24 @@ public class SandboxServiceImpl implements SandboxService {
         if (spot != null) {
             danger = spot.getDangerLevel() == null ? 1 : spot.getDangerLevel();
         }
-        if (danger == null || danger < 2) {
+        if (danger == null) {
             return null;
         }
         // 濒死的人正在养伤，这一步不再雪上加霜
         if ("濒死".equals(injuryOf(character.getStatusJson()))) {
             return null;
         }
-        int chance = intConfig("sandbox_encounter_chance_" + danger, danger >= 3 ? 55 : 30);
+        // 角色级免遭遇：管理员可以给某个角色指定"在这些地点不会被袭击"
+        // （实测：魔王格蕾待在自己的魔王城，却按危险度 3 的区间（88~500）频繁被袭击）
+        if (encounterExempt(character, spot)) {
+            log.info("沙盒角色「{}」在「{}」属于免遭遇地点，跳过本步遭遇判定",
+                    character.getName(), spot == null ? "?" : spot.getName());
+            return null;
+        }
+        // 危险度 0（安全）/1（较低）默认不刷——刷出来只会打断日常；
+        // 想让安全地点也有遭遇（一般不会这么做），把 sandbox_encounter_chance_0 调大于 0 即可
+        int chance = intConfig("sandbox_encounter_chance_" + danger,
+                danger >= 3 ? 55 : (danger == 2 ? 30 : 0));
         if (chance <= 0 || random.nextInt(100) >= Math.min(chance, 100)) {
             return null;
         }
@@ -4229,7 +4426,10 @@ public class SandboxServiceImpl implements SandboxService {
         if (limit > 0 && todayEncounterCount(character.getId()) >= limit) {
             return null;
         }
-        int base = character.getCombatPower() == null ? COMBAT_POWER_DEFAULT : character.getCombatPower();
+        // 「你现在是 X」给的是**有效战斗力**（自身实力 + 装备加成）：穿着好装备的人确实更难被欺负，
+        // 这也是装备系统的意义所在（对手强度仍然只由地点决定，不会跟着角色变强）
+        int base = equipOn() ? totalPower(character)
+                : (character.getCombatPower() == null ? COMBAT_POWER_DEFAULT : character.getCombatPower());
         // 对手强度：取「这个地点本来的生物强度区间」，而不是跟着角色战力缩放——
         // 否则同一个魔物森林会随着角色变强一起变强，世界像在陪着角色演戏
         int[] range = encounterPowerRange(spot, danger);
@@ -4241,6 +4441,443 @@ public class SandboxServiceImpl implements SandboxService {
         log.info("沙盒角色「{}」在危险度{}的地点触发了本步遭遇（地点区间 {}~{}，本次对手战力 {}）",
                 character.getName(), danger, range[0], range[1], power);
         return text;
+    }
+
+    /**
+     * 这个角色在某个地点是不是「免遭遇」。
+     *
+     * 名单存在角色上（英文逗号分隔的一级地点名），匹配的是**一级地点**：
+     * 一个地区里的任何二级地点都算（魔王在魔王城全域都不会被袭击）。
+     */
+    /**
+     * 每步自检的模式：off 关闭 / suspicious 命中才查（默认）/ always 每步都查。
+     * 老配置 sandbox_step_selfcheck（1/0）作为兜底，避免升级后行为突变。
+     */
+    private String stepSelfCheckMode() {
+        String mode = configService.getConfigValue("sandbox_step_selfcheck_mode", "").trim().toLowerCase();
+        if ("off".equals(mode) || "always".equals(mode) || "suspicious".equals(mode)) {
+            return mode;
+        }
+        String legacy = configService.getConfigValue("sandbox_step_selfcheck", "").trim();
+        if ("0".equals(legacy)) {
+            return "off";
+        }
+        return "suspicious";
+    }
+
+    /**
+     * 每步自检。
+     *
+     * L1（不花额度）：先用确定性规则挑毛病——同行者的位置对不上、金币/物品变化在叙述里找不到依据、
+     * 遭遇被无视、这一步和上一步几乎一样……这些用代码就能判断，不用问模型。
+     * L3（花一次调用，后台开关 sandbox_step_selfcheck，默认开）：带着"上一步全文 + 这一步全文 +
+     * 同伴最新一步 + 服务端挑出的疑点"再问一次模型，让它给出修正后的**叙述**。
+     *
+     * 硬约束：只允许改 actions / summary / inner_voice / look；
+     * 地点、坐标、时间、金币、物品、战斗力、委托进度一律不动——那些是服务端算出来的，
+     * 让模型改会引入新的对不上账。
+     */
+    private void stepSelfCheck(SandboxCharacter character, SandboxAct act, List<SandboxAct> recent,
+                               SandboxAct mentioned, String encounter, JSONObject obj, boolean manual) {
+        if (act == null) {
+            return;
+        }
+        String mode = stepSelfCheckMode();
+        if ("off".equals(mode)) {
+            return;
+        }
+        List<String> issues = narrativeIssues(character, act, recent, mentioned, encounter, obj);
+        // 两种模式（后台可切）：
+        //   suspicious（默认）：只有规则检查（L1）挑出疑点时才多调一次模型——省钱、也几乎不增加延迟；
+        //   always：每一步都查（更稳，但每步多一次调用、延迟大致翻倍）。
+        if ("suspicious".equals(mode)) {
+            if (issues.isEmpty()) {
+                return;
+            }
+            log.info("沙盒角色「{}」这一步的自检疑点：{}", character.getName(), String.join("；", issues));
+        }
+        StringBuilder sys = new StringBuilder();
+        sys.append("你是这部连载小说的责任编辑，负责在“落库前”做最后一道事实与逻辑校对。\n")
+                .append("下面给你：上一步的原文、这一步的原文、可能的旁证、以及服务端已经挑出的疑点。\n")
+                .append("请判断这一步是否存在**与前文矛盾、凭空出现的信息、时间/地点对不上**的问题，并给出修正后的叙述。\n")
+                .append("硬性要求：\n")
+                .append("1. 只输出一个 JSON 对象，不要解释文字、不要 Markdown 代码块；\n")
+                .append("2. 只允许修改叙述字段：actions、summary、inner_voice、look；\n")
+                .append("3. **绝对不要改**地点、坐标、时间跨度、金币、物品、战斗力、委托进度——那些由服务端决定；\n")
+                .append("4. 如果这一步没有问题（或疑点其实是合理的），把 ok 填 true，其余字段可以省略；\n")
+                .append("5. 如果需要修正：ok 填 false，issues 里逐条写清问题，并给出完整的修正版 actions（3~8 条）。\n")
+                .append("输出格式：{\"ok\":false,\"issues\":[\"问题一\"],\"actions\":[\"……\"],")
+                .append("\"summary\":\"……\",\"inner_voice\":\"……\",\"look\":\"……\"}\n");
+        StringBuilder user = new StringBuilder();
+        user.append("【角色】").append(character.getName()).append('\n');
+        if (!recent.isEmpty()) {
+            SandboxAct prev = recent.get(0);
+            user.append("\n【上一步（已发生）】")
+                    .append(prev.getCreateTime() == null ? "" : prev.getCreateTime().format(DATE_TIME_FORMATTER))
+                    .append(" 在 ").append(blankToDefault(placeText(prev.getLocationName(), prev.getSubLocation()), "某处"))
+                    .append("\n").append(truncate(blankToDefault(prev.getActions(), prev.getSummary()), 1200)).append('\n');
+        }
+        if (mentioned != null) {
+            user.append("\n【另一位的行动里写到了你】")
+                    .append(mentioned.getCreateTime() == null ? "" : mentioned.getCreateTime().format(DATE_TIME_FORMATTER))
+                    .append(" 在 ").append(blankToDefault(placeText(mentioned.getLocationName(),
+                            mentioned.getSubLocation()), "某处"))
+                    .append("\n").append(truncate(blankToDefault(mentioned.getActions(), mentioned.getSummary()), 1200))
+                    .append('\n');
+        }
+        user.append("\n【这一步（待校对）】")
+                .append(act.getCreateTime() == null ? "" : act.getCreateTime().format(DATE_TIME_FORMATTER))
+                .append(" 在 ").append(blankToDefault(placeText(act.getLocationName(), act.getSubLocation()), "某处"))
+                .append("\n").append(truncate(trimToEmpty(act.getActions()), 1500)).append('\n');
+        if (notBlank(act.getInnerVoice())) {
+            user.append("· 心声：").append(act.getInnerVoice()).append('\n');
+        }
+        if (notBlank(act.getSummary())) {
+            user.append("· 概括：").append(act.getSummary()).append('\n');
+        }
+        if (notBlank(act.getCompanions())) {
+            user.append("· 这一步的同行者：").append(act.getCompanions()).append('\n');
+        }
+        if (notBlank(act.getEncounter())) {
+            user.append("· 本步遭遇（服务端指定，必须应对）：").append(act.getEncounter()).append('\n');
+        }
+        if (notBlank(act.getItemChange())) {
+            user.append("· 物品变化（已由服务端入账）：").append(act.getItemChange()).append('\n');
+        }
+        if (act.getCoinChange() != null && act.getCoinChange() != 0) {
+            user.append("· 金币变化（已由服务端入账）：").append(act.getCoinChange()).append('\n');
+        }
+        if (notBlank(act.getQuestEvent())) {
+            user.append("· 委托事件（已由服务端记账）：").append(act.getQuestEvent()).append('\n');
+        }
+        user.append("\n【服务端挑出的疑点】\n");
+        if (issues.isEmpty()) {
+            user.append("- （规则检查没发现明显问题，请你再从事实与逻辑的角度过一遍）\n");
+        } else {
+            for (String issue : issues) {
+                user.append("- ").append(issue).append('\n');
+            }
+        }
+        // 单独打审计标签，后台能看清这一步花了几次调用
+        String prevAction = AuditContext.action();
+        boolean prevScheduled = AuditContext.isSchedule();
+        boolean preset = AuditContext.isSet();
+        applyAudit(prevAction, prevScheduled, "沙盒·每步自检");
+        String rawFix;
+        try {
+            AiProvider provider = manual ? aiProviderService.resolveManualProvider(character.getProviderId())
+                    : sandboxSystemProvider(character);
+            rawFix = aiProviderService.chat(provider, character.getModel(), sys.toString(), user.toString(), 0.2d);
+        } catch (Exception e) {
+            log.warn("沙盒角色「{}」的每步自检调用失败：{}", character.getName(), e.getMessage());
+            return;
+        } finally {
+            if (preset) {
+                applyAudit(prevAction, prevScheduled, prevAction);
+            } else {
+                AuditContext.clear();
+            }
+        }
+        JSONObject fix = parseJson(rawFix);
+        if (fix == null) {
+            log.info("沙盒角色「{}」的每步自检没有返回可用 JSON，保留原文", character.getName());
+            return;
+        }
+        if (Convert.toBool(fix.get("ok"), false)) {
+            return;
+        }
+        boolean changed = false;
+        String fixedActions = joinActions(fix.getJSONArray("actions"));
+        // 修正版太短就先不采用：宁可保留原文，也不要被"越改越空"
+        if (notBlank(fixedActions) && fixedActions.trim().length() >= 20) {
+            act.setActions(truncate(fixedActions, 1000));
+            changed = true;
+        }
+        String fixedSummary = truncate(trimToEmpty(fix.getStr("summary")), 280);
+        if (notBlank(fixedSummary)) {
+            act.setSummary(fixedSummary);
+            changed = true;
+        }
+        String fixedVoice = truncate(trimToEmpty(fix.getStr("inner_voice")), 1000);
+        if (notBlank(fixedVoice)) {
+            act.setInnerVoice(fixedVoice);
+            changed = true;
+        }
+        if (lookOn()) {
+            String fixedLook = truncate(trimToEmpty(fix.getStr("look")), 200);
+            if (notBlank(fixedLook)) {
+                act.setLook(fixedLook);
+                changed = true;
+            }
+        }
+        if (changed) {
+            log.info("沙盒角色「{}」这一步已按每步自检修正叙述（疑点：{}）",
+                    character.getName(), String.join("；", issues));
+        }
+    }
+
+    /**
+     * L1：用确定性规则挑出"明显不对劲"的地方（不花额度）。
+     * 只列真正能站得住的几条，宁可少报，也不要天天误报把自检变成噪音。
+     */
+    private List<String> narrativeIssues(SandboxCharacter character, SandboxAct act, List<SandboxAct> recent,
+                                         SandboxAct mentioned, String encounter, JSONObject obj) {
+        List<String> issues = new ArrayList<>();
+        String text = blankToDefault(act.getActions(), "") + blankToDefault(act.getSummary(), "");
+        SandboxAct prev = recent.isEmpty() ? null : recent.get(0);
+
+        // ① 遭遇被无视：服务端明确给了遭遇，但叙述里完全没有应对的痕迹
+        if (notBlank(encounter) && notBlank(act.getActions())) {
+            boolean handled = false;
+            for (String word : new String[]{"战", "斗", "打", "迎", "逃", "躲", "藏", "退", "闪",
+                    "伤", "击", "挥", "射", "跑", "对峙", "僵持", "扔", "砍", "刺", "格挡", "摔", "翻"}) {
+                if (act.getActions().contains(word)) {
+                    handled = true;
+                    break;
+                }
+            }
+            if (!handled) {
+                issues.add("服务端指定了本步遭遇（" + truncate(encounter, 60) + "），但 actions 里看不出任何应对");
+            }
+        }
+
+        // ② 同行者的位置对不上：写进 companions 的人，其最新一步说的是别处
+        if (notBlank(act.getCompanions())) {
+            for (String name : act.getCompanions().split("[,，、]")) {
+                String target = name.trim();
+                if (target.isEmpty()) {
+                    continue;
+                }
+                SandboxCharacter other = characterMapper.selectOne(new LambdaQueryWrapper<SandboxCharacter>()
+                        .eq(SandboxCharacter::getWorldId, character.getWorldId())
+                        .eq(SandboxCharacter::getName, target)
+                        .last("limit 1"));
+                if (other == null) {
+                    continue;
+                }
+                SandboxAct otherAct = latestAct(other.getId());
+                if (otherAct == null) {
+                    continue;
+                }
+                if (notBlank(otherAct.getLocationName()) && notBlank(act.getLocationName())
+                        && !otherAct.getLocationName().equals(act.getLocationName())) {
+                    issues.add("你写了与「" + target + "」同行，但 TA 最新一步（"
+                            + (otherAct.getCreateTime() == null ? "" : otherAct.getCreateTime().format(DATE_TIME_FORMATTER))
+                            + "）是在「" + otherAct.getLocationName() + "」，而你这一步在「" + act.getLocationName() + "」");
+                }
+            }
+        }
+
+        // ③ 金币有变化，但叙述里没有任何与钱相关的字眼
+        if (act.getCoinChange() != null && act.getCoinChange() != 0 && notBlank(act.getActions())) {
+            boolean moneyWord = false;
+            for (String word : new String[]{"金", "钱", "币", "买", "卖", "付", "赚", "收", "费", "账",
+                    "报酬", "赏金", "工钱", "打点", "押金", "赔偿", "罚", "租", "赊"}) {
+                if (text.contains(word)) {
+                    moneyWord = true;
+                    break;
+                }
+            }
+            if (!moneyWord) {
+                issues.add("这一步金币变化 " + act.getCoinChange() + "，但叙述里没有提到任何收支");
+            }
+        }
+
+        // ④ 和上一步几乎一样（同一段概括重复出现，多半是"原地踏步"）
+        if (prev != null && notBlank(act.getSummary())) {
+            if (act.getSummary().equals(prev.getSummary())) {
+                issues.add("这一步的概括与上一步完全相同，像是什么都没推进");
+            }
+        }
+
+        // ⑤ 叙述与上一步重复：这一步开头两行动作里，有 12 个字以上和上一步逐字重合
+        //    （实测自检最常报的就是这类"又走了一遍走下瞭望塔"，用连续重合长度判断很稳）
+        if (prev != null && notBlank(prev.getActions()) && notBlank(act.getActions())) {
+            String repeated = repeatedRun(act.getActions(), prev.getActions(), 12);
+            if (repeated != null) {
+                issues.add("这一步的叙述和上一步重复了：「" + repeated + "」");
+            }
+        }
+
+        // ⑥ 地点变了，但叙述里没写赶路/抵达（读者会觉得"人突然出现在另一个地方"）
+        if (prev != null && notBlank(act.getLocationName()) && notBlank(prev.getLocationName())) {
+            boolean moved = !trimToEmpty(act.getLocationName()).equals(trimToEmpty(prev.getLocationName()))
+                    || (notBlank(act.getSubLocation()) && notBlank(prev.getSubLocation())
+                    && !trimToEmpty(act.getSubLocation()).equals(trimToEmpty(prev.getSubLocation())));
+            if (moved && !containsAnyOf(act.getActions(), TRAVEL_WORDS)) {
+                issues.add("地点从「" + placeText(prev.getLocationName(), prev.getSubLocation()) + "」换到了「"
+                        + placeText(act.getLocationName(), act.getSubLocation()) + "」，但叙述里没有赶路或抵达的过程");
+            }
+        }
+
+        // ⑦ 物品变化没在叙述里出现（"背包里凭空多/少了一样东西"）
+        if (obj != null && obj.get("items_change") instanceof JSONObject) {
+            JSONObject items = (JSONObject) obj.get("items_change");
+            for (String key : items.keySet()) {
+                String name = SandboxItemName.normalize(key);
+                if (notBlank(name) && !text.contains(name)) {
+                    issues.add("物品变化里有「" + name + "」，但叙述里没有提到它");
+                }
+            }
+        }
+
+        // ⑧ 状态突变：体力/魔力/饥饿度一步内跳 45 以上（睡觉、重伤、大吃一顿之外都不该这么大）
+        if (prev != null && notBlank(prev.getStatusJson()) && notBlank(act.getStatusJson())) {
+            Map<String, Object> before = parseStatus(prev.getStatusJson());
+            Map<String, Object> after = parseStatus(act.getStatusJson());
+            for (String key : new String[]{"体力", "魔力", "饥饿度"}) {
+                Integer a = toIntOrNull(before.get(key));
+                Integer b = toIntOrNull(after.get(key));
+                if (a != null && b != null && Math.abs(b - a) >= 45) {
+                    issues.add(key + "一步内从 " + a + " 变成 " + b + "，变化太大，叙述里要说清原因");
+                }
+            }
+            // ⑨ 饥饿度与叙述矛盾（饥饿度越大越饿：吃饱了不该还是很饿）
+            Integer hunger = toIntOrNull(after.get("饥饿度"));
+            if (hunger != null && hunger >= 80 && containsAnyOf(text, FULL_WORDS)) {
+                issues.add("饥饿度还有 " + hunger + "，但叙述里写成了吃饱喝足");
+            }
+            if (hunger != null && hunger <= 10 && containsAnyOf(text, HUNGRY_WORDS)) {
+                issues.add("饥饿度只有 " + hunger + "，但叙述里写成了饿得不行");
+            }
+        }
+        return issues;
+    }
+
+    /** 移动/抵达相关词（判断"地点变了有没有写赶路"） */
+    private static final List<String> TRAVEL_WORDS = Arrays.asList(
+            "走", "赶路", "出发", "动身", "启程", "抵达", "到达", "来到", "前往", "奔向", "走向",
+            "搭车", "乘车", "坐车", "雇车", "马车", "货车", "船", "骑", "飞行", "传送", "飞",
+            "返回", "回到", "返回营地", "踏上", "踏进", "走出", "步入", "翻过", "穿过", "越过",
+            "顺着", "沿着", "落脚", "来到", "赶到", "奔向", "驶", "归途", "路上", "途中");
+    /** "吃饱了"这类描写（用来和饥饿度对照） */
+    private static final List<String> FULL_WORDS = Arrays.asList(
+            "吃饱", "吃得很饱", "饱餐", "吃到撑", "心满意足地吃", "喝着热汤");
+    /** "饿"相关描写 */
+    private static final List<String> HUNGRY_WORDS = Arrays.asList(
+            "饿得", "饥肠辘辘", "饿坏", "肚子咕咕", "饿到", "空空如也的胃");
+
+    /** 文本里是否出现列表里的任一词 */
+    private static boolean containsAnyOf(String text, List<String> words) {
+        if (text == null || text.isEmpty()) {
+            return false;
+        }
+        for (String word : words) {
+            if (text.contains(word)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 找出 a 与 b 之间长度 ≥ min 的连续重合片段（逐字比对），没有就返回 null。
+     * 用途：判断这一步是不是把上一步的叙述又写了一遍（自检最常报的问题）。
+     */
+    private String repeatedRun(String a, String b, int min) {
+        String x = a.replaceAll("\\s+", "");
+        String y = b.replaceAll("\\s+", "");
+        String best = null;
+        for (int i = 0; i + min <= x.length(); i++) {
+            String probe = x.substring(i, i + min);
+            if (y.contains(probe)) {
+                int len = min;
+                while (i + len < x.length()) {
+                    String longer = x.substring(i, i + len + 1);
+                    if (!y.contains(longer)) {
+                        break;
+                    }
+                    len++;
+                }
+                String hit = x.substring(i, i + len);
+                if (best == null || hit.length() > best.length()) {
+                    best = hit;
+                }
+            }
+        }
+        return best != null ? truncate(best, 24) : null;
+    }
+
+    private Integer toIntOrNull(Object value) {
+        if (value == null) {
+            return null;
+        }
+        try {
+            return (int) Double.parseDouble(String.valueOf(value));
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    /**
+     * 找一条"刚刚把**我**写进了 TA 的行动"的别人的行动（用来做叙事衔接）。
+     *
+     * 实测问题：希希芙那一步写了「两人回到了潮声集市」，18 秒后特蕾莎那一步却还留在挖掘区，
+     * 两条行动互相矛盾。这里把"刚才有人写到过你"的那一步找出来，提示词末尾原文照给 +
+     * 硬性要求（必须衔接、冲突要圆过去、不许替对方决定行动）。
+     *
+     * 只看「我上次行动之后、且不超过 6 小时」的别人的记录，避免翻出很旧的事。
+     */
+    private SandboxAct actThatMentionedMe(SandboxCharacter me) {
+        if (me == null || me.getId() == null || me.getWorldId() == null || !notBlank(me.getName())) {
+            return null;
+        }
+        LocalDateTime floor = clock().minusHours(6);
+        LocalDateTime since = me.getLastRunTime() == null ? floor
+                : (me.getLastRunTime().isAfter(floor) ? me.getLastRunTime() : floor);
+        List<SandboxAct> candidates = actMapper.selectList(new LambdaQueryWrapper<SandboxAct>()
+                .eq(SandboxAct::getWorldId, me.getWorldId())
+                .ne(SandboxAct::getCharacterId, me.getId())
+                .ge(SandboxAct::getCreateTime, since)
+                .isNotNull(SandboxAct::getCompanions)
+                .orderByDesc(SandboxAct::getCreateTime)
+                .last("limit 10"));
+        String myName = me.getName().trim();
+        for (SandboxAct act : candidates) {
+            for (String name : trimToEmpty(act.getCompanions()).split("[,，、]")) {
+                if (myName.equals(name.trim())) {
+                    return act;
+                }
+            }
+        }
+        return null;
+    }
+
+    private boolean encounterExempt(SandboxCharacter character, SandboxLocation spot) {
+        if (character == null || spot == null || !notBlank(character.getEncounterExemptLocations())) {
+            return false;
+        }
+        String name = trimToEmpty(spot.getName());
+        if (name.isEmpty()) {
+            return false;
+        }
+        for (String part : character.getEncounterExemptLocations().split("[,，、]")) {
+            if (name.equals(part.trim())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** 把免遭遇名单规范化成"地点名,地点名"，顺手去掉不存在的与重复的 */
+    private String normalizeExemptLocations(String raw, Long worldId) {
+        if (!notBlank(raw)) {
+            return null;
+        }
+        Set<String> names = new HashSet<>();
+        for (SandboxLocation location : locations(worldId)) {
+            if (notBlank(location.getName())) {
+                names.add(location.getName().trim());
+            }
+        }
+        List<String> kept = new ArrayList<>();
+        for (String part : raw.split("[,，、]")) {
+            String name = part.trim();
+            if (!name.isEmpty() && names.contains(name) && !kept.contains(name)) {
+                kept.add(name);
+            }
+        }
+        return kept.isEmpty() ? null : truncate(String.join(",", kept), 300);
     }
 
     /**
@@ -4902,6 +5539,23 @@ public class SandboxServiceImpl implements SandboxService {
                 item.setWorldId(resolveWorldId(item.getWorldId(), item.getCharacterId()));
             }
             item.setRarity(rarity == null ? inferRarity(item.getName()) : rarity);
+            // 装备字段：管理员没填就按物品名识别（武器/防具/饰品），加成按品质区间夹取；
+            // 新角色的初始物品、后台手工添加的武器都走这条路径
+            if (equipOn()) {
+                String slot = SandboxEquip.normalizeSlot(item.getSlot());
+                if (!SandboxEquip.wearable(slot)) {
+                    slot = SandboxEquip.guessSlot(item.getName());
+                }
+                item.setSlot(slot);
+                item.setPowerBonus(SandboxEquip.wearable(slot)
+                        ? SandboxEquip.clampBonus(equipBonusTable(), item.getRarity(), item.getPowerBonus())
+                        : 0);
+            } else {
+                item.setSlot(SandboxEquip.SLOT_NONE);
+                item.setPowerBonus(0);
+            }
+            item.setEquipped(0);
+            item.setBroken(0);
             item.setIcon(icon == null || icon.isEmpty() ? null : icon);
             item.setId(null);
             item.setCreateTime(now);
@@ -4923,7 +5577,21 @@ public class SandboxServiceImpl implements SandboxService {
         if (item.getDescription() != null) {
             wrapper.set(SandboxItem::getDescription, item.getDescription());
         }
+        // 槽位/加成：后台手动改这两项时同步夹取（改成非装备会自动从装备栏取下）
+        if (item.getSlot() != null) {
+            String slot = SandboxEquip.normalizeSlot(item.getSlot());
+            wrapper.set(SandboxItem::getSlot, slot);
+            if (!SandboxEquip.wearable(slot)) {
+                wrapper.set(SandboxItem::getPowerBonus, 0);
+                wrapper.set(SandboxItem::getEquipped, 0);
+            } else if (item.getPowerBonus() != null) {
+                wrapper.set(SandboxItem::getPowerBonus, SandboxEquip.clampBonus(equipBonusTable(),
+                        rarity == null ? exists.getRarity() : rarity, item.getPowerBonus()));
+            }
+        }
         itemMapper.update(null, wrapper);
+        // 装备变动后把角色的装备加成合计重算一遍
+        recalcEquipPower(exists.getCharacterId());
         item.setId(exists.getId());
         item.setRarity(rarity == null ? exists.getRarity() : rarity);
         item.setIcon(icon == null ? exists.getIcon() : icon);
@@ -4932,7 +5600,447 @@ public class SandboxServiceImpl implements SandboxService {
 
     @Override
     public void deleteItem(Long id) {
+        SandboxItem item = itemMapper.selectById(id);
         itemMapper.deleteById(id);
+        // 删掉的如果是身上的装备，加成要跟着掉下来
+        if (item != null) {
+            recalcEquipPower(item.getCharacterId());
+        }
+    }
+
+    // ============================== 装备栏 ==============================
+
+    /**
+     * 装备栏开关（后台可关）。
+     * 关掉之后：提示词里不给装备规则，AI 的 equip_change 一律忽略，前台也不显示装备栏。
+     */
+    private boolean equipOn() {
+        return "1".equals(configService.getConfigValue("sandbox_equip_enabled", "1"));
+    }
+
+    /** 装备加成区间（后台可改，例如 "1-10,10-20,20-30,30-60,60-120" 对应品质 1~5） */
+    private String equipBonusTable() {
+        return configService.getConfigValue("sandbox_equip_bonus_by_rarity", SandboxEquip.DEFAULT_BONUS_TABLE);
+    }
+
+    /** 角色装备栏：按「武器 → 副手 → 护具 → 饰品」排序，槽位异常的历史数据排在最后 */
+    private List<SandboxItem> equipmentOf(Long characterId) {
+        if (characterId == null) {
+            return new ArrayList<>();
+        }
+        List<SandboxItem> equipped = itemMapper.selectList(new LambdaQueryWrapper<SandboxItem>()
+                .eq(SandboxItem::getCharacterId, characterId)
+                .eq(SandboxItem::getEquipped, 1)
+                .orderByAsc(SandboxItem::getId));
+        List<SandboxItem> ordered = new ArrayList<>();
+        for (String slot : SandboxEquip.SLOTS) {
+            for (SandboxItem item : equipped) {
+                if (slot.equals(SandboxEquip.normalizeSlot(item.getSlot()))) {
+                    ordered.add(item);
+                }
+            }
+        }
+        for (SandboxItem item : equipped) {
+            if (!ordered.contains(item)) {
+                ordered.add(item);
+            }
+        }
+        return ordered;
+    }
+
+    /** 装备加成合计：破损的不算（事件式破损后加成归零） */
+    private int equipBonusSum(Long characterId) {
+        int sum = 0;
+        for (SandboxItem item : equipmentOf(characterId)) {
+            if (item.getBroken() != null && item.getBroken() == 1) {
+                continue;
+            }
+            sum += item.getPowerBonus() == null ? 0 : Math.max(0, item.getPowerBonus());
+        }
+        return sum;
+    }
+
+    /**
+     * 按装备栏重算角色的装备加成并写回（每次装备变动、每次行动后都跑一遍）。
+     * 顺手把"装备加成"与"装备栏内容"对上，避免出现加成了但没有装备、或反过来。
+     */
+    @Override
+    public int recalcEquipPower(Long characterId) {
+        if (characterId == null) {
+            return 0;
+        }
+        int sum = equipBonusSum(characterId);
+        characterMapper.update(null, new LambdaUpdateWrapper<SandboxCharacter>()
+                .eq(SandboxCharacter::getId, characterId)
+                .set(SandboxCharacter::getEquipPower, sum));
+        return sum;
+    }
+
+    /** 有效战斗力 = 自身实力 + 装备加成（提示词、遭遇判定、前台显示统一用这个） */
+    private int totalPower(SandboxCharacter character) {
+        int own = character.getCombatPower() == null ? COMBAT_POWER_DEFAULT : character.getCombatPower();
+        return own + (character.getEquipPower() == null ? 0 : character.getEquipPower());
+    }
+
+    /** 后台：把某件物品装备上（equipped=1）或卸下（equipped=0） */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public SandboxItem setEquip(Long itemId, Integer equipped) {
+        SandboxItem item = itemMapper.selectById(itemId);
+        if (item == null) {
+            throw new BusinessException("物品不存在");
+        }
+        boolean on = equipped != null && equipped == 1;
+        if (!on) {
+            itemMapper.update(null, new LambdaUpdateWrapper<SandboxItem>()
+                    .eq(SandboxItem::getId, itemId)
+                    .set(SandboxItem::getEquipped, 0)
+                    .set(SandboxItem::getUpdateTime, LocalDateTime.now()));
+            recalcEquipPower(item.getCharacterId());
+            return itemMapper.selectById(itemId);
+        }
+        if (item.getBroken() != null && item.getBroken() == 1) {
+            throw new BusinessException("「" + item.getName() + "」已经破损，先修复再装备");
+        }
+        String slot = SandboxEquip.normalizeSlot(item.getSlot());
+        if (!SandboxEquip.wearable(slot)) {
+            slot = SandboxEquip.guessSlot(item.getName());
+        }
+        if (!SandboxEquip.wearable(slot)) {
+            throw new BusinessException("这件物品不是装备（可以在下面手动指定槽位）");
+        }
+        SandboxCharacter character = characterMapper.selectById(item.getCharacterId());
+        int own = character == null || character.getCombatPower() == null
+                ? COMBAT_POWER_DEFAULT : character.getCombatPower();
+        int bonus = SandboxEquip.clampBonus(equipBonusTable(),
+                item.getRarity() == null ? 1 : item.getRarity(), item.getPowerBonus());
+        if (!SandboxEquip.canWear(bonus, own)) {
+            throw new BusinessException("装备加成 " + bonus + " 超过了「"
+                    + (character == null ? "角色" : character.getName()) + "」的自身实力 " + own
+                    + "：拿不动的东西穿不上，可以先降低这件装备的加成，或等它练得更强");
+        }
+        // 同槽位顶替：一个槽位只留一件
+        for (SandboxItem other : equipmentOf(item.getCharacterId())) {
+            if (!other.getId().equals(itemId)
+                    && slot.equals(SandboxEquip.normalizeSlot(other.getSlot()))) {
+                itemMapper.update(null, new LambdaUpdateWrapper<SandboxItem>()
+                        .eq(SandboxItem::getId, other.getId())
+                        .set(SandboxItem::getEquipped, 0));
+            }
+        }
+        itemMapper.update(null, new LambdaUpdateWrapper<SandboxItem>()
+                .eq(SandboxItem::getId, itemId)
+                .set(SandboxItem::getSlot, slot)
+                .set(SandboxItem::getPowerBonus, bonus)
+                .set(SandboxItem::getEquipped, 1)
+                .set(SandboxItem::getUpdateTime, LocalDateTime.now()));
+        recalcEquipPower(item.getCharacterId());
+        return itemMapper.selectById(itemId);
+    }
+
+    /** 后台：修复破损装备（去前缀、清破损标记；加成由加成区间重新推回） */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public SandboxItem repairItem(Long itemId) {
+        SandboxItem item = itemMapper.selectById(itemId);
+        if (item == null) {
+            throw new BusinessException("物品不存在");
+        }
+        String name = SandboxEquip.repairedName(item.getName());
+        // 修复后把加成补回来：正常情况下原值还在（破损只是"不算进战斗力"），
+        // 只有历史数据（加成为 0）才用品质区间中点兜底
+        int rarity = item.getRarity() == null ? 1 : item.getRarity();
+        int bonus = item.getPowerBonus() != null && item.getPowerBonus() > 0
+                ? SandboxEquip.clampBonus(equipBonusTable(), rarity, item.getPowerBonus())
+                : SandboxEquip.clampBonus(equipBonusTable(), rarity, 0);
+        String slot = SandboxEquip.normalizeSlot(item.getSlot());
+        if (!SandboxEquip.wearable(slot)) {
+            slot = SandboxEquip.guessSlot(name);
+        }
+        itemMapper.update(null, new LambdaUpdateWrapper<SandboxItem>()
+                .eq(SandboxItem::getId, itemId)
+                .set(SandboxItem::getName, name)
+                .set(SandboxItem::getBroken, 0)
+                .set(SandboxItem::getSlot, slot)
+                .set(SandboxItem::getPowerBonus, SandboxEquip.wearable(slot) ? bonus : 0)
+                .set(SandboxItem::getUpdateTime, LocalDateTime.now()));
+        recalcEquipPower(item.getCharacterId());
+        return itemMapper.selectById(itemId);
+    }
+
+    /**
+     * 这一步 AI 的装备动作（equip_change）。
+     *
+     * 格式：{"equip":["精钢长剑"],"unequip":["木盾"],"broken":["旧斗篷"]}
+     *   · equip 里也可以写成对象 {"name":"精钢长剑","slot":"weapon","bonus":24}，
+     *     省事的写法是只给名字——槽位与加成会按物品已有数据 / 名字关键词 / 品质区间推出来；
+     *   · 服务端规则：一个槽位只留一件（自动顶替旧的）、破损的穿不上、加成按品质区间夹取、
+     *     **加成不能超过自身实力**（违反时这一步的装备无效，并交给 AI 二次自检改写）。
+     */
+    private EquipActResult applyEquipChanges(SandboxCharacter character, JSONObject obj,
+                                             SandboxAct act, boolean manual, boolean allowSelfCheck) {
+        EquipActResult result = new EquipActResult();
+        if (!equipOn() || character == null || obj == null) {
+            return result;
+        }
+        Object raw = obj.get("equip_change");
+        if (!(raw instanceof JSONObject)) {
+            return result;
+        }
+        JSONObject change = (JSONObject) raw;
+        if (change.isEmpty()) {
+            return result;
+        }
+        int own = character.getCombatPower() == null ? COMBAT_POWER_DEFAULT : character.getCombatPower();
+        String table = equipBonusTable();
+        List<String> notes = new ArrayList<>();
+        LocalDateTime now = LocalDateTime.now();
+
+        // ① 破损：先卸下、改名后留在背包（"装备了又破损"时以破损为准）。
+        //    加成数值留在物品上但**不再计入战斗力**（equipBonusSum 会跳过 broken），
+        //    这样后台点「修复」之后还是原来那件装备，而不是被"修成"一件中庸货
+        for (Object entry : entries(change.get("broken"))) {
+            SandboxItem item = findItemByName(character.getId(), entryName(entry));
+            if (item == null) {
+                continue;
+            }
+            itemMapper.update(null, new LambdaUpdateWrapper<SandboxItem>()
+                    .eq(SandboxItem::getId, item.getId())
+                    .set(SandboxItem::getName, SandboxEquip.brokenName(item.getName()))
+                    .set(SandboxItem::getEquipped, 0)
+                    .set(SandboxItem::getBroken, 1)
+                    .set(SandboxItem::getUpdateTime, now));
+            notes.add("「" + item.getName() + "」破损，已从装备栏取下");
+        }
+        // ② 卸下
+        for (Object entry : entries(change.get("unequip"))) {
+            SandboxItem item = findItemByName(character.getId(), entryName(entry));
+            if (item == null || item.getEquipped() == null || item.getEquipped() != 1) {
+                continue;
+            }
+            itemMapper.update(null, new LambdaUpdateWrapper<SandboxItem>()
+                    .eq(SandboxItem::getId, item.getId())
+                    .set(SandboxItem::getEquipped, 0)
+                    .set(SandboxItem::getUpdateTime, now));
+            notes.add("卸下「" + item.getName() + "」");
+        }
+        // ③ 装备
+        for (Object entry : entries(change.get("equip"))) {
+            String rawName = entryName(entry);
+            if (rawName.isEmpty()) {
+                continue;
+            }
+            SandboxItem item = findItemByName(character.getId(), rawName);
+            if (item == null) {
+                notes.add("背包里没有「" + rawName + "」，没装上");
+                continue;
+            }
+            if (item.getBroken() != null && item.getBroken() == 1) {
+                notes.add("「" + item.getName() + "」已经破损，穿不上");
+                continue;
+            }
+            String slot = SandboxEquip.normalizeSlot(entrySlot(entry) == null
+                    ? item.getSlot() : entrySlot(entry));
+            if (!SandboxEquip.wearable(slot)) {
+                slot = SandboxEquip.guessSlot(item.getName());
+            }
+            if (!SandboxEquip.wearable(slot)) {
+                notes.add("「" + item.getName() + "」不是能穿戴的东西");
+                continue;
+            }
+            Integer aiBonus = entryBonus(entry) == null ? item.getPowerBonus() : entryBonus(entry);
+            int bonus = SandboxEquip.clampBonus(table, item.getRarity() == null ? 1 : item.getRarity(), aiBonus);
+            if (!SandboxEquip.canWear(bonus, own)) {
+                // 关键规则：拿不动的东西穿不上，交给 AI 自检把这一步改写掉
+                result.violation = "「" + item.getName() + "」的装备加成是 " + bonus
+                        + "，超过了角色的自身实力 " + own + "（规则：装备加成不能超过自身实力）";
+                notes.add("「" + item.getName() + "」拿不动（加成 " + bonus + " > 自身实力 " + own + "），没装上");
+                continue;
+            }
+            for (SandboxItem other : equipmentOf(character.getId())) {
+                if (other.getId().equals(item.getId())) {
+                    continue;
+                }
+                if (slot.equals(SandboxEquip.normalizeSlot(other.getSlot()))) {
+                    itemMapper.update(null, new LambdaUpdateWrapper<SandboxItem>()
+                            .eq(SandboxItem::getId, other.getId())
+                            .set(SandboxItem::getEquipped, 0)
+                            .set(SandboxItem::getUpdateTime, now));
+                    notes.add("卸下「" + other.getName() + "」（" + SandboxEquip.slotLabel(slot) + "换成了新的）");
+                }
+            }
+            itemMapper.update(null, new LambdaUpdateWrapper<SandboxItem>()
+                    .eq(SandboxItem::getId, item.getId())
+                    .set(SandboxItem::getSlot, slot)
+                    .set(SandboxItem::getPowerBonus, bonus)
+                    .set(SandboxItem::getEquipped, 1)
+                    .set(SandboxItem::getUpdateTime, now));
+            notes.add("装备「" + item.getName() + "」（" + SandboxEquip.slotLabel(slot) + " +" + bonus + "）");
+        }
+        recalcEquipPower(character.getId());
+        if (notes.isEmpty()) {
+            return result;
+        }
+        result.note = truncate(String.join("、", notes), 290);
+        // 违反了"拿不动"规则：让 AI 自己回看一步、把这一步改口（只允许一次，避免来回调用）
+        if (allowSelfCheck && result.violation != null) {
+            String corrected = selfCheckEquipViolation(character, obj, result.violation, act, manual);
+            if (corrected != null) {
+                result.note = truncate(result.note + "；已让 AI 自检改写：" + corrected, 290);
+            }
+        }
+        return result;
+    }
+
+    /** equip_change 里的一项：字符串就是物品名，对象则取 name / slot / bonus */
+    private List<Object> entries(Object raw) {
+        List<Object> list = new ArrayList<>();
+        if (raw instanceof JSONArray) {
+            for (Object element : (JSONArray) raw) {
+                list.add(element);
+            }
+        } else if (raw instanceof JSONObject) {
+            // 兼容写法：{"装备":[{"name":"铁剑","slot":"weapon"}]}
+            JSONObject obj = (JSONObject) raw;
+            if (obj.containsKey("name")) {
+                list.add(obj);
+            }
+        }
+        return list;
+    }
+
+    private String entryName(Object entry) {
+        if (entry == null) {
+            return "";
+        }
+        if (entry instanceof JSONObject) {
+            String name = ((JSONObject) entry).getStr("name");
+            return name == null ? "" : name.trim();
+        }
+        return String.valueOf(entry).trim();
+    }
+
+    private String entrySlot(Object entry) {
+        return entry instanceof JSONObject ? ((JSONObject) entry).getStr("slot") : null;
+    }
+
+    private Integer entryBonus(Object entry) {
+        return entry instanceof JSONObject ? Convert.toInt(((JSONObject) entry).get("bonus"), null) : null;
+    }
+
+    /**
+     * 新得到的物品：识别它是不是装备（AI 声明的槽位优先，其次按名字猜），
+     * 加成按品质区间夹取后落库（AI 没给就取区间中点——历史物品没有加成数据）。
+     */
+    private void applyEquipFields(SandboxItem item, Object raw) {
+        item.setEquipped(0);
+        item.setBroken(0);
+        if (!equipOn()) {
+            item.setSlot(SandboxEquip.SLOT_NONE);
+            item.setPowerBonus(0);
+            return;
+        }
+        String rawSlot = entrySlot(raw);
+        String slot = SandboxEquip.normalizeSlot(rawSlot);
+        // 字段说了算：明确写了非装备（none）就不再去猜名字；
+        // 只有**没给这个字段**时才按名字兜底（历史数据、AI 漏写）
+        if (!SandboxEquip.wearable(slot) && (rawSlot == null || rawSlot.trim().isEmpty())) {
+            slot = SandboxEquip.guessSlot(item.getName());
+        }
+        item.setSlot(slot);
+        if (!SandboxEquip.wearable(slot)) {
+            item.setPowerBonus(0);
+            return;
+        }
+        int rarity = item.getRarity() == null ? 1 : item.getRarity();
+        item.setPowerBonus(SandboxEquip.clampBonus(equipBonusTable(), rarity, entryBonus(raw)));
+    }
+
+    /** 按（规范化后的）物品名找背包里的一件东西 */
+    private SandboxItem findItemByName(Long characterId, String name) {
+        String normalized = SandboxItemName.normalize(name);
+        if (normalized.isEmpty()) {
+            return null;
+        }
+        return itemMapper.selectOne(new LambdaQueryWrapper<SandboxItem>()
+                .eq(SandboxItem::getCharacterId, characterId)
+                .eq(SandboxItem::getName, normalized)
+                .last("limit 1"));
+    }
+
+    /**
+     * 「拿不动」违规时的二次自检：把服务端规则原样告诉 AI，让它把这一步的装备动作改掉。
+     * 只让它改 equip_change（外加 actions / summary），别的字段不动，避免它借机改地点或改战力。
+     */
+    private String selfCheckEquipViolation(SandboxCharacter character, JSONObject obj, String reason,
+                                           SandboxAct act, boolean manual) {
+        AiProvider provider = manual ? aiProviderService.resolveManualProvider(character.getProviderId())
+                : sandboxSystemProvider(character);
+        StringBuilder sys = new StringBuilder();
+        sys.append("你是同一个角色的扮演者，现在要修正你刚才那一步的输出。\n")
+                .append("你刚才让角色装备了一件**它拿不动**的东西，服务端没有接受这次装备。\n")
+                .append("请诚实地改掉：这一步要么只是「试着拿起 / 看了看 / 放下了它」，要么改成拿得动的做法。\n")
+                .append("硬性要求：\n")
+                .append("1. 只输出一个 JSON 对象，不要解释文字、不要 Markdown 代码块；\n")
+                .append("2. 只输出这三个字段：equip_change、actions、summary；\n")
+                .append("3. equip_change 里**不要再出现那件拿不动的装备**（可以是空对象 {}，或者换一件拿得动的）；\n")
+                .append("4. actions 保持 3~6 条，写清这一步实际做了什么（例如试了试发现太重，只好放下）；\n")
+                .append("5. 不要改地点、不要改战斗力、不要新增别的字段。\n")
+                .append("输出格式：{\"equip_change\":{},\"actions\":[\"……\",\"……\"],\"summary\":\"30 字以内概括\"}\n");
+        StringBuilder user = new StringBuilder();
+        user.append("【角色】").append(character.getName())
+                .append("（自身实力 ").append(character.getCombatPower() == null
+                        ? COMBAT_POWER_DEFAULT : character.getCombatPower()).append("）\n")
+                .append("【服务端判定没通过的原因】").append(reason).append("\n")
+                .append("\n【你刚才那一步的输出】\n")
+                .append(truncate(obj == null ? "" : obj.toString(), 2000)).append("\n");
+        String prevAction = AuditContext.action();
+        boolean prevScheduled = AuditContext.isSchedule();
+        boolean preset = AuditContext.isSet();
+        applyAudit(prevAction, prevScheduled, "沙盒·装备自检修正");
+        String raw;
+        try {
+            raw = aiProviderService.chat(provider, character.getModel(), sys.toString(), user.toString(), 0.3d);
+        } catch (Exception e) {
+            log.warn("沙盒角色「{}」的装备自检修正调用失败：{}", character.getName(), e.getMessage());
+            return null;
+        } finally {
+            if (preset) {
+                applyAudit(prevAction, prevScheduled, prevAction);
+            } else {
+                AuditContext.clear();
+            }
+        }
+        JSONObject fix = parseJson(raw);
+        if (fix == null) {
+            log.info("沙盒角色「{}」的装备自检修正没有返回可用 JSON", character.getName());
+            return null;
+        }
+        if (act != null) {
+            String actions = joinActions(fix.getJSONArray("actions"));
+            if (actions != null && !actions.trim().isEmpty()) {
+                act.setActions(truncate(actions, 1000));
+            }
+            String summary = truncate(trimToEmpty(fix.getStr("summary")), 280);
+            if (summary != null && !summary.isEmpty()) {
+                act.setSummary(summary);
+            }
+        }
+        // 把 AI 改写后的装备动作重新应用一次（不再递归自检）
+        JSONObject wrapper = new JSONObject();
+        wrapper.set("equip_change", fix.get("equip_change"));
+        EquipActResult redo = applyEquipChanges(character, wrapper, act, manual, false);
+        log.info("沙盒角色「{}」的装备自检修正完成（原因：{}）", character.getName(), reason);
+        if (redo.note != null && !redo.note.isEmpty()) {
+            return redo.note;
+        }
+        return "这一步改成没有装备它";
+    }
+
+    /** 装备动作的结果：note 写给前台看的说明，violation 是"拿不动"违规原因（非空表示要自检） */
+    private static class EquipActResult {
+        private String note;
+        private String violation;
     }
 
     // ============================== 旅人纪闻 ==============================
@@ -5320,6 +6428,9 @@ public class SandboxServiceImpl implements SandboxService {
                 created.setRarity(inferRarity(name));
                 // 物品描述来自 AI（提示词里要求新获得的物品必须给描述）
                 created.setDescription(truncate(aiDescription, 300));
+                // 装备：AI 可以顺手声明槽位与加成（加成会按品质区间夹取后落库），
+                // 没声明时按物品名猜——「精钢长剑」是武器、「银叶草」不是装备
+                applyEquipFields(created, obj.get(key));
                 created.setCreateTime(now);
                 created.setUpdateTime(now);
                 itemMapper.insert(created);
@@ -5384,9 +6495,11 @@ public class SandboxServiceImpl implements SandboxService {
     // ============================== 每日记忆 ==============================
 
     @Override
-    public PageResult<SandboxMemory> memoryPage(Long characterId, long page, long size) {
+    public PageResult<SandboxMemory> memoryPage(Long characterId, String date, long page, long size) {
         LambdaQueryWrapper<SandboxMemory> wrapper = new LambdaQueryWrapper<SandboxMemory>()
                 .eq(characterId != null, SandboxMemory::getCharacterId, characterId)
+                .eq(notBlank(date), SandboxMemory::getMemoryDate,
+                        notBlank(date) ? LocalDate.parse(date.trim()) : null)
                 .orderByDesc(SandboxMemory::getMemoryDate)
                 .orderByAsc(SandboxMemory::getCharacterId);
         IPage<SandboxMemory> result = memoryMapper.selectPage(new Page<>(page, size), wrapper);
@@ -5439,20 +6552,24 @@ public class SandboxServiceImpl implements SandboxService {
     }
 
     @Override
-    public void summarizeOn(String date) {
+    public int summarizeOn(String date) {
         LocalDate target;
         try {
             target = date == null || date.trim().isEmpty() ? LocalDate.now() : LocalDate.parse(date.trim());
         } catch (Exception e) {
             throw new BusinessException("日期格式应为 yyyy-MM-dd");
         }
-        summarizeFor(target, false);
+        return summarizeFor(target, false);
     }
 
-    /** 生成指定日期的记忆；schedule=true 表示由定时任务触发（审计日志区分来源） */
-    private void summarizeFor(LocalDate date, boolean schedule) {
+    /**
+     * 生成指定日期的记忆；schedule=true 表示由定时任务触发（审计日志区分来源）。
+     *
+     * @return 实际写入 / 覆盖的记忆条数（那天没有行动的角色不算）
+     */
+    private int summarizeFor(LocalDate date, boolean schedule) {
         if (!"1".equals(configService.getConfigValue("sandbox_memory_enabled", "1"))) {
-            return;
+            return 0;
         }
         boolean preset = AuditContext.isSet();
         if (!preset) {
@@ -5462,6 +6579,7 @@ public class SandboxServiceImpl implements SandboxService {
                 AuditContext.manual("沙盒·补生成记忆");
             }
         }
+        int written = 0;
         try {
             for (SandboxCharacter character : characterMapper.selectList(null)) {
                 // 定时总结只处理「运行中」的世界，避免已停止的世界白烧 AI 额度；
@@ -5470,7 +6588,9 @@ public class SandboxServiceImpl implements SandboxService {
                     continue;
                 }
                 try {
-                    summarize(character, date);
+                    if (summarize(character, date)) {
+                        written++;
+                    }
                 } catch (Exception e) {
                     log.warn("沙盒角色「{}」记忆总结失败：{}", character.getName(), e.getMessage());
                 }
@@ -5480,17 +6600,23 @@ public class SandboxServiceImpl implements SandboxService {
                 AuditContext.clear();
             }
         }
+        log.info("记忆总结完成（{}）：写入/覆盖 {} 条", date, written);
+        return written;
     }
 
-    /** 把某个角色某一天的行动总结成一条记忆（当天没有行动则跳过） */
-    private void summarize(SandboxCharacter character, LocalDate date) {
+    /**
+     * 把某个角色某一天的行动总结成一条记忆（当天没有行动则跳过）。
+     *
+     * @return 是否真的写了一条记忆
+     */
+    private boolean summarize(SandboxCharacter character, LocalDate date) {
         List<SandboxAct> acts = actMapper.selectList(new LambdaQueryWrapper<SandboxAct>()
                 .eq(SandboxAct::getCharacterId, character.getId())
                 .ge(SandboxAct::getCreateTime, date.atStartOfDay())
                 .lt(SandboxAct::getCreateTime, date.plusDays(1).atStartOfDay())
                 .orderByAsc(SandboxAct::getCreateTime));
         if (acts.isEmpty()) {
-            return;
+            return false;
         }
         String summary = null;
         boolean fromAi = true;
@@ -5540,6 +6666,7 @@ public class SandboxServiceImpl implements SandboxService {
                     .ge(SandboxAct::getCreateTime, date.atStartOfDay())
                     .lt(SandboxAct::getCreateTime, date.plusDays(1).atStartOfDay()));
         }
+        return true;
     }
 
     /** 让 AI 把一天的流水整理成一段第一人称的长期记忆 */
@@ -6673,6 +7800,15 @@ public class SandboxServiceImpl implements SandboxService {
         if (item.getSource() == null) {
             item.setSource("admin");
         }
+        // 装备字段：管理员填的槽位说了算（none/空 = 不是装备），加成按品质区间夹取；
+        // 没填槽位时不动已有值（编辑别的字段不会把装备属性清掉）
+        if (item.getSlot() != null) {
+            String slot = SandboxEquip.normalizeSlot(item.getSlot());
+            item.setSlot(slot);
+            item.setPowerBonus(SandboxEquip.wearable(slot)
+                    ? SandboxEquip.clampBonus(equipBonusTable(), item.getRarity(), item.getPowerBonus())
+                    : 0);
+        }
         if (item.getId() == null) {
             if (item.getWorldId() == null) {
                 item.setWorldId(worldId(null));
@@ -6739,12 +7875,19 @@ public class SandboxServiceImpl implements SandboxService {
                 .append("要求：\n")
                 .append("1. 商品必须符合这个世界观（技术水平、魔法程度、风俗），不要出现现代物品；\n")
                 .append("2. 每件商品给一句 15~40 字的描述，最好带一点来源或用途的故事感（例如「上个旅人当掉的旧罗盘」）；\n")
+                .append("   商品名随你发挥，怎么好听、怎么符合世界观都行（「青光」这种代号也可以）；\n")
+                .append("   但**能不能穿戴是由字段决定的**：能穿戴的武器 / 副手 / 防具 / 饰品，"
+                        + "请给出 \"slot\" 与 \"power_bonus\" 两个字段——")
+                .append("slot 取 weapon / offhand / armor / accessory，power_bonus 是它带来的战斗力加成；")
+                .append("不是装备（药水、材料、食物、杂物、卷轴……）就**不要**写这两个字段；\n")
                 .append("3. rarity 是品质：1 普通 / 2 精良 / 3 稀有 / 4 史诗 / 5 传说，大多数应该是 1~2，偶尔才有 3~4；\n")
                 .append("4. price 是售价（金币，世界里的通用货币），要和品质相称：")
                 .append("普通 1~5、精良 3~10、稀有 6~18、史诗 12~30、传说 25~50；\n")
                 .append("5. stock 是今天的库存：1~5 件，越是好东西越少；\n")
                 .append("6. 只输出一个 JSON 数组，不要解释、不要 Markdown 代码块。\n")
-                .append("输出格式：[{\"name\":\"商品名\",\"description\":\"描述\",\"rarity\":1,\"price\":3,\"stock\":2}]\n");
+                .append("输出格式：[{\"name\":\"商品名\",\"description\":\"描述\",\"rarity\":1,\"price\":3,\"stock\":2,")
+                .append("\"slot\":\"weapon\",\"power_bonus\":12}]\n")
+                .append("（slot 与 power_bonus 只在这件商品是能穿戴的装备时才写；普通商品省略这两个字段）\n");
         if (notBlank(extra)) {
             sys.append("附加要求：").append(extra).append("\n");
         }
@@ -6815,6 +7958,12 @@ public class SandboxServiceImpl implements SandboxService {
             createdItem.setName(name);
             createdItem.setDescription(truncate(trimToEmpty(item.getStr("description")), 300));
             createdItem.setRarity(rarity);
+            // 装备字段由 AI 直接声明（不是装备的商品不写这两个字段 → none / 0）
+            String slot = SandboxEquip.normalizeSlot(item.getStr("slot"));
+            createdItem.setSlot(slot);
+            createdItem.setPowerBonus(SandboxEquip.wearable(slot)
+                    ? SandboxEquip.clampBonus(equipBonusTable(), rarity, Convert.toInt(item.get("power_bonus"), null))
+                    : 0);
             createdItem.setPrice(price);
             createdItem.setStock(stock);
             createdItem.setTotalStock(stock);
@@ -6979,12 +8128,26 @@ public class SandboxServiceImpl implements SandboxService {
 
     /** 礼物进角色背包（数量固定 1 件） */
     private void addGiftToBackpack(SandboxCharacter character, SandboxShopItem item) {
-        addToBackpack(character, item.getName(), 1, item.getRarity(), item.getIcon(), item.getDescription());
+        addToBackpack(character, item.getName(), 1, item.getRarity(), item.getIcon(), item.getDescription(),
+                item.getSlot(), item.getPowerBonus());
     }
 
     /** 物品进角色背包：已有就加数量，没有就新建一件 */
     private void addToBackpack(SandboxCharacter character, String name, int quantity,
                               Integer rarity, String icon, String description) {
+        addToBackpack(character, name, quantity, rarity, icon, description, null, null);
+    }
+
+    /**
+     * 物品进角色背包（带装备字段的版本）。
+     *
+     * 是不是装备**由 slot 字段决定**（集市商品、委托奖励都带着这个字段进门），
+     * 只有字段缺失时（历史数据、AI 忘了写）才按名字猜一次——
+     * 这样 AI 想给一把剑取名「青光」也没问题，穿不穿得上不看名字。
+     */
+    private void addToBackpack(SandboxCharacter character, String name, int quantity,
+                              Integer rarity, String icon, String description,
+                              String slot, Integer powerBonus) {
         LocalDateTime now = LocalDateTime.now();
         for (SandboxItem owned : items(character.getId())) {
             if (owned.getName() != null && owned.getName().equals(name)) {
@@ -7004,6 +8167,25 @@ public class SandboxServiceImpl implements SandboxService {
         created.setRarity(rarity);
         created.setIcon(icon);
         created.setDescription(truncate(description, 300));
+        // 装备：字段说了算（集市商品 / 委托奖励都有自己的 slot 与 power_bonus）；
+        // 字段没给才按名字猜，作为历史数据与 AI 漏写的兜底
+        String rawSlot = slot == null ? null : slot.trim();
+        String normalizedSlot = SandboxEquip.normalizeSlot(rawSlot);
+        if (equipOn() && SandboxEquip.wearable(normalizedSlot)) {
+            created.setSlot(normalizedSlot);
+            created.setPowerBonus(SandboxEquip.clampBonus(equipBonusTable(),
+                    rarity == null ? 1 : rarity, powerBonus));
+            created.setEquipped(0);
+            created.setBroken(0);
+        } else if (rawSlot != null && !rawSlot.isEmpty()) {
+            // 明确声明了不是装备：听字段的，不按名字猜
+            created.setSlot(SandboxEquip.SLOT_NONE);
+            created.setPowerBonus(0);
+            created.setEquipped(0);
+            created.setBroken(0);
+        } else {
+            applyEquipFields(created, null);
+        }
         created.setCreateTime(now);
         created.setUpdateTime(now);
         itemMapper.insert(created);
@@ -7112,7 +8294,8 @@ public class SandboxServiceImpl implements SandboxService {
             coinsRef[0] = balance;
             boughtCount += quantity;
             boughtNames.add(item.getName());
-            addToBackpack(character, item.getName(), quantity, item.getRarity(), item.getIcon(), item.getDescription());
+            addToBackpack(character, item.getName(), quantity, item.getRarity(), item.getIcon(), item.getDescription(),
+                    item.getSlot(), item.getPowerBonus());
             LocalDateTime now = LocalDateTime.now();
             SandboxShopOrder order = new SandboxShopOrder();
             order.setWorldId(item.getWorldId());
@@ -7416,6 +8599,8 @@ public class SandboxServiceImpl implements SandboxService {
                 .eq(SandboxQuest::getStatus, "completed")
                 .ge(SandboxQuest::getCompletedAt, clock().minusHours(hours))
                 .orderByDesc(SandboxQuest::getCompletedAt)
+                // 同一秒完成的两条要有确定的先后：按 id 兜底，避免"取到哪条看运气"
+                .orderByDesc(SandboxQuest::getId)
                 .last("limit 1"));
     }
 
@@ -7534,6 +8719,9 @@ public class SandboxServiceImpl implements SandboxService {
                 .append("5. difficulty 是 1~5 的难度：1 简单 / 2 一般 / 3 棘手 / 4 危险 / 5 凶险，要和目标地区的危险度相称；\n")
                 .append("6. reward_coins 是报酬金币，要和难度相称：简单 3~10、一般 8~25、棘手 20~50、危险 45~90、凶险 80~150；\n")
                 .append("7. reward_items 是 0~2 件额外奖励（药水、材料、装备之类），每件写 name、rarity 与一句 description；没有就填 []；\n")
+                .append("   能不能穿戴由字段决定：能穿戴的武器 / 副手 / 防具 / 饰品请再给出 \"slot\""
+                        + "（weapon / offhand / armor / accessory）与 \"power_bonus\"（战斗力加成）；"
+                        + "名字随你取，有世界观味道就好；不是装备就别写这两个字段；\n")
                 .append("   rarity 是品质：1 普通 / 2 精良 / 3 稀有 / 4 史诗 / 5 传说——")
                 .append("奖励越丰厚、委托越难，品质越高，但大多数应该是 1~2，偶尔才有 3；\n")
                 .append("8. title 是 10~20 字的委托名（例如「清除晨雾森林的影狼」），要具体、不要抽象；\n")
@@ -7544,7 +8732,9 @@ public class SandboxServiceImpl implements SandboxService {
                 .append("输出格式：[{\"title\":\"清除晨雾森林的影狼\",\"description\":\"…\",\"quest_type\":\"hunt\",")
                 .append("\"difficulty\":2,\"location\":\"晨雾森林\",\"target\":\"清除 3 只影狼并带回狼牙\",")
                 .append("\"power\":22,\"reward_coins\":18,\"reward_items\":[{\"name\":\"治疗药水\",\"rarity\":2,\"quantity\":1,")
-                .append("\"description\":\"淡绿色的低阶恢复药\"}]}]\n");
+                .append("\"description\":\"淡绿色的低阶恢复药\"},")
+                .append("{\"name\":\"黑潮影刃\",\"rarity\":3,\"quantity\":1,\"slot\":\"weapon\",\"power_bonus\":22,")
+                .append("\"description\":\"刃身泛着暗光的短剑\"}]}]\n");
         if (notBlank(extra)) {
             sys.append("附加要求：").append(extra).append("\n");
         }
@@ -7735,6 +8925,17 @@ public class SandboxServiceImpl implements SandboxService {
                 reward.setRarity(clampInt(Convert.toInt(obj.get("rarity"), 1), 1, 5, 1));
                 reward.setQuantity(Math.max(1, Math.min(9, Convert.toInt(obj.get("quantity"), 1))));
                 reward.setDescription(truncate(trimToEmpty(obj.getStr("description")), 40));
+                // 是不是装备由 AI 给的 slot 决定（不是装备就没这个字段）；加成按品质区间夹取
+                String slot = SandboxEquip.normalizeSlot(obj.getStr("slot"));
+                reward.setSlot(slot);
+                Integer aiBonus = Convert.toInt(obj.get("power_bonus"), null);
+                if (aiBonus == null) {
+                    aiBonus = Convert.toInt(obj.get("powerBonus"), null);
+                }
+                reward.setPowerBonus(SandboxEquip.wearable(slot)
+                        ? SandboxEquip.clampBonus(equipBonusTable(), reward.getRarity(),
+                        aiBonus)
+                        : 0);
                 list.add(reward);
                 if (list.size() >= 2) {
                     break;
@@ -7832,7 +9033,9 @@ public class SandboxServiceImpl implements SandboxService {
             if (applied != old) {
                 // 自检修正已经写过更准确的事件说明时，不要用通用文案盖掉它
                 if (result.event == null || result.event.isEmpty()) {
-                    result.event = "委托进度 " + applied + "%：" + current.getTitle();
+                    // 带上"这一步推了多少"：前台行动记录里和金币、物品一样成一个徽章
+                    result.event = "委托进度 " + applied + "%（这一步 +" + (applied - old) + "%）："
+                            + current.getTitle();
                 }
             }
         }
@@ -8104,6 +9307,11 @@ public class SandboxServiceImpl implements SandboxService {
             return true;
         }
         result.event = "完成委托：" + quest.getTitle();
+        // 顺手标出这一步推动了多少进度（前台行动记录里要能看出"这一步做了多少"）
+        int before = Math.max(0, Math.min(100, quest.getProgress() == null ? 0 : quest.getProgress()));
+        if (100 - before > 0) {
+            result.event = "完成委托：" + quest.getTitle() + "（这一步 +" + (100 - before) + "%）";
+        }
         result.title = quest.getTitle();
         if (character == null) {
             return true;
@@ -8135,7 +9343,8 @@ public class SandboxServiceImpl implements SandboxService {
             int quantity = Math.max(1, Math.min(9, reward.getQuantity() == null ? 1 : reward.getQuantity()));
             // 品质跟着委托奖励走（后台可填，AI 生成时也会给），缺省按普通
             int rarity = reward.getRarity() == null ? 1 : Math.max(1, Math.min(5, reward.getRarity()));
-            addToBackpack(character, name, quantity, rarity, null, truncate(reward.getDescription(), 120));
+            addToBackpack(character, name, quantity, rarity, null, truncate(reward.getDescription(), 120),
+                    reward.getSlot(), reward.getPowerBonus());
             notes.add("获得 " + name + " ×" + quantity);
         }
         return notes.isEmpty() ? null : String.join("、", notes);
@@ -8474,12 +9683,25 @@ public class SandboxServiceImpl implements SandboxService {
                 reward.setRarity(clampInt(Convert.toInt(obj.get("rarity"), 1), 1, 5, 1));
                 reward.setQuantity(Math.max(1, Math.min(9, Convert.toInt(obj.get("quantity"), 1))));
                 reward.setDescription(truncate(trimToEmpty(obj.getStr("description")), 120));
+                // 装备字段：奖励里的武器/防具/饰品靠这两个字段识别（不能只看名字）
+                reward.setSlot(SandboxEquip.normalizeSlot(obj.getStr("slot")));
+                // 存库的是 camelCase（powerBonus）；AI 直出的是 snake_case（power_bonus），两种都认
+                reward.setPowerBonus(rewardBonus(obj));
                 list.add(reward);
             }
         } catch (Exception e) {
             log.warn("委托奖励物品 JSON 解析失败：{}", json);
         }
         return list;
+    }
+
+    /** 奖励里的装备加成：AI 用的 power_bonus 与存库用的 powerBonus 都认（缺省 0） */
+    private Integer rewardBonus(JSONObject obj) {
+        Integer value = Convert.toInt(obj.get("powerBonus"), null);
+        if (value == null) {
+            value = Convert.toInt(obj.get("power_bonus"), null);
+        }
+        return value == null ? 0 : Math.max(0, value);
     }
 
     /** 奖励物品列表 → JSON 文本；返回 null 表示"这次不改动"，空数组文本表示"清空" */
@@ -8497,6 +9719,12 @@ public class SandboxServiceImpl implements SandboxService {
             item.setRarity(clampInt(reward.getRarity(), 1, 5, 1));
             item.setQuantity(Math.max(1, Math.min(9, reward.getQuantity() == null ? 1 : reward.getQuantity())));
             item.setDescription(truncate(trimToEmpty(reward.getDescription()), 40));
+            // 装备字段一并序列化：后台手填的奖励也要能带装备（不然完成时又得靠名字猜）
+            String slot = SandboxEquip.normalizeSlot(reward.getSlot());
+            item.setSlot(slot);
+            item.setPowerBonus(SandboxEquip.wearable(slot)
+                    ? SandboxEquip.clampBonus(equipBonusTable(), item.getRarity(), reward.getPowerBonus())
+                    : 0);
             cleaned.add(item);
             if (cleaned.size() >= 5) {
                 break;
@@ -8593,6 +9821,7 @@ public class SandboxServiceImpl implements SandboxService {
             o.set("statusJson", c.getStatusJson());
             o.set("coins", c.getCoins());
             o.set("combatPower", c.getCombatPower());
+            o.set("equipPower", c.getEquipPower());
             characterArray.add(o);
         }
         root.set("characters", characterArray);
@@ -8649,6 +9878,11 @@ public class SandboxServiceImpl implements SandboxService {
             o.set("name", it.getName());
             o.set("quantity", it.getQuantity());
             o.set("rarity", it.getRarity());
+            // 装备相关字段：槽位 / 加成 / 是否已装备 / 是否破损（导入时同样还原）
+            o.set("slot", it.getSlot());
+            o.set("powerBonus", it.getPowerBonus());
+            o.set("equipped", it.getEquipped());
+            o.set("broken", it.getBroken());
             o.set("icon", it.getIcon());
             o.set("description", it.getDescription());
             itemArray.add(o);
@@ -8738,6 +9972,8 @@ public class SandboxServiceImpl implements SandboxService {
             o.set("description", s.getDescription());
             o.set("icon", s.getIcon());
             o.set("rarity", s.getRarity());
+            o.set("slot", s.getSlot());
+            o.set("powerBonus", s.getPowerBonus());
             o.set("price", s.getPrice());
             o.set("originalPrice", s.getOriginalPrice());
             o.set("stock", s.getStock());
@@ -8965,6 +10201,7 @@ public class SandboxServiceImpl implements SandboxService {
                 character.setStatusJson(truncate(o.getStr("statusJson"), 1000));
                 character.setCoins(o.getInt("coins") == null ? 0 : o.getInt("coins"));
                 character.setCombatPower(o.getInt("combatPower") == null ? COMBAT_POWER_DEFAULT : o.getInt("combatPower"));
+                character.setEquipPower(o.getInt("equipPower") == null ? 0 : o.getInt("equipPower"));
                 // 下次行动时间不照搬存档：统一给一个间隔，避免导入后立刻全跑或永远不跑
                 character.setNextRunTime(LocalDateTime.now()
                         .plusMinutes(Math.max(15, intConfig("sandbox_interval_max", 75))));
@@ -9060,6 +10297,10 @@ public class SandboxServiceImpl implements SandboxService {
                 item.setName(truncate(o.getStr("name"), 60));
                 item.setQuantity(o.getInt("quantity") == null ? 1 : o.getInt("quantity"));
                 item.setRarity(o.getInt("rarity") == null ? 1 : o.getInt("rarity"));
+                item.setSlot(SandboxEquip.normalizeSlot(o.getStr("slot")));
+                item.setPowerBonus(o.getInt("powerBonus") == null ? 0 : o.getInt("powerBonus"));
+                item.setEquipped(o.getInt("equipped") == null ? 0 : o.getInt("equipped"));
+                item.setBroken(o.getInt("broken") == null ? 0 : o.getInt("broken"));
                 item.setIcon(truncate(o.getStr("icon"), 500));
                 item.setDescription(truncate(o.getStr("description"), 300));
                 item.setCreateTime(LocalDateTime.now());
@@ -9069,6 +10310,10 @@ public class SandboxServiceImpl implements SandboxService {
             }
         }
         report.put("items", items);
+        // 装备加成按导入后的装备栏重算一遍：存档里的数字可能来自旧版本，也可能与装备对不上
+        for (SandboxCharacter imported : characterMap.values()) {
+            recalcEquipPower(imported.getId());
+        }
 
         // 7. 好感度
         int relations = 0;
@@ -9211,6 +10456,8 @@ public class SandboxServiceImpl implements SandboxService {
                 item.setDescription(truncate(o.getStr("description"), 300));
                 item.setIcon(truncate(o.getStr("icon"), 500));
                 item.setRarity(o.getInt("rarity") == null ? 1 : o.getInt("rarity"));
+                item.setSlot(SandboxEquip.normalizeSlot(o.getStr("slot")));
+                item.setPowerBonus(o.getInt("powerBonus") == null ? 0 : o.getInt("powerBonus"));
                 item.setPrice(o.getInt("price") == null ? 1 : o.getInt("price"));
                 item.setOriginalPrice(o.getInt("originalPrice"));
                 item.setStock(o.getInt("stock") == null ? 0 : o.getInt("stock"));
@@ -9412,6 +10659,8 @@ public class SandboxServiceImpl implements SandboxService {
                     .set(SandboxCharacter::getStatusJson, RESET_STATUS_JSON)
                     .set(SandboxCharacter::getCoins, 0)
                     .set(SandboxCharacter::getCombatPower, COMBAT_POWER_DEFAULT)
+                    // 装备加成也清零：清空世界会把背包一并清掉（装备栏自然空了）
+                    .set(SandboxCharacter::getEquipPower, 0)
                     .set(SandboxCharacter::getLastRunTime, null)
                     .set(SandboxCharacter::getNextRunTime, next)
                     .set(SandboxCharacter::getNextReason, null)

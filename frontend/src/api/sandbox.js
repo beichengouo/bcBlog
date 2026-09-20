@@ -252,8 +252,12 @@ export function deleteSandboxMemory(id) {
 }
 
 // 后台：立即生成当天记忆（调试用）
-export function summarizeSandboxMemories() {
-  return request.post('/admin/sandbox/memories/summarize', null, { timeout: 600000 })
+// date 传 yyyy-MM-dd；不传就是今天。返回实际生成/覆盖的记忆条数
+export function summarizeSandboxMemories(date) {
+  return request.post('/admin/sandbox/memories/summarize', null, {
+    params: { date: date || undefined },
+    timeout: 600000
+  })
 }
 
 // 后台：角色背包
@@ -267,6 +271,19 @@ export function saveSandboxItem(data) {
 
 export function deleteSandboxItem(id) {
   return request.delete(`/admin/sandbox/items/${id}`)
+}
+
+// 后台：装备栏（装备 / 卸下 / 修复破损；「拿不动」等规则由服务端校验）
+export function setSandboxItemEquip(id, equipped) {
+  return request.put(`/admin/sandbox/items/${id}/equip`, null, { params: { equipped } })
+}
+
+export function repairSandboxItem(id) {
+  return request.post(`/admin/sandbox/items/${id}/repair`)
+}
+
+export function refreshSandboxEquipPower(characterId) {
+  return request.post(`/admin/sandbox/characters/${characterId}/equip-power/refresh`)
 }
 
 // 后台：旅人纪闻

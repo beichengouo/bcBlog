@@ -29,6 +29,13 @@ public class SandboxShopItem {
     private String icon;
     /** 品质 1 普通 ~ 5 传说 */
     private Integer rarity;
+    /**
+     * 装备槽位：none / weapon / offhand / armor / accessory。
+     * 空或 none 表示这件商品不是装备——**是不是装备由字段决定，不看名字**。
+     */
+    private String slot;
+    /** 装备加成（战斗力）：只有 slot 是装备时才有意义 */
+    private Integer powerBonus;
     /** 现价（积分） */
     private Integer price;
     /** 原价（打折时展示划线价） */

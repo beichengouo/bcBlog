@@ -59,6 +59,8 @@ public class SandboxAct {
     private String newsRef;
     /** 本步由服务端注入的遭遇（危险地区掷骰命中时才会有），前台/后台可展示「他到底遇上了什么」 */
     private String encounter;
+    /** 本步遭遇的对手名字/种类（AI 判断，例如「雾隐豹」）；前台把 encounter 里的战力与它拼在一起显示 */
+    private String encounterFoe;
     /** 本步运气值：-3 大凶 ~ +3 大吉（服务端生成，前台展示） */
     private Integer luck;
     /** 这一步结束时角色的样子（外貌底子不变，随行动变化的是穿着、脏污、伤势外观这些） */

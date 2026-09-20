@@ -24,6 +24,14 @@ public class SandboxItem {
     private Integer quantity;
     /** 品质：1 普通 / 2 精良 / 3 稀有 / 4 史诗 / 5 传说 */
     private Integer rarity;
+    /** 装备槽位：none 非装备 / weapon 武器 / offhand 副手 / armor 护具 / accessory 饰品 */
+    private String slot;
+    /** 装备加成（战斗力）：0 表示不是装备或这件装备没有加成 */
+    private Integer powerBonus;
+    /** 1 = 已经装备在角色装备栏里 */
+    private Integer equipped;
+    /** 1 = 已破损（不能再装备，加成按 0 算） */
+    private Integer broken;
     /** 物品图标图片地址，为空时前台按物品名自动匹配图标 */
     private String icon;
     /** 物品说明 */

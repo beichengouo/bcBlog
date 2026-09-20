@@ -175,8 +175,59 @@
     <el-dialog
       v-model="backpackVisible"
       :title="`背包 · ${backpackCharacter ? backpackCharacter.name : ''}`"
-      width="min(94vw, 660px)"
+      width="min(96vw, 860px)"
     >
+      <p class="tip" style="margin: 0 0 10px">
+        装备栏 4 格：武器 / 副手 / 护具 / 饰品，一格一件。装备加成计入战斗力，但<b>不能超过角色的自身实力</b>
+        （服务端会拦下来）；破损的装备会被自动卸下、加成归零，修好后再装备。
+      </p>
+      <el-table :data="equipmentRows" size="small" class="equip-table">
+        <el-table-column label="槽位" width="90">
+          <template #default="{ row }">
+            <span class="equip-slot-name">{{ row.label }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="装备" min-width="180">
+          <template #default="{ row }">
+            <div class="equip-cell">
+              <span class="item-icon-cell small">
+                <img v-if="row.item && row.item.icon" :src="row.item.icon" alt="" />
+                <template v-else>{{ row.item ? itemEmoji(row.item) : '—' }}</template>
+              </span>
+              <span :class="{ 'muted-text': !row.item }">{{ row.item ? row.item.name : '空着' }}</span>
+            </div>
+          </template>
+        </el-table-column>
+        <el-table-column label="战斗力加成" width="110">
+          <template #default="{ row }">
+            <span v-if="row.item" class="bonus-chip">+{{ row.item.powerBonus || 0 }}</span>
+            <span v-else class="muted-text">—</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="200">
+          <template #default="{ row }">
+            <template v-if="row.item">
+              <el-button size="small" @click="onUnequip(row.item)">卸下</el-button>
+              <el-button v-if="row.item.broken" size="small" type="warning" @click="onRepairItem(row.item)">
+                修复
+              </el-button>
+            </template>
+            <span v-else class="muted-text">从下面「背包」里点「装备」</span>
+          </template>
+        </el-table-column>
+      </el-table>
+      <div class="equip-summary">
+        自身实力 {{ backpackCharacter ? (backpackCharacter.combatPower || 10) : 10 }}
+        <span class="sep">+</span>
+        装备加成 {{ backpackEquipPower }}
+        <span class="sep">=</span>
+        <b>战斗力 {{ backpackTotalPower }}</b>
+        <el-button size="small" text type="primary" style="margin-left: 10px" @click="onRefreshEquipPower">
+          重算加成
+        </el-button>
+      </div>
+
+      <el-divider content-position="left">背包</el-divider>
       <el-table :data="backpackItems" v-loading="loadingItems" size="small">
         <el-table-column label="图标" width="90">
           <template #default="{ row }">
@@ -190,12 +241,25 @@
             >
               <span class="item-icon-cell" :title="row.icon ? '点击更换图标' : '点击上传图标'">
                 <img v-if="row.icon" :src="row.icon" alt="" />
-                <template v-else>{{ emojiForItem(row.name) }}</template>
+                <template v-else>{{ itemEmoji(row) }}</template>
               </span>
             </el-upload>
           </template>
         </el-table-column>
-        <el-table-column prop="name" label="物品" min-width="130" />
+        <el-table-column label="物品" min-width="190">
+          <template #default="{ row }">
+            <div class="item-name-cell">
+              <span>{{ row.name }}</span>
+              <span
+                v-if="isEquipItem(row)"
+                class="item-equip-tag"
+                :class="{ broken: row.broken === 1 }"
+              >
+                {{ equipBadgeText(row) }}
+              </span>
+            </div>
+          </template>
+        </el-table-column>
         <el-table-column label="数量" width="140">
           <template #default="{ row }">
             <el-input-number v-model="row.quantity" :min="1" :max="9999" size="small" @change="onUpdateItem(row)" />
@@ -209,7 +273,36 @@
           </template>
         </el-table-column>
         <el-table-column prop="description" label="说明" min-width="170" show-overflow-tooltip />
-        <el-table-column label="操作" width="90">
+        <el-table-column label="装备" width="200">
+          <template #default="{ row }">
+            <el-select
+              v-model="row.slot"
+              size="small"
+              style="width: 92px"
+              @change="onUpdateItem(row)"
+            >
+              <el-option v-for="s in SLOT_OPTIONS" :key="s.key" :label="s.label" :value="s.key" />
+            </el-select>
+            <el-input-number
+              v-model="row.powerBonus"
+              :min="0"
+              :max="999"
+              size="small"
+              style="width: 74px; margin-left: 6px"
+              :disabled="!row.slot || row.slot === 'none'"
+              @change="onUpdateItem(row)"
+            />
+            <el-button
+              v-if="row.slot && row.slot !== 'none'"
+              size="small"
+              style="margin-left: 6px"
+              @click="row.equipped ? onUnequip(row) : onEquip(row)"
+            >
+              {{ row.equipped ? '卸下' : '装备' }}
+            </el-button>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="80">
           <template #default="{ row }">
             <el-button size="small" type="danger" @click="onDeleteItem(row)">删除</el-button>
           </template>
@@ -269,8 +362,11 @@
               <div v-if="draftItems.length" class="draft-items">
                 <span class="draft-title">初始物品：</span>
                 <span v-for="(item, index) in draftItems" :key="'di-' + index" class="draft-item">
-                  {{ emojiForItem(item.name) }} {{ item.name }} ×{{ item.quantity }}
+                  {{ itemEmoji(item) }} {{ item.name }} ×{{ item.quantity }}
                   <em>{{ rarityMeta(item.rarity).name }}</em>
+                  <em v-if="isEquipItem(item)" class="draft-equip" :title="equipBadgeText(item)">
+                    {{ slotEmoji(item.slot) }}{{ (item.powerBonus || 0) > 0 ? '战斗力 +' + item.powerBonus : '装备' }}
+                  </em>
                   <button type="button" title="移除这件初始物品" @click="draftItems.splice(index, 1)">×</button>
                 </span>
               </div>
@@ -368,6 +464,23 @@
             style="width: 320px"
             placeholder="例如：协会门外的喷泉长椅（换了一级地点会自动清空）"
           />
+        </el-form-item>
+        <el-form-item label="免遭遇地点">
+          <el-select
+            v-model="exemptLocations"
+            multiple
+            collapse-tags
+            collapse-tags-tooltip
+            clearable
+            placeholder="这些地点不会遭遇袭击（可留空）"
+            style="width: 340px"
+          >
+            <el-option v-for="loc in locations" :key="'ex-' + loc.id" :label="loc.name" :value="loc.name" />
+          </el-select>
+          <span class="tip">
+            选中的<b>一级地点</b>里，这个角色不会触发遭遇（整个地区的任何二级地点都算）。
+            适合"魔王待在自己的魔王城""商人待在自己商会所在的城市"这类设定；留空 = 正常参与遭遇判定
+          </span>
         </el-form-item>
         <el-form-item label="下次行动">
           <el-date-picker
@@ -483,7 +596,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRouter } from 'vue-router'
 import {
@@ -500,12 +613,25 @@ import {
   unlockSandboxCharacter,
   saveSandboxItem,
   deleteSandboxItem,
+  setSandboxItemEquip,
+  repairSandboxItem,
+  refreshSandboxEquipPower,
   generateSandboxCharacter,
   sandboxLocations
 } from '@/api/sandbox'
 import { aiProviderList, aiProviderModels } from '@/api/ai'
 import { useSandboxWorld } from '@/composables/useSandboxWorld'
-import { emojiForItem, ITEM_RARITIES, rarityMeta } from '@/utils/sandboxItems'
+import {
+  emojiForItem,
+  ITEM_RARITIES,
+  rarityMeta,
+  EQUIP_SLOTS,
+  SLOT_OPTIONS,
+  isEquipItem,
+  equipBadgeText,
+  itemEmoji,
+  slotEmoji
+} from '@/utils/sandboxItems'
 import { interiorPoint, locationAtPoint, polygonOf } from '@/utils/sandboxGeo'
 
 const uploadHeaders = { Authorization: localStorage.getItem('token') || '' }
@@ -515,6 +641,8 @@ const providers = ref([])
 const models = ref([])
 /** 当前世界的地区列表：编辑角色时用来按坐标反查「一级地点」 */
 const locations = ref([])
+/** 免遭遇地点（多选）：和 form.encounterExemptLocations 的"逗号分隔字符串"互转 */
+const exemptLocations = ref([])
 const loading = ref(false)
 const saving = ref(false)
 const modelLoading = ref(false)
@@ -588,6 +716,7 @@ const FORM_DEFAULTS = {
   y: 50,
   locationName: '',
   subLocation: '',
+  encounterExemptLocations: '',
   coins: 0,
   combatPower: 10,
   goal: '',
@@ -617,6 +746,7 @@ function resetForm() {
   draftPlace.value = ''
   models.value = []
   temperature.value = 0.9
+  exemptLocations.value = []
 }
 
 async function load() {
@@ -763,6 +893,11 @@ function openEdit(row) {
   form.goal = row.goal || ''
   form.powerView = row.powerView || ''
   form.wealthView = row.wealthView || ''
+  form.encounterExemptLocations = row.encounterExemptLocations || ''
+  // 逗号分隔的字符串 → 多选数组（后端存的是"地点名,地点名"）
+  exemptLocations.value = form.encounterExemptLocations
+    ? form.encounterExemptLocations.split(',').map((name) => name.trim()).filter(Boolean)
+    : []
   form.nextRunTime = row.nextRunTime || null
   form.nextReason = row.nextReason || ''
   form.intervalMin = row.intervalMin || 45
@@ -989,6 +1124,8 @@ async function onSave() {
       ...form,
       // 新建角色要指明属于哪个世界；编辑时后端已有记录
       worldId: form.id ? undefined : selectedWorldId.value,
+      // 免遭遇地点：多选数组 → 逗号分隔字符串（服务端会再过滤成这个世界真实存在的地点）
+      encounterExemptLocations: exemptLocations.value.length ? exemptLocations.value.join(',') : '',
       temperature: temperature.value,
       statusJson: buildStatusJson()
     })
@@ -1002,7 +1139,10 @@ async function onSave() {
             name: item.name,
             quantity: item.quantity,
             rarity: item.rarity,
-            description: item.description
+            description: item.description,
+            // 随身装备：AI 给了槽位与加成就带着，服务端按品质区间夹取
+            slot: item.slot || 'none',
+            powerBonus: item.powerBonus == null ? 0 : item.powerBonus
           })
         } catch (e) {
           ElMessage.warning(`初始物品「${item.name}」添加失败，可在背包里手动补上`)
@@ -1354,9 +1494,14 @@ async function onUpdateItem(row) {
     quantity: row.quantity,
     rarity: row.rarity,
     icon: row.icon,
-    description: row.description
+    description: row.description,
+    // 装备字段：槽位与加成，服务端会按品质区间夹取；改成「非装备」会自动从装备栏取下
+    slot: row.slot,
+    powerBonus: row.powerBonus
   })
   ElMessage.success('已更新')
+  await loadItems()
+  await load()
 }
 
 async function onItemIconSuccess(row, res) {
@@ -1381,6 +1526,60 @@ async function onDeleteItem(row) {
   await deleteSandboxItem(row.id)
   ElMessage.success('已删除')
   await loadItems()
+}
+
+// ---------------- 装备栏 ----------------
+
+/** 装备栏 4 格：把背包里 equipped=1 的物品按槽位对上 */
+const equipmentRows = computed(() =>
+  EQUIP_SLOTS.map((slot) => ({
+    ...slot,
+    item: backpackItems.value.find((item) => item.equipped === 1 && (item.slot || 'none') === slot.key) || null
+  }))
+)
+
+/** 当前装备加成合计（破损的不算） */
+const backpackEquipPower = computed(() =>
+  equipmentRows.value.reduce((sum, row) => {
+    if (!row.item || row.item.broken === 1) return sum
+    return sum + (Number(row.item.powerBonus) || 0)
+  }, 0)
+)
+
+const backpackTotalPower = computed(
+  () => (Number(backpackCharacter.value && backpackCharacter.value.combatPower) || 10) + backpackEquipPower.value
+)
+
+async function onEquip(row) {
+  try {
+    await setSandboxItemEquip(row.id, 1)
+    ElMessage.success(`已装备「${row.name}」`)
+  } catch (e) {
+    // 「拿不动」等规则由服务端拦下，错误信息直接来自后端
+  }
+  await loadItems()
+  await load()
+}
+
+async function onUnequip(row) {
+  await setSandboxItemEquip(row.id, 0)
+  ElMessage.success(`已卸下「${row.name}」`)
+  await loadItems()
+  await load()
+}
+
+async function onRepairItem(row) {
+  await repairSandboxItem(row.id)
+  ElMessage.success(`已修复「${row.name}」`)
+  await loadItems()
+  await load()
+}
+
+async function onRefreshEquipPower() {
+  if (!backpackCharacter.value) return
+  const total = await refreshSandboxEquipPower(backpackCharacter.value.id)
+  ElMessage.success(`已按装备栏重算：装备加成 +${total}`)
+  await load()
 }
 
 onMounted(async () => {
@@ -1446,6 +1645,42 @@ onMounted(async () => {
   cursor: pointer;
 }
 .item-icon-cell img { width: 28px; height: 28px; object-fit: contain; }
+/* 装备栏：4 格表 + 加成小胶囊 */
+.equip-table { margin-bottom: 10px; }
+.item-name-cell { display: flex; align-items: center; gap: 6px; }
+.item-equip-tag {
+  padding: 0 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  line-height: 17px;
+  color: #2f5d8a;
+  background: rgba(111, 168, 220, 0.16);
+  border: 1px solid rgba(111, 168, 220, 0.45);
+}
+.item-equip-tag.broken {
+  color: #a4443c;
+  background: rgba(200, 90, 80, 0.14);
+  border-color: rgba(200, 90, 80, 0.45);
+}
+.equip-cell { display: flex; align-items: center; gap: 8px; }
+.item-icon-cell.small { width: 26px; height: 26px; font-size: 15px; border-style: solid; cursor: default; }
+.item-icon-cell.small img { width: 22px; height: 22px; }
+.equip-slot-name { font-size: 13px; color: var(--el-text-color-regular); }
+.bonus-chip {
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  color: #8a5a2a;
+  background: rgba(255, 176, 120, 0.2);
+  border: 1px solid rgba(255, 176, 120, 0.5);
+}
+.equip-summary {
+  margin-bottom: 6px;
+  font-size: 13px;
+  color: var(--el-text-color-regular);
+}
+.equip-summary .sep { margin: 0 6px; color: var(--el-text-color-secondary); }
+.muted-text { color: var(--el-text-color-secondary); font-size: 12px; }
 .ai-box {
   width: 100%;
   padding: 12px 14px;
@@ -1468,6 +1703,7 @@ onMounted(async () => {
   border: 1px solid var(--el-border-color);
 }
 .draft-item em { font-style: normal; font-size: 12px; color: var(--el-text-color-secondary); }
+.draft-item em.draft-equip { color: #2f5d8a; }
 .draft-item button {
   border: none;
   background: transparent;

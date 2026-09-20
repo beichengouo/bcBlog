@@ -17,6 +17,64 @@ export function rarityMeta(rarity) {
   return ITEM_RARITIES.find((item) => item.value === value) || ITEM_RARITIES[0]
 }
 
+/** 装备槽位：顺序就是装备栏的排列顺序（与后端 SandboxEquip.SLOTS 一致） */
+export const EQUIP_SLOTS = [
+  { key: 'weapon', label: '武器', emoji: '⚔️' },
+  { key: 'offhand', label: '副手', emoji: '🛡️' },
+  { key: 'armor', label: '护具', emoji: '🥋' },
+  { key: 'accessory', label: '饰品', emoji: '💍' }
+]
+
+/** 槽位中文名（物品上没有槽位时返回"非装备"） */
+export function slotLabel(slot) {
+  const found = EQUIP_SLOTS.find((item) => item.key === slot)
+  return found ? found.label : '非装备'
+}
+
+/** 奖励徽章里的紧凑写法：武器 · 战斗力 +22 / 护具 · 已破损 / 饰品 · 无加成 */
+export function equipChipText(item) {
+  if (!isEquipItem(item)) return ''
+  const label = slotLabel(item.slot)
+  if (item.broken === 1) return `${label} · 已破损`
+  const bonus = Number(item.powerBonus) || 0
+  return bonus > 0 ? `${label} · 战斗力 +${bonus}` : `${label} · 无加成`
+}
+
+/** 后台下拉用：含「非装备」选项 */
+export const SLOT_OPTIONS = [{ key: 'none', label: '非装备' }, ...EQUIP_SLOTS.map((s) => ({ key: s.key, label: s.label }))]
+
+/** 这件东西是不是装备（看字段，不看名字；破损的也算装备，只是穿不了） */
+export function isEquipItem(item) {
+  if (!item || !item.slot) return false
+  return EQUIP_SLOTS.some((s) => s.key === item.slot)
+}
+
+/** 装备角标要显示的文字：武器 · 战斗力 +12 / 护具 · 破损 这样 */
+export function equipBadgeText(item) {
+  if (!isEquipItem(item)) return ''
+  const label = slotLabel(item.slot)
+  if (item.broken === 1) return `${label} · 已破损（不提供加成）`
+  const bonus = Number(item.powerBonus) || 0
+  return bonus > 0 ? `${label} · 战斗力 +${bonus}` : `${label} · 无加成`
+}
+
+/** 槽位对应的图标，角标上用 */
+export function slotEmoji(slot) {
+  const found = EQUIP_SLOTS.find((item) => item.key === slot)
+  return found ? found.emoji : ''
+}
+
+/**
+ * 物品图标：按名字匹配 emoji；名字认不出来但它是装备时，退回槽位图标。
+ * 这样「青光」这种看不出是什么的装备名也有个像样的图标，而不是一个通用星号。
+ */
+export function itemEmoji(item) {
+  if (!item) return '✦'
+  const byName = emojiForItem(item.name)
+  if (byName !== '✦') return byName
+  return isEquipItem(item) ? (slotEmoji(item.slot) || '✦') : '✦'
+}
+
 const ITEM_EMOJIS = [
   { keys: ['面包', '干粮', '饼', '食物'], emoji: '🍞' },
   { keys: ['肉'], emoji: '🍖' },

@@ -145,4 +145,19 @@ public class SandboxSettingVO {
     private String socialMaxKm;
     /** 是否强制「必须同一个一级地点才能互动」（1 开 / 0 关）：地图上有的一级地点彼此不到 30km */
     private String socialSameAreaOnly;
+
+    /** 装备栏开关：1 开启（默认）/ 0 关闭（关掉后提示词不给装备规则、AI 的装备动作一律忽略） */
+    private String equipEnabled;
+    /** 装备加成按品质夹取的区间："1-10,10-20,20-30,30-60,60-120"（品质 1~5），管理员可改 */
+    private String equipBonusByRarity;
+
+    /** 【最近行动】里最近几步给"完整动作 + 心声"（默认 1，0 = 全部只给摘要） */
+    private String fullActSteps;
+
+    /** 每步行动后的自检开关：1 开启（默认）/ 0 关闭（开启后每一步多一次调用，检查故事逻辑并修正叙述） */
+    private String stepSelfcheck;
+    /** 每步自检的模式：off 关闭 / suspicious 命中才查（默认）/ always 每步都查 */
+    private String stepSelfcheckMode;
+    /** 危险度 0（安全）地点的遭遇概率 %：默认 0 = 完全不刷遭遇 */
+    private String encounterChance0;
 }

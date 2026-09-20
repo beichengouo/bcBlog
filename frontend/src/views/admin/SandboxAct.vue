@@ -92,6 +92,14 @@
               <span v-else class="muted">—</span>
             </template>
           </el-table-column>
+          <el-table-column label="委托" min-width="200" show-overflow-tooltip>
+            <template #default="{ row }">
+              <el-tag v-if="row.questEvent" size="small" :type="questTagType(row.questEvent)">
+                {{ row.questEvent }}
+              </el-tag>
+              <span v-else class="muted">—</span>
+            </template>
+          </el-table-column>
           <el-table-column label="来源" width="110">
             <template #default="{ row }">
               <el-tag size="small" :type="row.fromAi === 1 ? 'success' : 'warning'">
@@ -241,12 +249,27 @@
 
       <el-tab-pane label="每日记忆" name="memories">
         <div class="tab-tools">
+          <span class="muted">日期</span>
+          <el-date-picker
+            v-model="memoryDate"
+            type="date"
+            value-format="YYYY-MM-DD"
+            format="YYYY-MM-DD"
+            placeholder="选择要生成哪一天的记忆"
+            style="width: 170px"
+            :disabled-date="(d) => d.getTime() > Date.now()"
+          />
+          <el-button size="small" @click="pickYesterday">昨天</el-button>
+          <el-button size="small" :type="memoryFilterDate ? 'warning' : ''" @click="toggleMemoryFilter">
+            {{ memoryFilterDate ? '只看 ' + memoryFilterDate : '只看这一天' }}
+          </el-button>
           <el-button type="primary" size="small" :loading="summarizing" @click="onSummarize">
-            立即生成今天的记忆
+            生成这一天的记忆
           </el-button>
           <span class="muted">
-            每天到点后自动为当天有行动的角色生成一段记忆（默认 23:50），用于后续几天的活动；
-            保留天数在「系统设置 → 数据清理」里配置，这里可以手动修正内容
+            每天到点后会自动为当天有行动的角色生成记忆（默认 23:50），用于后续几天的活动；
+            这里可以选任意日期补生成（例如昨天漏了）——<b>同一天已有记忆会被覆盖</b>，
+            那天没有任何行动的角色会跳过。保留天数在「系统设置 → 数据清理」里配置
           </span>
         </div>
         <el-table :data="memories" v-loading="loadingMemories">
@@ -566,6 +589,10 @@ const loadingMemories = ref(false)
 const memoryVisible = ref(false)
 const savingMemory = ref(false)
 const summarizing = ref(false)
+/** 「每日记忆」要生成哪一天：默认今天，可改成昨天等任意过去日期补生成 */
+const memoryDate = ref(todayStr())
+/** 记忆列表的日期过滤（空 = 全部日期）；补生成后会自动只看那一天，方便立刻核对 */
+const memoryFilterDate = ref('')
 const memoryForm = reactive({ id: null, characterId: null, memoryDate: '', summary: '' })
 
 const newsList = ref([])
@@ -644,6 +671,15 @@ async function initWorld() {
 function characterName(id) {
   const hit = characters.value.find((c) => c.id === id)
   return hit ? hit.name : `角色#${id}`
+}
+
+/** 委托徽章的颜色：完成绿色、接取蓝色、放弃灰色、其余（推进/自检）用默认 */
+function questTagType(event) {
+  if (!event) return 'info'
+  if (event.indexOf('完成') >= 0) return 'success'
+  if (event.indexOf('接取') >= 0) return 'primary'
+  if (event.indexOf('放弃') >= 0) return 'info'
+  return 'warning'
 }
 
 /** 本步运气的文字档位（-3 大凶 ~ +3 大吉），与后端 luckText 保持一致 */
@@ -874,6 +910,7 @@ async function loadMemories() {
   try {
     const data = await sandboxMemories({
       characterId: characterId.value || undefined,
+      date: memoryFilterDate.value || undefined,
       page: memoryPage.value,
       size: pageSize
     })
@@ -924,20 +961,53 @@ async function onDeleteMemory(row) {
   await loadMemories()
 }
 
+/** 今天（yyyy-MM-dd，按本地时区） */
+function todayStr() {
+  const d = new Date()
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+
+/** 一键切到昨天：最常用来补"昨天忘了生成" */
+function pickYesterday() {
+  const d = new Date()
+  d.setDate(d.getDate() - 1)
+  const pad = (n) => String(n).padStart(2, '0')
+  memoryDate.value = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+
+/** 列表只看"当前选中的这一天" / 切回全部 */
+async function toggleMemoryFilter() {
+  memoryFilterDate.value = memoryFilterDate.value ? '' : (memoryDate.value || todayStr())
+  memoryPage.value = 1
+  await loadMemories()
+}
+
 async function onSummarize() {
+  const date = memoryDate.value || todayStr()
+  const isToday = date === todayStr()
   try {
     await ElMessageBox.confirm(
-      '将为「今天有行动」的所有角色各调用一次 AI 生成当天记忆（已有则覆盖）。确定继续吗？',
-      '立即生成记忆',
-      { type: 'warning' }
+      `将为「${date} 有行动」的所有角色各调用一次 AI 生成记忆`
+        + `（${isToday ? '今天' : date}已有记忆会<b>覆盖</b>；那天没行动的角色会跳过）。确定继续吗？`,
+      '生成每日记忆',
+      { type: 'warning', dangerouslyUseHTMLString: true }
     )
   } catch (e) {
     return
   }
   summarizing.value = true
   try {
-    await summarizeSandboxMemories()
-    ElMessage.success('记忆生成完成')
+    // 接口返回"实际写入/覆盖了几条"（0 表示这一天没有任何角色行动，不用慌）
+    const written = await summarizeSandboxMemories(date)
+    if (written > 0) {
+      ElMessage.success(`已为 ${date} 生成/覆盖 ${written} 条记忆`)
+    } else {
+      ElMessage.warning(`${date} 没有任何角色行动，没有生成记忆（可以先确认那天的行动日志还在）`)
+    }
+    // 生成完自动切到"只看这一天"，方便立刻核对结果
+    memoryFilterDate.value = date
+    memoryPage.value = 1
     await loadMemories()
   } finally {
     summarizing.value = false

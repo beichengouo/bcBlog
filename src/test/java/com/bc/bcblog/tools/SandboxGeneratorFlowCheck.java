@@ -105,13 +105,13 @@ class SandboxGeneratorFlowCheck {
                 int n = service.generateQuests(3, PROVIDER_ID, MODEL, wid);
                 report.append("  - 生成 ").append(n).append(" 条：\n");
                 for (Map<String, Object> row : jdbc.queryForList(
-                        "select title, quest_type, difficulty, location_name, target, power, reward_coins"
+                        "select title, quest_type, difficulty, location_name, target, power, reward_coins, reward_items"
                                 + " from sandbox_quest where world_id = ? order by id", wid)) {
                     report.append("    - 「").append(row.get("title")).append("」（").append(row.get("quest_type"))
                             .append(" · 难度 ").append(row.get("difficulty")).append(" · ")
                             .append(row.get("location_name")).append("）：").append(row.get("target"))
                             .append("｜战力 ").append(row.get("power")).append("｜").append(row.get("reward_coins"))
-                            .append(" 金币\n");
+                            .append(" 金币｜奖励物品 ").append(row.get("reward_items")).append('\n');
                 }
             });
             int calls = apiCalls() - callsBefore;

@@ -107,7 +107,10 @@
                 background: rarityMeta(r.rarity).bg
               }"
             >
-              {{ emojiForItem(r.name) }} {{ r.name }}<template v-if="(r.quantity || 1) > 1">×{{ r.quantity }}</template>
+              {{ itemEmoji(r) }} {{ r.name }}<template v-if="(r.quantity || 1) > 1">×{{ r.quantity }}</template>
+              <em v-if="isEquipItem(r)" class="rw-equip" :title="equipBadgeText(r)">
+                · {{ slotEmoji(r.slot) }}{{ equipChipText(r) }}
+              </em>
             </span>
             <span v-if="!row.rewardCoins && !(row.rewards || []).length" class="muted">无</span>
           </div>
@@ -312,8 +315,26 @@
                 maxlength="40"
                 placeholder="一句说明（会写进背包里的物品描述）"
               />
+              <div class="reward-row">
+                <span class="rw-label">装备</span>
+                <el-select v-model="r.slot" class="rw-rarity" placeholder="非装备">
+                  <el-option v-for="s in SLOT_OPTIONS" :key="s.key" :label="s.label" :value="s.key" />
+                </el-select>
+                <el-input-number
+                  v-model="r.powerBonus"
+                  class="rw-qty"
+                  :min="0"
+                  :max="999"
+                  controls-position="right"
+                  :disabled="!r.slot || r.slot === 'none'"
+                />
+                <span class="tip">选了槽位才算装备，加成会被品质区间夹取；不是装备就保持「非装备」</span>
+              </div>
             </div>
-            <el-button size="small" @click="form.rewards.push({ name: '', rarity: 1, quantity: 1, description: '' })">
+            <el-button
+              size="small"
+              @click="form.rewards.push({ name: '', rarity: 1, quantity: 1, description: '', slot: 'none', powerBonus: 0 })"
+            >
               添加奖励物品
             </el-button>
             <div class="tip">最多 5 件；品质的配色和集市、角色背包是同一套</div>
@@ -369,7 +390,17 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useSandboxWorld } from '@/composables/useSandboxWorld'
 import { aiProviderList, aiProviderModels } from '@/api/ai'
-import { emojiForItem, rarityMeta, ITEM_RARITIES } from '@/utils/sandboxItems'
+import {
+  emojiForItem,
+  rarityMeta,
+  ITEM_RARITIES,
+  SLOT_OPTIONS,
+  isEquipItem,
+  equipBadgeText,
+  equipChipText,
+  slotEmoji,
+  itemEmoji
+} from '@/utils/sandboxItems'
 import {
   deleteSandboxQuest,
   expireSandboxQuest,
@@ -601,7 +632,9 @@ function openEdit(row) {
     name: r.name || '',
     rarity: r.rarity || 1,
     quantity: r.quantity || 1,
-    description: r.description || ''
+    description: r.description || '',
+    slot: r.slot || 'none',
+    powerBonus: r.powerBonus == null ? 0 : r.powerBonus
   }))
   dialogVisible.value = true
 }
@@ -809,6 +842,11 @@ onMounted(async () => {
   border-radius: 999px;
   padding: 0 8px;
   white-space: nowrap;
+}
+.rw-equip {
+  font-style: normal;
+  font-size: 10px;
+  opacity: 0.85;
 }
 .world-option { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .world-option-name { overflow: hidden; text-overflow: ellipsis; }
