@@ -126,6 +126,10 @@ public class SandboxSettingVO {
     private String questProgressStepMax;
     /** 单步进度上限的按难度分档："100,70,50,35,20"（难度 1~5）；留空则用上面的单值 */
     private String questStepMaxByDifficulty;
+    /** 完成委托允许的战力成长表："hunt:0-1,0-1,0-2,1-3,1-3|gather:0,0,0,0,0-1"（类型 × 难度 1~5） */
+    private String questCombatGain;
+    /** 闲着主动修炼时单次允许的战力成长上限（默认 2） */
+    private String idleTrainGainMax;
     /** 是否按间隔自动刷新委托 */
     private String questAutoEnabled;
     /** 自动刷新间隔（小时） */

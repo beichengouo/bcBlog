@@ -25,6 +25,12 @@ public class SandboxWorld {
     private String mapImage;
     /** 世界设定：写给 AI 的世界观、规则与文风 */
     private String worldPrompt;
+    /**
+     * 「魔力」这条资源条在本世界叫什么：剑与魔法填「魔力」、修仙填「灵力」、现代填「精力」。
+     * 留空表示这个世界没有这条属性（提示词不再要求输出、前台也不再显示）。
+     * 没配过（null）时按默认的「魔力」处理，避免老世界突然少一条。
+     */
+    private String manaLabel;
     /** 是否启用：1 启用，0 停用 */
     private Integer enabled;
     /** 前台是否可见：1 出现在前台世界下拉（可以只看历史），0 完全隐藏 */

@@ -220,6 +220,33 @@
           填几档就按几档算，写坏的某一档会用上面的兜底值顶替
         </span>
       </el-form-item>
+      <el-form-item label="完成委托的战力成长">
+        <el-input
+          v-model="settings.questCombatGain"
+          type="textarea"
+          :rows="2"
+          style="width: 520px"
+          placeholder="hunt:0-1,0-1,0-2,1-3,1-3|gather:0,0,0,0,0-1"
+        />
+        <span class="tip">
+          角色<b>真正完成一条委托</b>时，这一步允许涨多少<b>自身实力</b>（装备加成另算）。
+          格式「<b>类型:难度1,难度2,难度3,难度4,难度5</b>」，多类之间用 <b>|</b> 分隔，
+          每档写单值 <b>2</b> 或区间 <b>1-3</b>。默认
+          <b>讨伐 0-1/0-1/0-2/1-3/1-3 · 探索 0/0-1/0-2/0-2/1-3 · 护送 0/0/0-1/0-1/0-2 ·
+          采集 0/0/0/0/0-1 · 杂活 全 0</b>。<br />
+          这是「上限」，不是保底：AI 判断这一步没长进就给 0，采集搬运这类写明不该涨；
+          给多了服务端会截到上限，防止每个低难度委托都白涨一点、把人物实力差距抹平。
+          类型没写进表里的一律按 0 处理（以后新加的类型不会悄悄通胀）
+        </span>
+      </el-form-item>
+      <el-form-item label="闲置修行上限">
+        <el-input v-model="settings.idleTrainGainMax" style="width: 90px" />
+        <span class="tip">
+          <b>和委托无关</b>：角色手头没委托、状态还行时，可以主动修炼、切磋、琢磨魔法——
+          这类行动单次允许涨多少自身实力（默认 <b>2</b>）。提示词里只有「对实力的态度」偏向渴望变强的角色
+          （角色管理里的 <b>实力观</b>）才会被鼓励这么做，而且要求写清代价，不要连着好几步都在修炼
+        </span>
+      </el-form-item>
       <el-form-item label="被拦下时自检">
         <el-switch v-model="settings.questSelfcheck" active-value="1" inactive-value="0" />
         <span class="tip">
@@ -451,6 +478,8 @@ const settings = reactive({
   questVisibleCount: '8',
   questProgressStepMax: '40',
   questStepMaxByDifficulty: '100,70,50,35,20',
+  questCombatGain: 'hunt:0-1,0-1,0-2,1-3,1-3|explore:0,0-1,0-2,0-2,1-3|escort:0,0,0-1,0-1,0-2|gather:0,0,0,0,0-1|chore:0,0,0,0,0',
+  idleTrainGainMax: '2',
   questProviderId: '',
   questModel: '',
   questPromptExtra: '',

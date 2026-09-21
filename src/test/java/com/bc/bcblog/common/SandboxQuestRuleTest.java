@@ -100,4 +100,73 @@ class SandboxQuestRuleTest {
         assertEquals(1, SandboxQuestRule.stepMaxByDifficulty("0,70", 1, 55));
         assertEquals(1, SandboxQuestRule.stepMaxByDifficulty("-20,70", 1, 55));
     }
+
+    @Test
+    void 完成委托的战力成长按类型与难度取区间() {
+        String config = SandboxQuestRule.DEFAULT_COMBAT_GAIN_TABLE;
+        // 讨伐：低难度基本不涨，高难度才允许明显变强
+        assertEquals(0, SandboxQuestRule.combatGainRange(config, "hunt", 1)[0]);
+        assertEquals(1, SandboxQuestRule.combatGainRange(config, "hunt", 1)[1]);
+        assertEquals(1, SandboxQuestRule.combatGainRange(config, "hunt", 5)[0]);
+        assertEquals(3, SandboxQuestRule.combatGainRange(config, "hunt", 5)[1]);
+        // 采集与杂活：整类都是 0（搬运采药不会让人更能打）
+        assertEquals(0, SandboxQuestRule.combatGainRange(config, "chore", 5)[1]);
+        assertEquals(0, SandboxQuestRule.combatGainRange(config, "gather", 3)[1]);
+        assertEquals(1, SandboxQuestRule.combatGainRange(config, "gather", 5)[1]);
+        // 难度越界夹到已有档位；类型不认识按 0（新类型不会悄悄通胀）
+        assertEquals(1, SandboxQuestRule.combatGainRange(config, "hunt", 0)[1]);
+        assertEquals(3, SandboxQuestRule.combatGainRange(config, "hunt", 9)[1]);
+        assertEquals(0, SandboxQuestRule.combatGainRange(config, "deliver", 5)[1]);
+        assertEquals(0, SandboxQuestRule.combatGainRange(config, null, 5)[1]);
+    }
+
+    @Test
+    void 管理员自定义的成长表能覆盖默认值() {
+        // 只覆盖讨伐，其它类型保持默认
+        String config = "hunt:2,2-4,5";
+        assertEquals(2, SandboxQuestRule.combatGainRange(config, "hunt", 1)[0]);
+        assertEquals(2, SandboxQuestRule.combatGainRange(config, "hunt", 1)[1]);
+        assertEquals(4, SandboxQuestRule.combatGainRange(config, "hunt", 2)[1]);
+        assertEquals(5, SandboxQuestRule.combatGainRange(config, "hunt", 3)[1]);
+        // 只写了三档，难度 5 沿用最后一档
+        assertEquals(5, SandboxQuestRule.combatGainRange(config, "hunt", 5)[1]);
+        assertEquals(0, SandboxQuestRule.combatGainRange(config, "chore", 5)[1]);
+        // 写坏的值不会把这一档打回默认之外的离谱数值
+        assertEquals(10, SandboxQuestRule.combatGainRange("hunt:99", "hunt", 1)[1]);
+        // 整档写坏（一个数字都解析不出）时保留内置默认，不会变成"这类委托永远不涨"
+        assertEquals(1, SandboxQuestRule.combatGainRange("hunt:abc", "hunt", 1)[1]);
+        assertEquals(3, SandboxQuestRule.combatGainRange("hunt:abc", "hunt", 5)[1]);
+    }
+
+    @Test
+    void 只在给正数时按上限截断() {
+        int[] huntHigh = new int[]{1, 3};
+        // 区间内原样
+        assertEquals(2, SandboxQuestRule.clampCombatGain(2, huntHigh));
+        // 超过上限截到上限
+        assertEquals(3, SandboxQuestRule.clampCombatGain(9, huntHigh));
+        // 低于下限的正数抬到下限
+        assertEquals(1, SandboxQuestRule.clampCombatGain(1, huntHigh));
+        assertEquals(2, SandboxQuestRule.clampCombatGain(1, new int[]{2, 3}));
+        // AI 判断没长进 → 0 原样保留；受伤变弱 → 负数原样保留
+        assertEquals(0, SandboxQuestRule.clampCombatGain(0, huntHigh));
+        assertEquals(-3, SandboxQuestRule.clampCombatGain(-3, huntHigh));
+        // 采集类上限 0：给了正数也会被压成 0
+        assertEquals(0, SandboxQuestRule.clampCombatGain(2, new int[]{0, 0}));
+    }
+
+    @Test
+    void 区间文案与闲置修行上限() {
+        assertEquals("0~1", SandboxQuestRule.rangeText(new int[]{0, 1}));
+        assertEquals("0", SandboxQuestRule.rangeText(new int[]{0, 0}));
+        assertEquals("1~3", SandboxQuestRule.rangeText(new int[]{1, 3}));
+
+        assertEquals(2, SandboxQuestRule.idleTrainMax(null));
+        assertEquals(2, SandboxQuestRule.idleTrainMax(""));
+        assertEquals(4, SandboxQuestRule.idleTrainMax("4"));
+        // 写坏 / 越界都回到安全值
+        assertEquals(2, SandboxQuestRule.idleTrainMax("abc"));
+        assertEquals(5, SandboxQuestRule.idleTrainMax("99"));
+        assertEquals(1, SandboxQuestRule.idleTrainMax("0"));
+    }
 }

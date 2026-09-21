@@ -70,9 +70,9 @@ class SandboxPromptDump {
         String userPrompt = (String) call("buildUserPrompt",
                 new Class[]{SandboxCharacter.class, List.class, List.class, List.class, List.class,
                         boolean.class, String.class, SandboxAct.class, List.class, List.class, List.class,
-                        String.class, Integer.class},
+                        String.class, Integer.class, SandboxAct.class},
                 character, recent, whispers, companions, companionActs, false, null, null,
-                memories, backpack, news, null, null);
+                memories, backpack, news, null, null, null);
 
         // 写成 UTF-8 文件，避免在 Windows 控制台里被搞成乱码
         java.nio.file.Path dir = java.nio.file.Paths.get("target", "prompt-dump");

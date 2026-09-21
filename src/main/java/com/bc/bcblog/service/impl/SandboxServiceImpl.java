@@ -275,7 +275,41 @@ public class SandboxServiceImpl implements SandboxService {
         if (world.getId() == null) {
             worldMapper.insert(world);
         } else {
+            // 改了「魔力条的名称」要把这个世界现有的状态键一起改名，
+            // 否则旧数据里的「魔力」会和新写进来的「灵力」并排显示在同一个角色身上。
+            SandboxWorld before = worldMapper.selectById(world.getId());
+            String oldLabel = before == null ? null : manaLabel(before);
             worldMapper.updateById(world);
+            // 字段没传（null）说明调用方不关心这一项，按"没改"处理；传空串才是"这个世界没有这条属性"
+            String newLabel = world.getManaLabel() == null ? oldLabel : world.getManaLabel().trim();
+            if (oldLabel != null && !oldLabel.equals(newLabel)) {
+                migrateManaLabel(world.getId(), oldLabel, newLabel);
+            }
+        }
+    }
+
+    /**
+     * 把一个世界的「魔力条名称」改名迁到角色的状态 JSON 上：
+     * 新名字非空时把旧的键替换掉；清空（这个世界没有这条属性）时直接把那一项删掉。
+     * 只迁角色身上的**当前状态**——行动记录里的状态是历史快照，不必回头改。
+     */
+    private void migrateManaLabel(Long worldId, String oldLabel, String newLabel) {
+        if (oldLabel == null || oldLabel.isEmpty() || oldLabel.equals(newLabel)) {
+            return;
+        }
+        for (SandboxCharacter character : characters(worldId)) {
+            Map<String, Object> status = parseStatus(character.getStatusJson());
+            if (!status.containsKey(oldLabel)) {
+                continue;
+            }
+            Object value = status.remove(oldLabel);
+            if (newLabel != null && !newLabel.isEmpty()) {
+                status.put(newLabel, value);
+            }
+            String json = status.isEmpty() ? null : truncate(JSONUtil.toJsonStr(status), 1000);
+            characterMapper.update(null, new LambdaUpdateWrapper<SandboxCharacter>()
+                    .eq(SandboxCharacter::getId, character.getId())
+                    .set(SandboxCharacter::getStatusJson, json));
         }
     }
 
@@ -557,6 +591,9 @@ public class SandboxServiceImpl implements SandboxService {
         vo.setQuestProgressStepMax(configService.getConfigValue("sandbox_quest_progress_step_max", "40"));
         vo.setQuestStepMaxByDifficulty(configService.getConfigValue("sandbox_quest_step_max_by_difficulty",
                 DEFAULT_QUEST_STEP_TABLE));
+        vo.setQuestCombatGain(configService.getConfigValue("sandbox_quest_combat_gain",
+                SandboxQuestRule.DEFAULT_COMBAT_GAIN_TABLE));
+        vo.setIdleTrainGainMax(configService.getConfigValue("sandbox_idle_train_gain_max", "2"));
         vo.setQuestAutoEnabled(configService.getConfigValue("sandbox_quest_auto_enabled", "1"));
         vo.setQuestIntervalHours(configService.getConfigValue("sandbox_quest_interval_hours", "24"));
         vo.setQuestAutoTime(configService.getConfigValue("sandbox_quest_auto_time", "09:00"));
@@ -695,6 +732,10 @@ public class SandboxServiceImpl implements SandboxService {
         writeSetting("sandbox_quest_model", vo.getQuestModel());
         writeSetting("sandbox_quest_prompt_extra", vo.getQuestPromptExtra());
         writeSetting("sandbox_quest_progress_step_max", vo.getQuestProgressStepMax());
+        // 这一条以前漏了：委托页的「按难度分档」保存后不写库，改完再进来会看到旧值
+        writeSetting("sandbox_quest_step_max_by_difficulty", vo.getQuestStepMaxByDifficulty());
+        writeSetting("sandbox_quest_combat_gain", vo.getQuestCombatGain());
+        writeSetting("sandbox_idle_train_gain_max", vo.getIdleTrainGainMax());
         writeSetting("sandbox_quest_auto_enabled", vo.getQuestAutoEnabled());
         writeSetting("sandbox_quest_interval_hours", vo.getQuestIntervalHours());
         writeSetting("sandbox_quest_auto_time", vo.getQuestAutoTime());
@@ -750,7 +791,7 @@ public class SandboxServiceImpl implements SandboxService {
         AuditContext.manual("沙盒·AI 创作角色");
         try {
             raw = chatForGenerator(provider, dto.getModel(),
-                    buildDraftSystemPrompt(),
+                    buildDraftSystemPrompt(world),
                     buildDraftUserPrompt(world, locations, exists, dto.getRequirement().trim()), 0.9);
         } finally {
             AuditContext.clear();
@@ -787,7 +828,10 @@ public class SandboxServiceImpl implements SandboxService {
         // 初始状态：标准项限幅到 0~100，其余键原样保留
         Map<String, Object> status = new LinkedHashMap<>();
         status.put("体力", 100);
-        status.put("魔力", 100);
+        // 魔力条：本世界叫什么由世界配置决定（留空 = 这个世界没有这条属性）
+        if (hasManaBar(world)) {
+            status.put(manaLabel(world), 100);
+        }
         status.put("饥饿度", 20);
         status.put("心情", "平静");
         Object rawStatus = obj.get("status");
@@ -848,8 +892,8 @@ public class SandboxServiceImpl implements SandboxService {
         return vo;
     }
 
-    /** AI 生成角色草稿的系统提示词 */
-    private String buildDraftSystemPrompt() {
+    /** AI 生成角色草稿的系统提示词（要按世界的叫法给状态项，例如修仙世界是「灵力」） */
+    private String buildDraftSystemPrompt(SandboxWorld world) {
         StringBuilder sb = new StringBuilder();
         sb.append("你是一位二次元幻想世界的角色设计师。请根据世界观与管理员的需求设计一个新角色，")
                 .append("并给出可以直接开局的初始设定。\n")
@@ -859,7 +903,8 @@ public class SandboxServiceImpl implements SandboxService {
                 .append("\"persona\":\"人设（200~400 字，用 \\n 分行，包含身份、性格、说话方式、目标、能力、禁忌）\",")
                 .append("\"location\":\"初始所在地点，必须从【地图地点】里选一个\",")
                 .append("\"sub_location\":\"初始所在的小地方，自己创作，4~12 字\",")
-                .append("\"status\":{\"体力\":100,\"魔力\":100,\"饥饿度\":20,\"心情\":\"平静\"},")
+                .append("\"status\":{\"体力\":100,").append(statusManaJson(world))
+                .append("\"饥饿度\":20,\"心情\":\"平静\"},")
                 .append("\"coins\":10,")
                 .append("\"combat_power\":10,")
                 .append("\"power_view\":\"对自身实力的看法（4~12 字，例如 不甘平庸，想变强 / 够用就行）\",")
@@ -870,9 +915,9 @@ public class SandboxServiceImpl implements SandboxService {
                 .append("要求：\n")
                 .append("1. 角色名不要与【已有角色】重复，人设也不要去撞已有角色的定位与身份；\n")
                 .append("2. 必须符合【世界观】的风格；location 只能从【地图地点】里挑一个；\n")
-                .append("3. status 里体力、魔力、饥饿度是 0~100 的整数，心情用简短词语；\n")
+                .append("3. status 里").append(statusKeys(world)).append("是 0~100 的整数，心情用简短词语；\n")
                 .append("4. coins 是初始金币，0~30 之间的整数；\n")
-                .append("5. combat_power 是这名角色的综合战斗力：由战斗技巧、魔力、装备、种族天赋共同决定。")
+                .append("5. combat_power 是这名角色的综合战斗力：由").append(powerSources(world)).append("共同决定。")
                 .append("必须结合角色描述、身份经历与【世界观】的力量体系评估，不要一律给 10，也不要人人都很强。参考档位：\n")
                 .append("   1~5 完全不会战斗的人（孩童、文弱学者、纯商人）；\n")
                 .append("   6~15 有基本自保能力的普通人（10 是成年人的基线）；\n")
@@ -1720,6 +1765,8 @@ public class SandboxServiceImpl implements SandboxService {
 
             // 状态合并：AI 没提到的状态项沿用上一次的值，避免凭空丢失
             statusJson = mergeStatus(character.getStatusJson(), obj.get("status"));
+            // 这个世界没有「魔力」这条属性时，把历史遗留的那一项摘掉（否则会一直留在状态里）
+            statusJson = stripManaBar(statusJson, world(character.getWorldId()));
             act.setStatusJson(statusJson);
 
             // 当前目标：AI 每步维护；没给或给空就沿用上一次
@@ -1775,9 +1822,11 @@ public class SandboxServiceImpl implements SandboxService {
             }
 
             // 战斗力变化：与金币一样是可选项，没给就按 0 处理
+            // 先记下这一步之前的自身实力：委托结算可能在后面把它改小（见下面的成长表夹取）
+            int combatBase = combatPower;
             combatChange = Math.max(-COMBAT_STEP_MAX, Math.min(COMBAT_STEP_MAX,
                     Convert.toInt(obj.get("combat_change"), 0)));
-            combatPower = Math.max(COMBAT_POWER_MIN, combatPower + combatChange);
+            combatPower = Math.max(COMBAT_POWER_MIN, combatBase + combatChange);
 
             // 旅人集市自购：AI 返回 shop_buy 时，用角色自己的金币结算（扣库存、进背包、写流水）
             // 注意顺序：先把这一步赚到的钱算进来，再扣购买花费，余额不足就买不成
@@ -1814,6 +1863,20 @@ public class SandboxServiceImpl implements SandboxService {
             if (questResult.itemNote != null) {
                 itemChange = itemChange == null ? questResult.itemNote
                         : truncate(itemChange + "、" + questResult.itemNote, 290);
+            }
+            // 委托完成这一步的战力成长：按「类型 × 难度」的区间夹一次上限。
+            // 只夹正数——AI 给 0（觉得这趟没长进）或负数（打得很惨）都原样保留，
+            // 采集、跑腿、杂活类上限是 0，等于这类活儿涨不了实力。
+            if (questResult.completed) {
+                int[] gainRange = questCombatGainRange(questResult.questType, questResult.questDifficulty);
+                int capped = SandboxQuestRule.clampCombatGain(combatChange, gainRange);
+                if (capped != combatChange) {
+                    log.info("角色 {} 完成{}委托「{}」这一步给了 +{} 战力，按成长区间 {} 截到 {}",
+                            character.getName(), blankToDefault(questResult.questType, "未知"),
+                            questResult.title, combatChange, SandboxQuestRule.rangeText(gainRange), capped);
+                    combatChange = capped;
+                    combatPower = Math.max(COMBAT_POWER_MIN, combatBase + combatChange);
+                }
             }
             act.setQuestEvent(questResult.event);
             act.setItemChange(itemChange);
@@ -1956,7 +2019,7 @@ public class SandboxServiceImpl implements SandboxService {
                     applyAudit(mainAction, mainScheduled, mainAction);
                 }
             }
-            missing = findMissingFields(parseJson(candidate));
+            missing = findMissingFields(parseJson(candidate), world(character.getWorldId()));
             if (missing.isEmpty()) {
                 return candidate;
             }
@@ -2073,6 +2136,7 @@ public class SandboxServiceImpl implements SandboxService {
     private String repairOutput(SandboxCharacter character, AiProvider provider, String current,
                                 String context, List<String> missing, double temperature,
                                 String mainAction, boolean scheduled) {
+        SandboxWorld world = character == null ? null : world(character.getWorldId());
         StringBuilder sys = new StringBuilder();
         sys.append("你是一个 JSON 校正器。下面会给你一段角色扮演的输出，它可能缺少字段、或者不是合法 JSON。\n")
                 .append("你的任务只有一件：把它整理成符合约定的完整 JSON，**补上缺失或非法的字段**。\n")
@@ -2084,13 +2148,15 @@ public class SandboxServiceImpl implements SandboxService {
                 .append("JSON 结构：\n")
                 .append("{\"next_after_minutes\":45,\"next_after_reason\":\"稍作停留\",\"location\":\"地点名\",")
                 .append("\"sub_location\":\"二级地点（自己创作）\",\"x\":35,\"y\":62,\"actions\":[\"具体动作\"],")
-                .append("\"inner_voice\":\"心里话\",\"status\":{\"体力\":80,\"魔力\":45,\"饥饿度\":30,\"心情\":\"平静\"},")
+                .append("\"inner_voice\":\"心里话\",\"status\":{\"体力\":80,").append(statusManaJson(world))
+                .append("\"饥饿度\":30,\"心情\":\"平静\"},")
                 .append("\"coins_change\":0,\"combat_change\":0,\"companions\":[],\"favor_changes\":{},")
                 .append("\"items_change\":{\"物品名\":{\"delta\":1,\"description\":\"6~20 字说明它是什么、有什么用\"}},\"news_refs\":[],")
                 .append("\"summary\":\"30 字以内概括这一步\"}\n")
                 .append("字段要求：next_after_minutes 是大于 0 的整数分钟；next_after_reason 是 2~6 个字；")
-                .append("status 必须有体力、魔力、饥饿度（0~100 整数）与心情；x / y 是 0~100 的地图百分比。\n")
-                .append("combat_change 是这一步**自身实力**的变化（整数，日常填 0，只有学会新魔法、练成新招、受伤这类才给 ±1~±3），")
+                .append("status 必须有").append(statusKeys(world)).append("（0~100 整数）与心情；x / y 是 0~100 的地图百分比。\n")
+                .append("combat_change 是这一步**自身实力**的变化（整数，日常填 0；只有学会新魔法、练成新招、")
+                .append("完成一次真正动过手的委托、主动修炼、受伤这类才给 ±1~±3），")
                 .append("给非 0 时原因必须写在 actions 里；原文已有的 combat_change 要原样保留（穿装备不算自身实力变化）。\n")
                 .append("items_change 里每一项是 {\"delta\": 数量变化, \"description\": \"物品描述\"}：")
                 .append("新获得的物品（delta 为正）**必须**补上 6~20 字的 description；只是消耗已有物品时 description 可省略。\n")
@@ -2168,7 +2234,7 @@ public class SandboxServiceImpl implements SandboxService {
      * 省略后不影响正确性的字段不在这里（例如 companions 空数组、coins_change 缺省算 0、
      * sub_location 缺省沿用上一次、x/y 缺省沿用上一次位置），它们不会触发补全，省调用次数。
      */
-    private List<String> findMissingFields(JSONObject obj) {
+    private List<String> findMissingFields(JSONObject obj, SandboxWorld world) {
         List<String> missing = new ArrayList<>();
         if (obj == null) {
             // 连 JSON 都没解析出来，属于更严重的情况，单独提示
@@ -2178,7 +2244,7 @@ public class SandboxServiceImpl implements SandboxService {
         for (String key : REQUIRED_FIELDS) {
             // 判定规则与补全合并共用一套，避免两边口径不一致
             if (SandboxOutputRepair.needRepair(key, obj.get(key))) {
-                missing.add(fieldHint(key));
+                missing.add(fieldHint(key, world));
             }
         }
         // 新获得的物品必须带描述，否则背包里会是一堆光有名字的东西
@@ -2211,7 +2277,7 @@ public class SandboxServiceImpl implements SandboxService {
     }
 
     /** 缺失字段的中文说明（补全提示词、重跑提示词与日志都用它） */
-    private String fieldHint(String key) {
+    private String fieldHint(String key, SandboxWorld world) {
         switch (key) {
             case "next_after_minutes":
                 return "next_after_minutes（下一次行动间隔的分钟数，必须是大于 0 的整数）";
@@ -2224,7 +2290,7 @@ public class SandboxServiceImpl implements SandboxService {
             case "inner_voice":
                 return "inner_voice（角色此刻的心里话）";
             case "status":
-                return "status（体力、魔力、饥饿度 0~100 的整数，以及心情）";
+                return "status（" + statusKeys(world) + " 0~100 的整数，以及心情）";
             case "summary":
                 return "summary（30 字以内概括这一步）";
             default:
@@ -2799,7 +2865,8 @@ public class SandboxServiceImpl implements SandboxService {
         vo.setLocationName(character.getLocationName());
         vo.setSubLocation(character.getSubLocation());
         vo.setEnabled(character.getEnabled());
-        vo.setStatus(parseStatus(character.getStatusJson()));
+        // 前台是「状态里有什么键就显示什么」：没有魔力条的世界，这里直接不给这一项
+        vo.setStatus(parseStatus(stripManaBar(character.getStatusJson(), world(character.getWorldId()))));
         vo.setCoins(character.getCoins() == null ? 0 : character.getCoins());
         vo.setCombatPower(character.getCombatPower() == null ? COMBAT_POWER_DEFAULT : character.getCombatPower());
         // 装备栏与有效战斗力：自身实力 + 装备加成（前台档案里分开展示，方便看出"变强"是哪来的）
@@ -2883,6 +2950,91 @@ public class SandboxServiceImpl implements SandboxService {
             }
         }
         return streak;
+    }
+
+    /**
+     * 「魔力」这条资源条在本世界叫什么。
+     *
+     * 挂在世界上的原因：魔力是剑与魔法世界的说法，修仙世界该叫「灵力」、现代世界可能叫「精力」，
+     * 甚至压根没有这条属性。没配过（null）时按默认「魔力」处理，避免老世界突然少一条；
+     * **留空字符串表示这个世界没有这条属性**（见 {@link #hasManaBar}）。
+     */
+    private String manaLabel(SandboxWorld world) {
+        if (world == null || world.getManaLabel() == null) {
+            return "魔力";
+        }
+        return world.getManaLabel().trim();
+    }
+
+    /** 这个世界有没有「魔力」这条资源条 */
+    private boolean hasManaBar(SandboxWorld world) {
+        return !manaLabel(world).isEmpty();
+    }
+
+    /** 自检「状态突变」时要看的数值项：没有魔力条的世界就不看它 */
+    private String[] statusJumpKeys(SandboxCharacter character) {
+        SandboxWorld world = character == null ? null : world(character.getWorldId());
+        return hasManaBar(world)
+                ? new String[]{"体力", manaLabel(world), "饥饿度"}
+                : new String[]{"体力", "饥饿度"};
+    }
+
+    /** 状态里的数值项列表（写进提示词的字段要求里） */
+    private String statusKeys(SandboxWorld world) {
+        return hasManaBar(world) ? "体力、" + manaLabel(world) + "、饥饿度" : "体力、饥饿度";
+    }
+
+    /** 「体力与X」这种成对说法；没有这条属性时只说体力 */
+    private String statusManaPair(SandboxWorld world) {
+        return hasManaBar(world) ? "体力与" + manaLabel(world) : "体力";
+    }
+
+    /** 「体力X」这种连写说法（例如"体力魔力低的人吃亏"） */
+    private String statusManaShort(SandboxWorld world) {
+        return hasManaBar(world) ? "体力" + manaLabel(world) : "体力";
+    }
+
+    /** 「体力、X」这种列举（例如"让饥饿度或体力、魔力得到恢复"） */
+    private String statusManaList(SandboxWorld world) {
+        return hasManaBar(world) ? "体力、" + manaLabel(world) : "体力";
+    }
+
+    /** 「体力、魔力、金币」这种串；没有这条属性时只列体力与金币 */
+    private String statusManaWithCoins(SandboxWorld world) {
+        return hasManaBar(world) ? statusManaShort(world) + "、金币" : "体力、金币";
+    }
+
+    /** JSON 示例里的那一段（`"魔力":100,`）；没有这条属性时是空串 */
+    private String statusManaJson(SandboxWorld world) {
+        return hasManaBar(world) ? "\"" + manaLabel(world) + "\":100," : "";
+    }
+
+    /** 战斗力的来源描述（魔力 / 灵力 是可选项） */
+    private String powerSources(SandboxWorld world) {
+        return hasManaBar(world)
+                ? "战斗技巧、" + manaLabel(world) + "、装备、种族天赋"
+                : "战斗技巧、装备、种族天赋";
+    }
+
+    /** 清空世界时用的初始状态：这个世界没有魔力条时就不写那一项 */
+    private String resetStatusJson(SandboxWorld world) {
+        return "{\"体力\":100," + (hasManaBar(world) ? "\"" + manaLabel(world) + "\":100," : "")
+                + "\"饥饿度\":0,\"心情\":\"平静\"}";
+    }
+
+    /**
+     * 这个世界没有魔力条时，把残留的那一项从状态里摘掉。
+     * 摘的是「魔力」这个键：它是默认叫法，改名或关掉之前的数据里都是它。
+     */
+    private String stripManaBar(String statusJson, SandboxWorld world) {
+        if (hasManaBar(world) || notBlank(statusJson) == false) {
+            return statusJson;
+        }
+        Map<String, Object> status = parseStatus(statusJson);
+        if (status.remove("魔力") == null) {
+            return statusJson;
+        }
+        return status.isEmpty() ? null : truncate(JSONUtil.toJsonStr(status), 1000);
     }
 
     /** 合并状态：AI 返回的项覆盖旧值，AI 没提到的项沿用旧值 */
@@ -3095,7 +3247,8 @@ public class SandboxServiceImpl implements SandboxService {
                 .append("\"inner_voice\":\"角色此刻的心里话（第一人称，15~40 字，写清这一刻的念头或情绪）\",")
                 .append("\"look\":\"角色此刻的样子（20~40 字，见规则 33）\",")
                 .append("\"encounter_foe\":\"只有这一步有【本步遭遇】时才填：对手的名字或种类（例如 雾隐豹 / 劫匪头目），没有遭遇留空\",")
-                .append("\"status\":{\"体力\":80,\"魔力\":45,\"饥饿度\":30,\"心情\":\"平静\",\"伤势\":\"无恙\"},")
+                .append("\"status\":{\"体力\":80,").append(statusManaJson(w))
+                .append("\"饥饿度\":30,\"心情\":\"平静\",\"伤势\":\"无恙\"},")
                 // 位置放在 status 后面（靠前），才不会被模型忽略；示例给的是"真的变了"的样子，
                 // 但下面规则 26 会强调：没有变化时必须把 kind 与 view 留空，不要照抄示例
                 .append("\"attitude_change\":{\"kind\":\"power\",\"view\":\"吃过亏，更想变强了\",")
@@ -3119,9 +3272,9 @@ public class SandboxServiceImpl implements SandboxService {
                 .append("   · 不要为了凑数写空话——纯心理活动、抒情句请放进 inner_voice，actions 只写「发生了什么、做了什么」；\n")
                 .append("   · 人称统一：actions 用第三人称（角色名或「她/他」）叙述，**不要混用「我」**——第一人称只留给 inner_voice；\n")
                 .append("   · 也不要复述 summary：summary 是给列表看的一句话概括，actions 是给读者看的细节。\n")
-                .append("2. status 必须包含体力、魔力、饥饿度（0~100 的整数）、心情（简短词语）")
+                .append("2. status 必须包含").append(statusKeys(w)).append("（0~100 的整数）、心情（简短词语）")
                 .append("与**伤势**（只能填 无恙 / 轻伤 / 重伤 / 濒死 之一，没受伤就写「无恙」），可以再补充其它状态项；")
-                .append("体力与魔力会随活动增减，饥饿度随时间上升、吃东西后下降。\n")
+                .append(statusManaPair(w)).append("会随活动增减，饥饿度随时间上升、吃东西后下降。\n")
                 .append("3. 两类数值变化项，没有变化都填 0：\n")
                 .append("   · coins_change 金币（整数）：赚钱填正数、花钱填负数，不能超过身上的余额；")
                 .append("但「打工、接委托、摆摊卖采集物」这类收入必须写在这里、并在 actions 里说明做了什么；\n")
@@ -3135,6 +3288,7 @@ public class SandboxServiceImpl implements SandboxService {
                 .append("**绝对不要再把它算进 coins_change**；集市里没有、但你确实买了的小东西才写进 items_change，")
                 .append("并按上面的参考价在 coins_change 里扣钱；\n")
                 .append("   · combat_change 自身实力（整数）：只有学会新魔法、练成新招（+1~+3）、")
+                .append("完成一次真正动过手的委托（按第 36 条给的成长区间）、或者这一段日子确实在主动修炼（见第 20.1 条），")
                 .append("受伤或力量受损（-1~-3）、**战斗惨败或重伤（-2~-5）**这类才给非 0，")
                 .append("日常行动一律 0，且原因必须写进 actions。**捡到/穿上装备不算自身实力变化**：")
                 .append("装备的加成走 equip_change，服务端会自动把它加进有效战斗力。\n")
@@ -3203,7 +3357,7 @@ public class SandboxServiceImpl implements SandboxService {
                 .append("就填 [] ——**同一条要闻不要连续多步反复引用**（服务端也会把最近三步已经记过的丢掉）；")
                 .append("只有这件事真的推进了才继续填：真的到了那个地方、真的动手处理、拿到了新线索或新消息。");
         sb.append("\n14. 背包与装备：每次行动都顺便看一眼背包——能用掉的就用掉（吃掉干粮、喝掉药水等，")
-                .append("让饥饿度或体力、魔力得到恢复），用不上的可以丢掉或送人（在 items_change 里写负数，")
+                .append("让饥饿度或").append(statusManaList(w)).append("得到恢复），用不上的可以丢掉或送人（在 items_change 里写负数，")
                 .append("数量减到 0 会自动从背包移除）；不要长期囤积用不上的东西，也不要一次丢光所有物资。");
         if (equipOn()) {
             sb.append("\n    装备栏有 **4 格：武器 / 副手 / 护具 / 饰品**，一格一件：")
@@ -3252,6 +3406,12 @@ public class SandboxServiceImpl implements SandboxService {
                 .append("看重钱的人会主动接委托、摆摊、做买卖；")
                 .append("不在意实力或财富的人就别为了它们违背人设（可以安稳过日子、散财、拒绝危险委托）。")
                 .append("战斗力提升通常需要付出代价（时间、金钱、受伤风险），不要每天都涨。");
+        sb.append("\n20.1 想变强的人可以**主动安排修炼**：手头没有委托、状态还行、也没在赶路或养伤时，")
+                .append("可以找地方练招式、打坐冥想、找人切磋、翻书琢磨魔法、跟着镖队练身手——")
+                .append("这类行动可以给 combat_change +1~+").append(idleTrainGainMax()).append("，")
+                .append("但**必须付出成本**（花掉大半天、累到体力下降、炼坏了材料、切磋挨了打），")
+                .append("而且不要连着好几步都在修炼：同一个提升方式连着写，读者会腻，实力也涨得太快；")
+                .append("对实力无所谓、或者正忙着讨生活的人，就别为了涨战力硬塞一段修炼。");
         sb.append("\n21. 这一步的时间跨度：你写的是「从现在开始，到下一次行动为止」这段时间里发生的事。")
                 .append("位置与坐标请写**这段时间结束时**你所在的地方；")
                 .append("如果这一步花了很久（连夜赶路、睡一觉），actions 要让人看出时间跨度")
@@ -3260,7 +3420,7 @@ public class SandboxServiceImpl implements SandboxService {
         sb.append("\n22. 这个世界是有危险的，日子不总是温馨：要不要出事，看你现在处在什么处境——")
                 .append("① 所在地点的**危险度**（标在【地图地点】里：安全 / 较低 / 较高 / 危险）；")
                 .append("② 时段（深夜比白天危险，荒野的夜晚尤其）；")
-                .append("③ 你自身的状态（体力魔力低、身上有伤时更容易被盯上、也更打不过）；")
+                .append("③ 你自身的状态（").append(statusManaShort(w)).append("低、身上有伤时更容易被盯上、也更打不过）；")
                 .append("④ 你身上带着多少钱、是不是一个人、有没有同伴；")
                 .append("⑤ 这一步要去做什么（深入魔物森林探宝、连夜赶路，当然比在城里逛街危险）。")
                 .append("判断标准：安全、较低的地方基本不会出事，最多是些小摩擦；较高的地方在夜里或独自行动时可能遇上麻烦；")
@@ -3270,7 +3430,7 @@ public class SandboxServiceImpl implements SandboxService {
         sb.append("\n23. 一旦遭遇战斗，先判断对手是谁、有多强，再决定结果：把对手的强度和你的**战斗力**（提示词里给了数值）比一比——")
                 .append("对方远强于你：你只能逃、躲、求饶、被压制，甚至被打成重伤，**不要写侥幸反杀**；")
                 .append("实力接近：可能有来有回，惨胜、僵持、落败都有可能；你远强于对方：才可能轻松取胜。")
-                .append("你当前体力魔力低、身上有伤、没有同伴时，都会明显吃亏；有同伴在场时则可以互相照应。")
+                .append("你当前").append(statusManaShort(w)).append("低、身上有伤、没有同伴时，都会明显吃亏；有同伴在场时则可以互相照应。")
                 .append("战斗的经过要写进 actions，涉及到的数值写进对应字段：")
                 .append("受伤写 combat_change 与 status 的「伤势」，掉钱写 coins_change（受单次花费上限约束），")
                 .append("丢了东西写 items_change（负数），赢了有合理的小额战利品则写 items_change 或 coins_change（+5~+15）。")
@@ -3387,7 +3547,12 @@ public class SandboxServiceImpl implements SandboxService {
                 .append("· **报酬由系统在你真正完成时发放**：进度没到 100 之前，**绝对不要**把委托的报酬金币或奖励物品")
                 .append("写进 coins_change / items_change（那是「提前发工资」，会造成钱和委托状态对不上；实测被截断过）。")
                 .append("途中拿到的定金、小费这类零碎收入可以写，但一笔最多 5 金币。\n")
-                .append("· 委托完成那一步，如果奖励里含更好的装备、或你讨伐了对手，可以给 combat_change +1~+3；")
+                .append("· **委托完成那一步必须显式判断一次战斗力**：把 combat_change 写在完成委托的那一步，")
+                .append("哪怕结论是 0 也要是你判断过的 0（不能干脆不写）。判断依据是「这一步有没有真的让你变强」——")
+                .append("讨伐、探索、护卫这类真正动过手、逃过命、学到东西的活儿才可能涨；")
+                .append("采集、搬运、修补、送信这类跑腿活儿通常就是 0（搬再多蘑菇也不会让人更能打），不要硬给；")
+                .append("提示词里给了这类委托允许的成长区间，超出上限的部分服务端会截掉；")
+                .append("如果奖励里有更好的装备，那部分战力走装备栏（equip_change），**不要重复写进 combat_change**；")
                 .append("如果这件事让你对实力或财富的看法变了，也可以按第 26 条写 attitude_change；\n")
                 .append("· 实在做不下去（太难、太远、亏本、有更要紧的事），把 quest_abandon 填 true，")
                 .append("并在 quest_note 里写一句为什么放弃：委托会回到板上、进度清零，你之后还能再接它。")
@@ -3396,7 +3561,7 @@ public class SandboxServiceImpl implements SandboxService {
                 .append("那是你**已经结算过**的委托（奖励已经到手），不是还在做的事。")
                 .append("你可以自然地提起它、因此心情不错或觉得理所当然，但**不要再跑去执行它**。");
         appendStyleExtra(sb);
-        appendDraftFlow(sb);
+        appendDraftFlow(sb, w);
         return sb.toString();
     }
 
@@ -3547,7 +3712,7 @@ public class SandboxServiceImpl implements SandboxService {
      * （补全/重跑要再花一次调用），不如在同一次输出里让它先想清楚、再自检一遍。
      * 服务端只认 &lt;final&gt; 里的 JSON，前面几段不会进任何业务字段、也不会出现在前台。
      */
-    private void appendDraftFlow(StringBuilder sb) {
+    private void appendDraftFlow(StringBuilder sb, SandboxWorld world) {
         if (!draftModeOn()) {
             return;
         }
@@ -3566,7 +3731,8 @@ public class SandboxServiceImpl implements SandboxService {
                 .append("要么就地在当前所在地做点事；**绝对不要又一次写「我动身前往某地」**。\n");
         sb.append("这一段只用来给自己对齐信息：不要编造没发生过的事，也不要把它写进 final。\n");
         if (thinkStageOn()) {
-            sb.append("第二段 <think>：基于上面的回看，想清楚这一步怎么做。写下你现在的处境（时间/位置/体力魔力/金币/背包）、");
+            sb.append("第二段 <think>：基于上面的回看，想清楚这一步怎么做。写下你现在的处境（时间/位置/")
+                    .append(statusManaShort(world)).append("/金币/背包）、");
             sb.append("有哪几种可选做法（列出 2~3 个）、你为什么选这一个、这么做的代价与风险是什么");
             sb.append("（会不会累垮、钱够不够、赶不赶得上、是否偏离目标或与记忆矛盾）。");
             sb.append("这一段允许写长，鼓励真正权衡；但不要在这里排演具体动作台词。\n");
@@ -3988,7 +4154,8 @@ public class SandboxServiceImpl implements SandboxService {
                 }
                 sb.append("\n");
             }
-            sb.append("（请结合距离与自身状态——体力、魔力、金币、正在做的事——决定是否关注或前往；")
+        sb.append("（请结合距离与自身状态——").append(statusManaWithCoins(world(c.getWorldId())))
+                .append("、正在做的事——决定是否关注或前往；")
                     .append("也可以完全不理会，只在心里想一想。）\n");
         }
         if (!whispers.isEmpty()) {
@@ -4725,7 +4892,7 @@ public class SandboxServiceImpl implements SandboxService {
         if (prev != null && notBlank(prev.getStatusJson()) && notBlank(act.getStatusJson())) {
             Map<String, Object> before = parseStatus(prev.getStatusJson());
             Map<String, Object> after = parseStatus(act.getStatusJson());
-            for (String key : new String[]{"体力", "魔力", "饥饿度"}) {
+            for (String key : statusJumpKeys(character)) {
                 Integer a = toIntOrNull(before.get(key));
                 Integer b = toIntOrNull(after.get(key));
                 if (a != null && b != null && Math.abs(b - a) >= 45) {
@@ -6806,7 +6973,8 @@ public class SandboxServiceImpl implements SandboxService {
                     .append("校验规则：\n")
                     .append("1. location 必须是【可用地点】里的名字，x/y 为 0~100 的整数；\n")
                     .append("2. actions 至少保留 1 条，条目内容不要改动；\n")
-                    .append("3. status 里体力、魔力、饥饿度必须是 0~100 的整数，心情等其它键保留原文；\n")
+                    .append("3. status 里").append(statusKeys(world(character.getWorldId())))
+                    .append("必须是 0~100 的整数，心情等其它键保留原文；\n")
                     .append("4. coins_change 必须与 actions 描述的收支一致，没有花钱或赚钱就改成 0；\n")
                     .append("5. companions 只能填【可用角色名】里的名字；favor_changes 的键也只能是这些名字，")
                     .append("并且必须与 companions 和 actions 的描述相符，幅度限制在 -10~+10，")
@@ -8383,6 +8551,11 @@ public class SandboxServiceImpl implements SandboxService {
         private String title;
         private String itemNote;
         private String event;
+        /** 这一步到底有没有把委托做完（决定要不要按成长表夹战斗力） */
+        private boolean completed;
+        /** 完成的是哪一类、哪个难度：用来查「完成委托能涨多少战力」那张表 */
+        private String questType;
+        private Integer questDifficulty;
     }
 
     /** 委托板总开关 */
@@ -8416,6 +8589,22 @@ public class SandboxServiceImpl implements SandboxService {
             return 0;
         }
         return Math.max(0, Math.min(100, quest.getProgress()));
+    }
+
+    /**
+     * 完成这类委托允许的战力成长区间 [下限, 上限]。
+     * 配置形如 `hunt:0-1,0-1,0-2,1-3,1-3|gather:0,0,0,0,0-1`（类型 × 难度 1~5），
+     * 管理员可在后台「委托管理 → 生成设置」里改；没配或写坏时用内置默认表。
+     */
+    private int[] questCombatGainRange(String type, Integer difficulty) {
+        String table = configService.getConfigValue("sandbox_quest_combat_gain",
+                SandboxQuestRule.DEFAULT_COMBAT_GAIN_TABLE);
+        return SandboxQuestRule.combatGainRange(table, type, difficulty);
+    }
+
+    /** 闲着主动修炼时单次允许的战力成长上限（只在提示词里用，服务端仍受 ±COMBAT_STEP_MAX 约束） */
+    private int idleTrainGainMax() {
+        return SandboxQuestRule.idleTrainMax(configService.getConfigValue("sandbox_idle_train_gain_max", "2"));
     }
 
     /** 「保留三天」的时间线：与集市清理口径一致（今天 + 前 2 天） */
@@ -9313,6 +9502,10 @@ public class SandboxServiceImpl implements SandboxService {
             result.event = "完成委托：" + quest.getTitle() + "（这一步 +" + (100 - before) + "%）";
         }
         result.title = quest.getTitle();
+        // 记下类型与难度：下一步要按「完成委托的战力成长表」夹一次 combat_change
+        result.completed = true;
+        result.questType = quest.getQuestType();
+        result.questDifficulty = quest.getDifficulty();
         if (character == null) {
             return true;
         }
@@ -9494,6 +9687,15 @@ public class SandboxServiceImpl implements SandboxService {
                 sb.append("· 对手战斗力约 ").append(current.getPower()).append("（按第 23 条的实力对比来写战况）\n");
             }
             sb.append("· 报酬：").append(questRewardText(current)).append("\n");
+            // 完成这一步允许的战力成长区间：写进提示词当"建议 + 上限"，服务端按同一张表截断
+            int[] gainRange = questCombatGainRange(current.getQuestType(), current.getDifficulty());
+            sb.append("· 完成后允许的战力成长：+").append(SandboxQuestRule.rangeText(gainRange));
+            if (gainRange[1] <= 0) {
+                sb.append("（这类活儿不会让人变强，完成时 combat_change 填 0）");
+            } else {
+                sb.append("（真的动了手、学到东西才给，没有就填 0；超过上限服务端会截断）");
+            }
+            sb.append("\n");
             sb.append("· 当前进度：").append(questProgress(current)).append("%");
             if (notBlank(current.getProgressNote())) {
                 sb.append("（上次判断：").append(current.getProgressNote()).append("）");
@@ -9754,7 +9956,6 @@ public class SandboxServiceImpl implements SandboxService {
     }
 
     /** 角色清空后的默认状态 */
-    private static final String RESET_STATUS_JSON = "{\"体力\":100,\"魔力\":100,\"饥饿度\":0,\"心情\":\"平静\"}";
 
     @Override
     public byte[] exportWorld(Long worldId, boolean includeRawResponse) {
@@ -9776,6 +9977,8 @@ public class SandboxServiceImpl implements SandboxService {
         worldJson.set("description", world.getDescription());
         worldJson.set("mapImage", world.getMapImage());
         worldJson.set("worldPrompt", world.getWorldPrompt());
+        // 魔力条名称也是世界观的一部分（修仙世界是「灵力」），存档要能带走
+        worldJson.set("manaLabel", world.getManaLabel());
         worldJson.set("enabled", world.getEnabled());
         worldJson.set("portalVisible", world.getPortalVisible());
         root.set("world", worldJson);
@@ -10106,6 +10309,10 @@ public class SandboxServiceImpl implements SandboxService {
         update.setDescription(truncate(worldJson.getStr("description"), 500));
         update.setMapImage(truncate(worldJson.getStr("mapImage"), 500));
         update.setWorldPrompt(worldJson.getStr("worldPrompt"));
+        // 老存档里没有这一项：没给的时候保持原值（不覆盖成 null），不要顺便把世界的叫法改掉
+        if (worldJson.containsKey("manaLabel")) {
+            update.setManaLabel(worldJson.getStr("manaLabel"));
+        }
         if (overwrite) {
             update.setEnabled(worldJson.getInt("enabled") == null ? 0 : worldJson.getInt("enabled"));
             update.setPortalVisible(worldJson.getInt("portalVisible") == null ? 0 : worldJson.getInt("portalVisible"));
@@ -10644,6 +10851,9 @@ public class SandboxServiceImpl implements SandboxService {
         // 下次行动时间：给一个间隔之后再开始，避免清空瞬间所有角色一起调用 AI
         int delay = Math.max(15, intConfig("sandbox_interval_max", 75));
         LocalDateTime next = LocalDateTime.now().plusMinutes(delay);
+        // 初始状态按这个世界的叫法生成（修仙世界是「灵力」、没有这条属性的世界就不写）
+        SandboxWorld resetWorld = world(worldId);
+        String resetStatus = resetStatusJson(resetWorld);
         int count = 0;
         for (SandboxCharacter character : characters(worldId)) {
             SandboxLocation spot = randomLocation(locations, random);
@@ -10656,7 +10866,7 @@ public class SandboxServiceImpl implements SandboxService {
                     .set(SandboxCharacter::getSubLocation, null)
                     // 清空「当前目标」：新的一局让 AI 自己重新立一个目标
                     .set(SandboxCharacter::getGoal, null)
-                    .set(SandboxCharacter::getStatusJson, RESET_STATUS_JSON)
+                    .set(SandboxCharacter::getStatusJson, resetStatus)
                     .set(SandboxCharacter::getCoins, 0)
                     .set(SandboxCharacter::getCombatPower, COMBAT_POWER_DEFAULT)
                     // 装备加成也清零：清空世界会把背包一并清掉（装备栏自然空了）

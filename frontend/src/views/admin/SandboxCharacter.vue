@@ -515,7 +515,10 @@
         </el-form-item>
         <el-form-item label="战斗力">
           <el-input-number v-model="form.combatPower" :min="1" :max="9999" controls-position="right" />
-          <span class="tip">综合实力（战斗技巧、魔力、装备），默认 10；AI 在行动里遇到学会新魔法、得到强力装备、受伤这类事件时也会自己微调</span>
+          <span class="tip">
+            综合实力（战斗技巧<template v-if="manaLabel">、{{ manaLabel }}</template>、装备），默认 10；
+            AI 在行动里遇到学会新魔法、得到强力装备、受伤这类事件时也会自己微调
+          </span>
           <span class="tip">角色身上的钱：AI 日常活动会赚取或消耗，前台用户也能用积分贡献</span>
         </el-form-item>
         <el-form-item label="当前目标">
@@ -550,8 +553,10 @@
             <div class="status-row">
               <span class="status-label">体力</span>
               <el-input-number v-model="statusForm.体力" :min="0" :max="100" controls-position="right" />
-              <span class="status-label">魔力</span>
-              <el-input-number v-model="statusForm.魔力" :min="0" :max="100" controls-position="right" />
+              <template v-if="manaLabel">
+                <span class="status-label">{{ manaLabel }}</span>
+                <el-input-number v-model="statusForm[manaLabel]" :min="0" :max="100" controls-position="right" />
+              </template>
             </div>
             <div class="status-row">
               <span class="status-label">饥饿度</span>
@@ -575,7 +580,10 @@
               + 添加自定义状态
             </el-button>
             <div class="tip">
-              体力 / 魔力 / 饥饿度 用 0~100，心情等其它项可以写文字；AI 每次行动后会自动更新这些数值，这里也可以随时手改。
+              体力 / {{ manaLabel || '资源条' }} / 饥饿度 用 0~100，心情等其它项可以写文字；AI 每次行动后会自动更新这些数值，这里也可以随时手改。
+              <template v-if="!manaLabel">
+                （当前世界没有「魔力」这条属性，可在「世界与地图 → 魔力条名称」里开启）
+              </template>
             </div>
           </div>
         </el-form-item>
@@ -686,12 +694,26 @@ const { currentWorldId, setCurrentWorld } = useSandboxWorld()
 const router = useRouter()
 const selectedWorldId = ref(null)
 const temperature = ref(0.9)
+/**
+ * 本世界「魔力」这条资源条叫什么（在「世界与地图 → 魔力条名称」里配）：
+ * 剑与魔法是「魔力」、修仙是「灵力」、现代是「精力」；空串表示这个世界没有这条属性。
+ * 没配过（null）时按默认「魔力」显示，避免老世界突然少一条。
+ */
+const manaLabel = computed(() => {
+  const found = (worlds.value || []).find((item) => item.id === selectedWorldId.value)
+  if (!found || found.manaLabel === null || found.manaLabel === undefined) {
+    return '魔力'
+  }
+  return String(found.manaLabel).trim()
+})
 /** 标准状态项，对应 AI 提示词里的固定字段 */
 // 伤势单独用下拉编辑（四档），所以从"自定义状态项"里排除，避免同一个键出现两份
-const STANDARD_STATUS_KEYS = ['体力', '魔力', '饥饿度', '心情', '伤势']
+function standardStatusKeys() {
+  return ['体力', manaLabel.value, '饥饿度', '心情', '伤势'].filter(Boolean)
+}
 /** 伤势档位：与后端 SandboxDeathGuard.INJURY_LEVELS 保持一致 */
 const INJURY_LEVELS = ['无恙', '轻伤', '重伤', '濒死']
-const statusForm = reactive({ 体力: 100, 魔力: 100, 饥饿度: 20, 心情: '平静', 伤势: '无恙' })
+const statusForm = reactive({ 体力: 100, 饥饿度: 20, 心情: '平静', 伤势: '无恙' })
 const extraStatus = ref([])
 
 /**
@@ -737,10 +759,12 @@ const form = reactive({ ...FORM_DEFAULTS })
 function resetForm() {
   Object.assign(form, FORM_DEFAULTS)
   statusForm.体力 = 100
-  statusForm.魔力 = 100
   statusForm.饥饿度 = 20
   statusForm.心情 = '平静'
   statusForm.伤势 = '无恙'
+  if (manaLabel.value) {
+    statusForm[manaLabel.value] = 100
+  }
   extraStatus.value = []
   draftItems.value = []
   draftPlace.value = ''
@@ -832,10 +856,13 @@ function numOr(value, fallback) {
 function buildStatusJson() {
   const status = {
     体力: statusForm.体力,
-    魔力: statusForm.魔力,
     饥饿度: statusForm.饥饿度,
     // 伤势是四档固定值：AI 行动和后台编辑都走同一套白名单
     伤势: INJURY_LEVELS.includes(statusForm.伤势) ? statusForm.伤势 : '无恙'
+  }
+  // 资源条按本世界的叫法写（没有这条属性的世界就不写）
+  if (manaLabel.value) {
+    status[manaLabel.value] = numOr(statusForm[manaLabel.value], 100)
   }
   if (statusForm.心情) {
     status.心情 = statusForm.心情
@@ -907,13 +934,17 @@ function openEdit(row) {
   form.enabled = row.enabled == null ? 1 : row.enabled
   const status = parseStatus(row.statusJson)
   statusForm.体力 = numOr(status['体力'], 100)
-  statusForm.魔力 = numOr(status['魔力'], 100)
+  if (manaLabel.value) {
+    statusForm[manaLabel.value] = numOr(status[manaLabel.value], 100)
+  }
   statusForm.饥饿度 = numOr(status['饥饿度'], 20)
   statusForm.心情 = status['心情'] == null ? '' : String(status['心情'])
   const injury = status['伤势'] == null ? '无恙' : String(status['伤势'])
   statusForm.伤势 = INJURY_LEVELS.includes(injury) ? injury : '无恙'
   extraStatus.value = Object.keys(status)
-    .filter((key) => !STANDARD_STATUS_KEYS.includes(key))
+    .filter((key) => !standardStatusKeys().includes(key))
+    // 这个世界没有这条属性时，历史遗留的「魔力」不再当成自定义状态往外露
+    .filter((key) => !(key === '魔力' && !manaLabel.value))
     .map((key) => ({ key, value: String(status[key]) }))
   temperature.value = Number(row.temperature || 0.9)
   models.value = form.model ? [form.model] : []
@@ -1062,13 +1093,16 @@ function applyDraft(draft) {
     : ''
   const status = draft.status || {}
   statusForm.体力 = numOr(status['体力'], 100)
-  statusForm.魔力 = numOr(status['魔力'], 100)
+  if (manaLabel.value) {
+    statusForm[manaLabel.value] = numOr(status[manaLabel.value], 100)
+  }
   statusForm.饥饿度 = numOr(status['饥饿度'], 20)
   statusForm.心情 = status['心情'] == null ? '平静' : String(status['心情'])
   const draftInjury = status['伤势'] == null ? '无恙' : String(status['伤势'])
   statusForm.伤势 = INJURY_LEVELS.includes(draftInjury) ? draftInjury : '无恙'
   extraStatus.value = Object.keys(status)
-    .filter((key) => !STANDARD_STATUS_KEYS.includes(key))
+    .filter((key) => !standardStatusKeys().includes(key))
+    .filter((key) => !(key === '魔力' && !manaLabel.value))
     .map((key) => ({ key, value: String(status[key]) }))
   draftItems.value = draft.items || []
 }

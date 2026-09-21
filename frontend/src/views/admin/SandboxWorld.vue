@@ -90,6 +90,15 @@
           />
           <div class="tip">这段文字会与角色人设一起交给 AI，作用等同于酒馆里的「世界书」。</div>
         </el-form-item>
+        <el-form-item label="魔力条名称">
+          <el-input v-model="world.manaLabel" style="width: 220px" placeholder="魔力" maxlength="20" />
+          <span class="tip">
+            状态里「魔力」这一条在本世界的叫法：<b>剑与魔法</b>填「魔力」、<b>修仙</b>填「灵力」、
+            <b>现代</b>填「精力」，角色行动、AI 创作角色、状态自检与前台展示都会跟着用这个词。<br />
+            <b>留空 = 这个世界没有这条属性</b>（提示词不再要求输出、前台也不显示这一条，
+            已有的历史数值会被清掉）；改名时角色身上的旧数值会一起迁到新名字，不用手工改
+          </span>
+        </el-form-item>
         <el-form-item>
           <el-button type="primary" :loading="savingWorld" @click="onSaveWorld">保存世界设置</el-button>
         </el-form-item>
@@ -715,7 +724,7 @@ import {
 const uploadHeaders = { Authorization: localStorage.getItem('token') || '' }
 
 const world = reactive({
-  id: null, name: '', description: '', mapImage: '', worldPrompt: '', enabled: 1, portalVisible: 1
+  id: null, name: '', description: '', mapImage: '', worldPrompt: '', manaLabel: '魔力', enabled: 1, portalVisible: 1
 })
 /** 全部世界与当前选中的世界（三个沙盒页面共用同一个选择） */
 const worlds = ref([])
@@ -1029,7 +1038,7 @@ async function loadAll() {
       // 一个世界都没有：给一个空表单，保存时会新建
       setCurrentWorld(null)
       selectedWorldId.value = null
-      Object.assign(world, { id: null, name: '', description: '', mapImage: '', worldPrompt: '', enabled: 1, portalVisible: 1 })
+    Object.assign(world, { id: null, name: '', description: '', mapImage: '', worldPrompt: '', manaLabel: '魔力', enabled: 1, portalVisible: 1 })
       locations.value = []
       Object.assign(settings, (await sandboxSettings()) || {})
       return
@@ -1046,6 +1055,9 @@ async function loadAll() {
     ])
     Object.assign(world, w || {})
     if (!world.name) world.name = ''
+    // 老数据里这一列可能是空的（还没跑 upgrade_068）：那属于"没配过"，按默认「魔力」显示；
+    // 空字符串是管理员主动清空的（这个世界没有这条属性），要原样保留
+    if (world.manaLabel === null || world.manaLabel === undefined) world.manaLabel = '魔力'
     locations.value = locs || []
     refreshCoverage()
     Object.assign(settings, s || {})
@@ -1080,7 +1092,8 @@ async function onCreateWorld() {
   } catch (e) {
     return
   }
-  await saveSandboxWorld({ name, description: '', enabled: 1, portalVisible: 1 })
+  // 新世界默认给上「魔力」这条资源条，需要别的叫法或去掉它，在下面的「魔力条名称」里改
+  await saveSandboxWorld({ name, description: '', manaLabel: '魔力', enabled: 1, portalVisible: 1 })
   ElMessage.success('世界已创建，记得上传地图并添加地点')
   worlds.value = (await sandboxWorlds()) || []
   const created = worlds.value[worlds.value.length - 1]
