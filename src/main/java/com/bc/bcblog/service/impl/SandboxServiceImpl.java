@@ -10,6 +10,7 @@ import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.bc.bcblog.common.BusinessException;
+import com.bc.bcblog.common.SandboxConfigScope;
 import com.bc.bcblog.common.SandboxBusyException;
 import com.bc.bcblog.common.PageResult;
 import com.bc.bcblog.common.SandboxGeo;
@@ -288,6 +289,96 @@ public class SandboxServiceImpl implements SandboxService {
         }
     }
 
+    // ============================== 世界级沙盒配置（方案 C） ==============================
+
+    /**
+     * 读某个世界的沙盒参数。没配过（新世界 / 老世界）返回空表，读取时自然回落到全局配置与代码默认值。
+     * JSON 坏了也只记一条日志、按空表处理——一条脏数据不该让整个世界跑不起来。
+     */
+    private Map<String, String> loadWorldSettings(Long worldId) {
+        Map<String, String> settings = new LinkedHashMap<>();
+        if (worldId == null) {
+            return settings;
+        }
+        SandboxWorld world = worldMapper.selectById(worldId);
+        if (world == null || world.getSettingsJson() == null || world.getSettingsJson().trim().isEmpty()) {
+            return settings;
+        }
+        try {
+            JSONObject obj = JSONUtil.parseObj(world.getSettingsJson());
+            for (String key : obj.keySet()) {
+                Object value = obj.get(key);
+                if (value != null) {
+                    settings.put(key, String.valueOf(value));
+                }
+            }
+        } catch (Exception e) {
+            log.warn("世界 #{} 的沙盒参数解析失败，本次按默认值处理：{}", worldId, e.getMessage());
+        }
+        return settings;
+    }
+
+    /** 把某个世界的沙盒参数落库（空表就置空，表示"全部跟随全局默认"） */
+    private void persistWorldSettings(Long worldId, Map<String, String> settings) {
+        if (worldId == null) {
+            return;
+        }
+        String json = settings == null || settings.isEmpty()
+                ? null : truncate(JSONUtil.toJsonStr(settings), 20000);
+        worldMapper.update(null, new LambdaUpdateWrapper<SandboxWorld>()
+                .eq(SandboxWorld::getId, worldId)
+                .set(SandboxWorld::getSettingsJson, json));
+    }
+
+    /**
+     * 带着某个世界的配置上下文执行一段逻辑。
+     * 沙盒参数（sandbox_*，总闸除外）在这段逻辑里读到的都是**这个世界自己的值**。
+     */
+    private <T> T withWorldConfig(Long worldId, java.util.function.Supplier<T> action) {
+        if (worldId == null) {
+            // 没指定世界（旧调用 / 全局任务）：不激活作用域，读到的就是全局配置与默认值
+            return action.get();
+        }
+        SandboxConfigScope.begin(loadWorldSettings(worldId));
+        try {
+            return action.get();
+        } finally {
+            SandboxConfigScope.end();
+        }
+    }
+
+    /** 同上，但没有返回值 */
+    private void withWorldConfig(Long worldId, Runnable action) {
+        withWorldConfig(worldId, () -> {
+            action.run();
+            return null;
+        });
+    }
+
+    /**
+     * 后台保存"某个世界的设置"：先载入这个世界已有的配置，执行写入（writeSetting 会落进作用域里），
+     * 成功后把整份配置写回 sandbox_world.settings_json。失败则不落库，避免写进半份配置。
+     */
+    private void withWorldConfigWrite(Long worldId, Runnable action) {
+        if (worldId == null) {
+            // 调用方没带世界（老版本前端）：保持老行为，直接写全局配置
+            action.run();
+            return;
+        }
+        Map<String, String> settings = loadWorldSettings(worldId);
+        SandboxConfigScope.begin(settings);
+        boolean ok = false;
+        try {
+            action.run();
+            ok = true;
+        } finally {
+            if (ok) {
+                persistWorldSettings(worldId, settings);
+            }
+            SandboxConfigScope.end();
+        }
+    }
+
     /**
      * 把一个世界的「魔力条名称」改名迁到角色的状态 JSON 上：
      * 新名字非空时把旧的键替换掉；清空（这个世界没有这条属性）时直接把那一项删掉。
@@ -392,6 +483,12 @@ public class SandboxServiceImpl implements SandboxService {
             throw new BusinessException("地点名称不能为空");
         }
         location.setName(location.getName().trim());
+        // 世界归属：**编辑时必须以库里的记录为准**。
+        // 教训：前端保存时只有新建才带 worldId，编辑不带；而查地点列表的写法是
+        // `.eq(worldId != null, ...)`——worldId 为 null 就等于"不过滤"，
+        // 于是重叠校验会拿新世界的地点去和其他世界的地点比，
+        // 两个世界共用同一套 0~100 地图坐标，必然误报"与另一个世界的地点重叠"。
+        location.setWorldId(resolveLocationWorldId(location));
         // 多边形区域（后台套索 / 魔法棒描边）：规范化 + 自交校验，并用外接矩形同步 x/y/width/height，
         // 这样提示词、后台列表等沿用矩形字段的地方依然能拿到可用信息
         boolean clearPolygon = location.getPolygon() != null && location.getPolygon().trim().isEmpty();
@@ -438,9 +535,6 @@ public class SandboxServiceImpl implements SandboxService {
             if (location.getSortOrder() == null) {
                 location.setSortOrder(0);
             }
-            if (location.getWorldId() == null) {
-                location.setWorldId(worldId(location.getWorldId()));
-            }
         }
         // 区域不能超出地图边界
         if (location.getX() != null && location.getWidth() != null && location.getWidth() > 0) {
@@ -468,12 +562,22 @@ public class SandboxServiceImpl implements SandboxService {
     /**
      * 校验区域不与其它地点交叉重叠。
      *
+     * 注意：比对范围严格限定在**同一个世界**里。世界之间是完全隔离的，
+     * 而且每个世界都用同一套 0~100 地图坐标，跨世界比对必然误报。
+     *
      * 规则（与后台实时校验、前台渲染保持一致）：
      *   1. 相离：放行；
      *   2. 交叉重叠：重叠面积小于地图面积 1% 视为手绘压边误差，放行；否则拦下并提示与谁重叠了多少；
      *   3. 完全包含：放行（允许「圣云教国」里放「圣光塔」这种嵌套，命中时取面积小的那个）。
      */
     private void validateOverlap(SandboxLocation target) {
+        if (target.getWorldId() == null) {
+            // 世界没定就不能比对——locations(null) 会把所有世界的地点都查出来，
+            // 而每个世界都用同一套 0~100 坐标，跨世界比对必然误报。
+            // 正常流程由 resolveLocationWorldId 保证这里不为 null，这行只是兜底。
+            log.warn("地点「{}」没有归属世界，跳过重叠校验", target.getName());
+            return;
+        }
         List<double[]> polygon = polygonOf(target);
         if (polygon == null) {
             // 单点地点：只要不落在别的区域里即可
@@ -515,6 +619,44 @@ public class SandboxServiceImpl implements SandboxService {
         }
     }
 
+    /**
+     * 这个地点属于哪个世界。
+     *
+     * 编辑（带了 id）时**以库里那条记录的世界为准**：前端编辑保存时不传 worldId，
+     * 一旦这里放任它为 null，后面的重叠校验就会跨世界比对（世界之间共用同一套 0~100 坐标，必然误报）。
+     * 新建时用传入的 worldId，没传才退回默认（第一个）世界。
+     */
+    private Long resolveLocationWorldId(SandboxLocation location) {
+        return resolveWorldIdForSave(location.getId(), location.getWorldId(), (id) -> {
+            SandboxLocation existing = locationMapper.selectById(id);
+            return existing == null ? null : existing.getWorldId();
+        });
+    }
+
+    /**
+     * 保存实体时的世界归属，**统一走这里**，避免每个 save 方法各写一遍（写漏一次就串世界）。
+     *
+     * 规则：
+     *   · 编辑（id 不为空）：以库里那条记录的世界为准 —— 前端编辑保存时普遍不传 worldId，
+     *     放任它为 null 会出现"拿默认世界的地点/角色去比对或过滤"，实测已经踩到过
+     *     （地点重叠误报、角色免遭遇地点被清空、纪闻被搬到默认世界）；
+     *   · 新建：用传入的 worldId，没传才退回默认（第一个）世界。
+     *
+     * @param id       当前记录 id（null 表示新建）
+     * @param incoming 调用方传入的 worldId
+     * @param loader   按 id 读库里现有记录的世界（读不到返回 null）
+     */
+    private Long resolveWorldIdForSave(Long id, Long incoming,
+                                       java.util.function.LongFunction<Long> loader) {
+        if (id != null) {
+            Long existing = loader.apply(id);
+            if (existing != null) {
+                return existing;
+            }
+        }
+        return incoming == null ? worldId(null) : incoming;
+    }
+
     /** 判断两个地点对象是不是同一条记录 */
     private boolean isSelf(SandboxLocation a, SandboxLocation b) {
         return a.getId() != null && a.getId().equals(b.getId());
@@ -529,6 +671,17 @@ public class SandboxServiceImpl implements SandboxService {
 
     @Override
     public SandboxSettingVO settings() {
+        return settings(null);
+    }
+
+    /** 指定世界的设置（不传世界 = 全局值，兼容旧调用） */
+    @Override
+    public SandboxSettingVO settings(Long worldId) {
+        return withWorldConfig(worldId, this::settingsValues);
+    }
+
+    /** 组装设置 VO：读的都是"当前作用域"里的值（世界配置 → 全局 → 默认） */
+    private SandboxSettingVO settingsValues() {
         SandboxSettingVO vo = new SandboxSettingVO();
         vo.setEnabled(configService.getConfigValue("sandbox_enabled", "0"));
         vo.setIntervalMin(configService.getConfigValue("sandbox_interval_min", "45"));
@@ -617,6 +770,13 @@ public class SandboxServiceImpl implements SandboxService {
 
     @Override
     public void saveSettings(SandboxSettingVO vo) {
+        // 方案 C：这些参数写进"当前世界"的配置（前端会带 worldId；没带则按老行为写全局）
+        withWorldConfigWrite(vo == null ? null : vo.getWorldId(), () -> {
+            saveSettingsValues(vo);
+        });
+    }
+
+    private void saveSettingsValues(SandboxSettingVO vo) {
         writeSetting("sandbox_enabled", vo.getEnabled());
         writeSetting("sandbox_interval_min", vo.getIntervalMin());
         writeSetting("sandbox_interval_max", vo.getIntervalMax());
@@ -704,6 +864,10 @@ public class SandboxServiceImpl implements SandboxService {
      */
     @Override
     public void saveShopSettings(SandboxSettingVO vo) {
+        withWorldConfigWrite(vo == null ? null : vo.getWorldId(), () -> saveShopSettingsValues(vo));
+    }
+
+    private void saveShopSettingsValues(SandboxSettingVO vo) {
         writeSetting("sandbox_shop_title", vo.getShopTitle());
         writeSetting("sandbox_shop_enabled", vo.getShopEnabled());
         writeSetting("sandbox_shop_auto_enabled", vo.getShopAutoEnabled());
@@ -724,6 +888,10 @@ public class SandboxServiceImpl implements SandboxService {
      */
     @Override
     public void saveQuestSettings(SandboxSettingVO vo) {
+        withWorldConfigWrite(vo == null ? null : vo.getWorldId(), () -> saveQuestSettingsValues(vo));
+    }
+
+    private void saveQuestSettingsValues(SandboxSettingVO vo) {
         writeSetting("sandbox_quest_title", vo.getQuestTitle());
         writeSetting("sandbox_quest_enabled", vo.getQuestEnabled());
         writeSetting("sandbox_quest_visible_count", vo.getQuestVisibleCount());
@@ -745,6 +913,10 @@ public class SandboxServiceImpl implements SandboxService {
     /** 行动日志页保存「旅人纪闻设置」：只写纪闻相关的键 */
     @Override
     public void saveNewsSettings(SandboxSettingVO vo) {
+        withWorldConfigWrite(vo == null ? null : vo.getWorldId(), () -> saveNewsSettingsValues(vo));
+    }
+
+    private void saveNewsSettingsValues(SandboxSettingVO vo) {
         writeSetting("sandbox_news_title", vo.getNewsTitle());
         writeSetting("sandbox_news_enabled", vo.getNewsEnabled());
         writeSetting("sandbox_news_per_generate", vo.getNewsPerGenerate());
@@ -779,6 +951,10 @@ public class SandboxServiceImpl implements SandboxService {
 
     @Override
     public SandboxCharacterDraftVO generateCharacter(SandboxCharacterGenerateDTO dto, Long worldId) {
+        return withWorldConfig(worldId, () -> generateCharacterInWorld(dto, worldId));
+    }
+
+    private SandboxCharacterDraftVO generateCharacterInWorld(SandboxCharacterGenerateDTO dto, Long worldId) {
         if (dto == null || dto.getRequirement() == null || dto.getRequirement().trim().isEmpty()) {
             throw new BusinessException("请先输入你的角色需求");
         }
@@ -982,10 +1158,12 @@ public class SandboxServiceImpl implements SandboxService {
         if (character.getY() != null) {
             character.setY(clamp(character.getY()));
         }
-        // 新建时先把世界定位好：下面按坐标校正一级地点时要用到它
-        if (character.getId() == null && character.getWorldId() == null) {
-            character.setWorldId(worldId(character.getWorldId()));
-        }
+        // 世界归属先定好：下面「按坐标校正一级地点」和「免遭遇地点过滤」都要用它。
+        // 编辑时以库里的记录为准——前端编辑不传 worldId，否则免遭遇地点会被拿默认世界的地点名过滤掉（实测踩过）。
+        character.setWorldId(resolveWorldIdForSave(character.getId(), character.getWorldId(), (id) -> {
+            SandboxCharacter existing = characterMapper.selectById(id);
+            return existing == null ? null : existing.getWorldId();
+        }));
         // 坐标与一级地点必须自洽，否则「地图按地点名归类、距离按坐标计算」会互相打架
         if (character.getX() != null && character.getY() != null) {
             alignPlaceByPoint(character);
@@ -998,7 +1176,7 @@ public class SandboxServiceImpl implements SandboxService {
         if (character.getEncounterExemptLocations() != null) {
             character.setEncounterExemptLocations(normalizeExemptLocations(
                     character.getEncounterExemptLocations(),
-                    character.getWorldId() == null ? worldId(null) : character.getWorldId()));
+                    character.getWorldId()));
         }
         if (character.getTemperature() != null) {
             if (character.getTemperature().compareTo(BigDecimal.ZERO) < 0) {
@@ -1236,6 +1414,13 @@ public class SandboxServiceImpl implements SandboxService {
 
     @Override
     public SandboxAct runOnce(Long characterId, boolean manual) {
+        // 手动执行也走这个世界的配置（间隔、自检开关、提示词开关…都按角色所属世界来）
+        SandboxCharacter runOnceCharacter = characterMapper.selectById(characterId);
+        return withWorldConfig(runOnceCharacter == null ? null : runOnceCharacter.getWorldId(),
+                () -> runOnceInWorld(characterId, manual));
+    }
+
+    private SandboxAct runOnceInWorld(Long characterId, boolean manual) {
         // 管理员点「立即执行」：第一次行动失败时直接把原因抛给后台，成功后继续处理回应回合
         Set<Long> planned = new HashSet<>();
         planned.add(characterId);
@@ -2344,7 +2529,8 @@ public class SandboxServiceImpl implements SandboxService {
             if (world.getEnabled() == null || world.getEnabled() != 1) {
                 continue;
             }
-            runScheduledForWorld(world.getId());
+            // 每个世界带着自己的配置跑（间隔、昼夜、上限、自检开关…都是这个世界自己的）
+            withWorldConfig(world.getId(), () -> runScheduledForWorld(world.getId()));
         }
     }
 
@@ -2816,6 +3002,11 @@ public class SandboxServiceImpl implements SandboxService {
 
     @Override
     public SandboxPortalVO portal(Long worldId) {
+        // 前台的展示开关（旅人低语、集市、委托、纪闻…）都取这个世界自己的配置
+        return withWorldConfig(worldId, () -> portalInWorld(worldId));
+    }
+
+    private SandboxPortalVO portalInWorld(Long worldId) {
         SandboxWorld world = world(worldId);
         SandboxPortalVO vo = new SandboxPortalVO();
         // 世界「是否运行」是独立开关：全局沙盒开关关掉、或这个世界停跑，前台都只展示历史
@@ -6268,15 +6459,18 @@ public class SandboxServiceImpl implements SandboxService {
         if (news.getEnabled() == null) {
             news.setEnabled(1);
         }
-        if (news.getWorldId() == null) {
-            news.setWorldId(worldId(news.getWorldId()));
-        }
+        // 世界归属：编辑时以库里的记录为准，否则这条纪闻会被搬到默认世界
+        // （前端编辑框从来不带 worldId，实测会把新世界的事件挪到圣云大陆去）
+        news.setWorldId(resolveWorldIdForSave(news.getId(), news.getWorldId(), (id) -> {
+            SandboxNews existing = newsMapper.selectById(id);
+            return existing == null ? null : existing.getWorldId();
+        }));
         if (news.getSource() == null || news.getSource().trim().isEmpty()) {
             news.setSource("admin");
         }
         // 补坐标：优先匹配地图地点的区域中心
         if (news.getX() == null || news.getY() == null) {
-            SandboxLocation matched = matchLocation(locations(resolveWorldId(news.getWorldId(), null)), news.getLocationName());
+            SandboxLocation matched = matchLocation(locations(news.getWorldId()), news.getLocationName());
             if (matched != null) {
                 news.setX(centerX(matched));
                 news.setY(centerY(matched));
@@ -6298,6 +6492,10 @@ public class SandboxServiceImpl implements SandboxService {
 
     @Override
     public int generateNews(Integer count, Long providerId, String model, Long worldId) {
+        return withWorldConfig(worldId, () -> generateNewsInWorld(count, providerId, model, worldId));
+    }
+
+    private int generateNewsInWorld(Integer count, Long providerId, String model, Long worldId) {
         int size = count == null ? intConfig("sandbox_news_per_generate", 3) : count;
         size = Math.max(1, Math.min(10, size));
         Long provider = providerId;
@@ -6403,6 +6601,10 @@ public class SandboxServiceImpl implements SandboxService {
 
     @Override
     public void autoGenerateNews(Long worldId) {
+        withWorldConfig(worldId, () -> autoGenerateNewsInWorld(worldId));
+    }
+
+    private void autoGenerateNewsInWorld(Long worldId) {
         if (!"1".equals(configService.getConfigValue("sandbox_news_enabled", "1"))) {
             return;
         }
@@ -6430,18 +6632,21 @@ public class SandboxServiceImpl implements SandboxService {
      */
     @Override
     public int autoRefreshNews() {
-        if (!"1".equals(configService.getConfigValue("sandbox_news_enabled", "1"))
-                || !"1".equals(configService.getConfigValue("sandbox_news_auto_enabled", "1"))) {
-            return 0;
-        }
         int refreshed = 0;
         for (SandboxWorld world : worlds()) {
-            if (world.getEnabled() == null || world.getEnabled() != 1
-                    || !newsRefreshDue(world.getId()) || !autoRefreshAllowed("news", world.getId())) {
+            if (world.getEnabled() == null || world.getEnabled() != 1) {
                 continue;
             }
-            autoGenerateNews(world.getId());
-            refreshed++;
+            refreshed += withWorldConfig(world.getId(), () -> {
+                if (!"1".equals(configService.getConfigValue("sandbox_news_enabled", "1"))
+                        || !"1".equals(configService.getConfigValue("sandbox_news_auto_enabled", "1"))
+                        || !newsRefreshDue(world.getId())
+                        || !autoRefreshAllowed("news", world.getId())) {
+                    return 0;
+                }
+                autoGenerateNews(world.getId());
+                return 1;
+            });
         }
         return refreshed;
     }
@@ -6777,6 +6982,12 @@ public class SandboxServiceImpl implements SandboxService {
      * @return 是否真的写了一条记忆
      */
     private boolean summarize(SandboxCharacter character, LocalDate date) {
+        // 记忆总结也按角色所属世界的配置跑（是否总结、携带几天、总结后是否删日志…）
+        return withWorldConfig(character == null ? null : character.getWorldId(),
+                () -> summarizeInWorld(character, date));
+    }
+
+    private boolean summarizeInWorld(SandboxCharacter character, LocalDate date) {
         List<SandboxAct> acts = actMapper.selectList(new LambdaQueryWrapper<SandboxAct>()
                 .eq(SandboxAct::getCharacterId, character.getId())
                 .ge(SandboxAct::getCreateTime, date.atStartOfDay())
@@ -8011,6 +8222,10 @@ public class SandboxServiceImpl implements SandboxService {
      */
     @Override
     public int generateShopItems(Integer count, Long providerId, String model, Long worldId) {
+        return withWorldConfig(worldId, () -> generateShopItemsInWorld(count, providerId, model, worldId));
+    }
+
+    private int generateShopItemsInWorld(Integer count, Long providerId, String model, Long worldId) {
         int size = Math.max(1, Math.min(10, count == null ? intConfig("sandbox_shop_per_generate", 3) : count));
         Long wid = worldId(worldId);
         SandboxWorld world = world(wid);
@@ -8151,24 +8366,30 @@ public class SandboxServiceImpl implements SandboxService {
 
     @Override
     public int autoRefreshShop() {
-        if (!"1".equals(configService.getConfigValue("sandbox_shop_enabled", "1"))
-                || !"1".equals(configService.getConfigValue("sandbox_shop_auto_enabled", "1"))) {
-            return 0;
-        }
         int refreshed = 0;
         for (SandboxWorld world : worlds()) {
-            if (world.getEnabled() == null || world.getEnabled() != 1 || !shopRefreshDue(world.getId())) {
+            if (world.getEnabled() == null || world.getEnabled() != 1) {
                 continue;
             }
-            try {
-                if (generateShopItems(null, null, null, world.getId()) > 0) {
-                    refreshed++;
-                }
-            } catch (Exception e) {
-                log.warn("旅人集市自动刷新失败（世界 {}）：{}", world.getId(), e.getMessage());
-            }
+            // 开关、间隔、生成条数都是这个世界自己的配置
+            refreshed += withWorldConfig(world.getId(), () -> autoRefreshShopForWorld(world.getId()));
         }
         return refreshed;
+    }
+
+    /** 单个世界的集市自动刷新（在"这个世界"的配置作用域里执行） */
+    private int autoRefreshShopForWorld(Long worldId) {
+        if (!"1".equals(configService.getConfigValue("sandbox_shop_enabled", "1"))
+                || !"1".equals(configService.getConfigValue("sandbox_shop_auto_enabled", "1"))
+                || !shopRefreshDue(worldId)) {
+            return 0;
+        }
+        try {
+            return generateShopItems(null, null, null, worldId) > 0 ? 1 : 0;
+        } catch (Exception e) {
+            log.warn("旅人集市自动刷新失败（世界 {}）：{}", worldId, e.getMessage());
+            return 0;
+        }
     }
 
     /**
@@ -8862,6 +9083,10 @@ public class SandboxServiceImpl implements SandboxService {
      */
     @Override
     public int generateQuests(Integer count, Long providerId, String model, Long worldId) {
+        return withWorldConfig(worldId, () -> generateQuestsInWorld(count, providerId, model, worldId));
+    }
+
+    private int generateQuestsInWorld(Integer count, Long providerId, String model, Long worldId) {
         Long wid = worldId(worldId);
         SandboxWorld world = world(wid);
         if (world.getId() == null) {
@@ -9030,23 +9255,25 @@ public class SandboxServiceImpl implements SandboxService {
      */
     @Override
     public int autoRefreshQuests() {
-        if (!"1".equals(configService.getConfigValue("sandbox_quest_enabled", "1"))
-                || !"1".equals(configService.getConfigValue("sandbox_quest_auto_enabled", "1"))) {
-            return 0;
-        }
         int refreshed = 0;
         for (SandboxWorld world : worlds()) {
-            if (world.getEnabled() == null || world.getEnabled() != 1
-                    || !questRefreshDue(world.getId()) || !autoRefreshAllowed("quest", world.getId())) {
+            if (world.getEnabled() == null || world.getEnabled() != 1) {
                 continue;
             }
-            try {
-                if (generateQuests(null, null, null, world.getId()) > 0) {
-                    refreshed++;
+            refreshed += withWorldConfig(world.getId(), () -> {
+                if (!"1".equals(configService.getConfigValue("sandbox_quest_enabled", "1"))
+                        || !"1".equals(configService.getConfigValue("sandbox_quest_auto_enabled", "1"))
+                        || !questRefreshDue(world.getId())
+                        || !autoRefreshAllowed("quest", world.getId())) {
+                    return 0;
                 }
-            } catch (Exception e) {
-                log.warn("旅人委托板自动刷新失败（世界 {}）：{}", world.getId(), e.getMessage());
-            }
+                try {
+                    return generateQuests(null, null, null, world.getId()) > 0 ? 1 : 0;
+                } catch (Exception e) {
+                    log.warn("旅人委托板自动刷新失败（世界 {}）：{}", world.getId(), e.getMessage());
+                    return 0;
+                }
+            });
         }
         return refreshed;
     }

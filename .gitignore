@@ -48,3 +48,6 @@ bcblog-secret.key
 
 ### Maven shade ###
 dependency-reduced-pom.xml
+
+### 服务器原始 dump（含明文密钥与数据，绝不提交） ###
+docs/sql/schema/server_*.sql

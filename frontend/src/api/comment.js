@@ -10,6 +10,11 @@ export function saveComment(data) {
   return request.post('/portal/comment/save', data)
 }
 
+// 前台：首页「最近评论」（原生评论模式用）
+export function recentComments(limit = 10) {
+  return request.get('/portal/comment/recent', { params: { limit } })
+}
+
 // 后台：分页查询评论
 export function adminCommentPage(params) {
   return request.get('/admin/comment/page', { params })

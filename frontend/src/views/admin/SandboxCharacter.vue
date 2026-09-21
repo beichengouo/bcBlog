@@ -1156,8 +1156,8 @@ async function onSave() {
   try {
     const saved = await saveSandboxCharacter({
       ...form,
-      // 新建角色要指明属于哪个世界；编辑时后端已有记录
-      worldId: form.id ? undefined : selectedWorldId.value,
+      // 世界归属：新建和编辑都带上（后端同样以库里的记录为准，双保险）
+      worldId: selectedWorldId.value,
       // 免遭遇地点：多选数组 → 逗号分隔字符串（服务端会再过滤成这个世界真实存在的地点）
       encounterExemptLocations: exemptLocations.value.length ? exemptLocations.value.join(',') : '',
       temperature: temperature.value,

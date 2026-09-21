@@ -371,7 +371,7 @@ async function load() {
   try {
     items.value = (await sandboxShop(selectedWorldId.value)) || []
     stats.value = (await sandboxShopStats(selectedWorldId.value)) || {}
-    const s = await sandboxSettings()
+    const s = await sandboxSettings(selectedWorldId.value)
     for (const key of Object.keys(settings)) {
       if (s && s[key] != null) {
         settings[key] = s[key]
@@ -485,7 +485,8 @@ async function onSave() {
   try {
     await saveSandboxShopItem({
       ...form,
-      worldId: form.id ? undefined : selectedWorldId.value,
+      // 世界归属：新建和编辑都带上（后端以库里的记录为准）
+      worldId: selectedWorldId.value,
       icon: undefined,
       originalPrice: undefined,
       totalStock: undefined
@@ -523,7 +524,7 @@ async function onSaveSettings() {
   savingSetting.value = true
   try {
     // 用集市专用接口：普通管理员只会写集市相关配置，改不到世界运行参数
-    await saveSandboxShopSettings({ ...settings })
+    await saveSandboxShopSettings({ ...settings, worldId: selectedWorldId.value })
     ElMessage.success('设置已保存')
     await load()
   } finally {

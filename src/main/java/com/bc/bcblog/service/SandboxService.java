@@ -61,6 +61,9 @@ public interface SandboxService {
 
     SandboxSettingVO settings();
 
+    /** 指定世界的沙盒参数（不传世界 = 全局值） */
+    SandboxSettingVO settings(Long worldId);
+
     void saveSettings(SandboxSettingVO vo);
 
     /** 集市管理页专用：只写集市相关配置（世界运行参数仍归超级管理员） */

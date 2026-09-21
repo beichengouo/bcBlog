@@ -30,7 +30,7 @@
       </div>
     </section>
 
-    <!-- 最近评论：来自 Gitalk（GitHub Issues） -->
+    <!-- 最近评论：原生评论取自本站，Gitalk 模式取自 GitHub Issues -->
     <section v-if="recentComments.length" class="recent-comments">
       <div class="rc-container glass">
         <button class="rc-header" :class="{ open: commentsOpen }" @click="commentsOpen = !commentsOpen" :aria-expanded="commentsOpen">
@@ -39,7 +39,7 @@
             <span class="rc-badge">{{ recentComments.length }}</span>
           </span>
           <span class="rc-head-right">
-            <span class="rc-sub">Gitalk · GitHub</span>
+            <span class="rc-sub">{{ commentSystem === 'native' ? '本站评论' : 'Gitalk · GitHub' }}</span>
             <svg class="rc-arrow" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="m6 9 6 6 6-6" />
             </svg>
@@ -130,6 +130,8 @@ import { useRoute, useRouter } from 'vue-router'
 import { portalCategoryTree } from '@/api/category'
 import { portalTagList } from '@/api/tag'
 import { getRecentGitalkComments } from '@/api/gitalk'
+import { recentComments as recentNativeComments } from '@/api/comment'
+import { getPortalConfig } from '@/api/config'
 import { useSiteStore } from '@/store/site'
 import ArticleList from '@/components/portal/ArticleList.vue'
 import AnnouncementBoard from '@/components/portal/AnnouncementBoard.vue'
@@ -148,6 +150,8 @@ const siteName = ref('bcBlog')
 const showShowcase = ref(true)
 const carouselCount = ref(5)
 const recentComments = ref([])
+// 当前站点的评论系统：native（本站评论）/ gitalk（GitHub Issues）
+const commentSystem = ref('gitalk')
 const commentsOpen = ref(false)
 
 const typedText = ref('')
@@ -191,6 +195,11 @@ function formatCommentTime(iso) {
 }
 
 function goComment(c) {
+  // 原生评论：直接跳到那篇文章的评论区
+  if (c.articleId) {
+    router.push('/portal/article/' + c.articleId)
+    return
+  }
   if (c.pagePath && c.pagePath.startsWith('/')) {
     router.push(c.pagePath)
   } else if (c.htmlUrl) {
@@ -283,8 +292,28 @@ onMounted(async () => {
 
   categories.value = await portalCategoryTree()
   tags.value = await portalTagList()
+  // 「最近评论」跟着后台的评论系统走：原生评论就读本站评论，Gitalk 才去读 GitHub Issues
   try {
-    recentComments.value = await getRecentGitalkComments(10)
+    const cfg = await getPortalConfig()
+    commentSystem.value = (cfg && cfg.commentSystem) || 'gitalk'
+  } catch (e) {
+    commentSystem.value = 'gitalk'
+  }
+  try {
+    if (commentSystem.value === 'native') {
+      const list = (await recentNativeComments(10)) || []
+      recentComments.value = list.map((c) => ({
+        id: c.id,
+        articleId: c.articleId,
+        avatar: c.avatar || '/uploads/logo/avatar.png',
+        author: c.nickname || '游客',
+        createdAt: c.createTime,
+        body: c.content,
+        pageTitle: c.articleTitle
+      }))
+    } else {
+      recentComments.value = await getRecentGitalkComments(10)
+    }
   } catch (e) {
     recentComments.value = []
   }

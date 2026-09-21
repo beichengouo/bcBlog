@@ -31,6 +31,15 @@ public class SandboxWorld {
      * 没配过（null）时按默认的「魔力」处理，避免老世界突然少一条。
      */
     private String manaLabel;
+    /**
+     * 这个世界的沙盒参数（JSON：{"sandbox_interval_min":"60", ...}）。
+     *
+     * 方案 C：每个世界一套完整、互相独立的配置。
+     *   · 这里存的是**这个世界自己的值**；没写过的键回落到全局 sys_config，再回落到代码默认值，
+     *     所以老世界（列为空）行为保持不变，新建世界也天然继承一套可用的默认值；
+     *   · 唯一例外是「AI 调用总闸」sandbox_enabled：它始终是全局的，用来一键停掉所有世界。
+     */
+    private String settingsJson;
     /** 是否启用：1 启用，0 停用 */
     private Integer enabled;
     /** 前台是否可见：1 出现在前台世界下拉（可以只看历史），0 完全隐藏 */

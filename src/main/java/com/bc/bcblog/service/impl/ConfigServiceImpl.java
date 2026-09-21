@@ -5,6 +5,7 @@ import com.bc.bcblog.component.SecretCipher;
 import com.bc.bcblog.entity.SysConfig;
 import com.bc.bcblog.mapper.SysConfigMapper;
 import com.bc.bcblog.common.BusinessException;
+import com.bc.bcblog.common.SandboxConfigScope;
 import com.bc.bcblog.service.ConfigService;
 import com.bc.bcblog.vo.SiteConfigVO;
 import lombok.RequiredArgsConstructor;
@@ -322,6 +323,12 @@ public class ConfigServiceImpl implements ConfigService {
 
     @Override
     public String getConfigValue(String key, String defaultValue) {
+        // 沙盒参数可以是"世界级"的（方案 C）：当前线程正在处理某个世界时，先用这个世界的值。
+        // 世界没配过的键返回 null，继续走下面的全局配置与默认值。
+        String scoped = SandboxConfigScope.get(key);
+        if (scoped != null) {
+            return scoped;
+        }
         String value = loadMap().get(key);
         // 密钥类配置解密后再返回给业务代码使用
         if (SecretCipher.isSecretConfigKey(key) && value != null && !value.isEmpty()) {
@@ -332,6 +339,11 @@ public class ConfigServiceImpl implements ConfigService {
 
     @Override
     public void setConfigValue(String key, String value) {
+        // 有世界作用域时，沙盒参数写进这个世界的配置（由调用方负责落库）；
+        // 「AI 调用总闸」与其它非沙盒配置照旧写全局。
+        if (SandboxConfigScope.put(key, value)) {
+            return;
+        }
         upsert(key, value);
     }
 

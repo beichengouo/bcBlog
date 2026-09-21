@@ -14,6 +14,26 @@
           <span class="brand-text">{{ siteName }}</span>
         </router-link>
 
+        <!-- 手机端栏目导航：拆成两半——左边「点了就跳」，右边▾「切换跳到哪」 -->
+        <div class="mobile-nav">
+          <button type="button" class="mobile-nav-go" :aria-label="'前往' + mobileNavLabel" @click="goMobileNav">
+            {{ mobileNavLabel }}
+          </button>
+          <el-dropdown trigger="click" @command="pickMobileNav">
+            <button type="button" class="mobile-nav-caret" aria-label="切换要前往的栏目">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="m6 9 6 6 6-6" />
+              </svg>
+            </button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="/portal/sandbox">沙盒</el-dropdown-item>
+                <el-dropdown-item command="/portal/photos">流光忆庭</el-dropdown-item>
+                <el-dropdown-item command="/portal/resources">智库</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
+        </div>
         <nav class="portal-nav">
           <router-link to="/portal/photos" class="nav-pill">
             <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -40,7 +60,19 @@
           </router-link>
         </nav>
 
-        <form class="search" @submit.prevent="onSearch">
+        <!-- 手机端：搜索收成一个放大镜，点开再展开成整行，避免把登录/注册挤到第二行 -->
+        <button
+          class="theme-toggle search-toggle"
+          type="button"
+          :aria-label="mobileSearchOpen ? '收起搜索' : '搜索文章'"
+          @click="mobileSearchOpen = !mobileSearchOpen"
+        >
+          <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="7" />
+            <path d="m21 21-4.3-4.3" />
+          </svg>
+        </button>
+        <form class="search" :class="{ 'search-open': mobileSearchOpen }" @submit.prevent="onSearch">
           <input v-model="keyword" placeholder="搜索文章..." aria-label="搜索" />
           <button type="submit">
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
@@ -117,7 +149,14 @@
           <span class="status-item status-time">{{ nowText }}</span>
         </div>
         <div class="footer-links">
-          <span v-if="siteIcp" class="icp">{{ siteIcp }}</span>
+        <a
+          v-if="siteIcp"
+          class="icp"
+          href="https://beian.miit.gov.cn/"
+          target="_blank"
+          rel="noopener noreferrer"
+          :title="siteIcp + '（工信部备案查询）'"
+        >{{ siteIcp }}</a>
           <router-link class="footer-link" to="/portal/photos">流光忆庭</router-link>
           <router-link class="footer-link" to="/portal/resources">智库</router-link>
           <span>Powered by bcBlog</span>
@@ -135,7 +174,7 @@
 </template>
 
 <script setup>
-import { ref, watch, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useThemeStore } from '@/store/theme'
@@ -162,6 +201,52 @@ const memberStore = useMemberStore()
 
 const keyword = ref(route.query.keyword || '')
 const scrolled = ref(false)
+/** 手机端搜索框是否展开（默认收起成一个放大镜图标） */
+const mobileSearchOpen = ref(false)
+/**
+ * 手机端栏目导航：右边▾选中"要前往哪"，左边按钮点一下就跳过去。
+ * 默认「沙盒」，选过一次会记在本地，下次打开还是上次那个。
+ */
+const MOBILE_NAV_OPTIONS = [
+  { path: '/portal/sandbox', label: '沙盒' },
+  { path: '/portal/photos', label: '流光忆庭' },
+  { path: '/portal/resources', label: '智库' }
+]
+const mobileNavTarget = ref(localStorage.getItem('portalMobileNav') || '/portal/sandbox')
+const mobileNavLabel = computed(() => {
+  const hit = MOBILE_NAV_OPTIONS.find((o) => o.path === mobileNavTarget.value)
+  return hit ? hit.label : '沙盒'
+})
+
+/** 右边▾：只切换"要去哪"，不跳转（跳转交给左边的按钮） */
+function pickMobileNav(path) {
+  if (!path) return
+  mobileNavTarget.value = path
+  try { localStorage.setItem('portalMobileNav', path) } catch (e) { /* 隐私模式下忽略 */ }
+}
+
+/** 左边按钮：跳到选中的栏目 */
+function goMobileNav() {
+  router.push(mobileNavTarget.value || '/portal/sandbox')
+}
+let headerObserver = null
+
+/**
+ * 把头部真实高度写进 --header-height。
+ *
+ * 为什么必须动态算：以前这个变量写死 64px，手机端头部变成两行后，
+ * 靠它定位的天气卡片（top: calc(var(--header-height) + 22px)）就压到了头部上，
+ * 各页面的顶部留白也会偏小。这里统一量一次，全站跟着走。
+ */
+function syncHeaderHeight() {
+  const el = document.querySelector('.portal-header')
+  if (el) {
+    document.documentElement.style.setProperty(
+      '--header-height',
+      Math.round(el.getBoundingClientRect().height) + 'px'
+    )
+  }
+}
 const siteName = ref('bcBlog')
 const siteIcp = ref('')
 const siteLogo = ref('')
@@ -173,6 +258,8 @@ let baseUptime = 0
 let uptimeFetchedAt = 0
 let particleTimer = 0
 
+watch(mobileSearchOpen, () => setTimeout(syncHeaderHeight, 60))
+
 watch(
   () => route.query.keyword,
   (val) => {
@@ -181,6 +268,7 @@ watch(
 )
 
 // 统计前台页面访问量（SPA 路由切换也会计数）
+
 watch(
   () => route.path,
   () => {
@@ -189,6 +277,7 @@ watch(
 )
 
 // 主题仅在门户页面生效，离开后恢复默认
+
 watch(
   () => themeStore.isDark,
   () => themeStore.apply()
@@ -256,6 +345,16 @@ function updateFooterStatus() {
 /** 公告显示/关闭时同步顶部偏移，避免遮挡正文。 */
 onMounted(async () => {
   themeStore.apply()
+  // 头部高度量一次（手机端是两行，写死的 64px 会让天气卡片压住头部），并跟随窗口变化重算
+  syncHeaderHeight()
+  window.addEventListener('resize', syncHeaderHeight, { passive: true })
+  if (window.ResizeObserver) {
+    headerObserver = new ResizeObserver(syncHeaderHeight)
+    const headerEl = document.querySelector('.portal-header')
+    if (headerEl) {
+      headerObserver.observe(headerEl)
+    }
+  }
   reportVisit().catch(() => {})
   memberStore.fetchInfo().catch(() => {})
   const config = await siteStore.load()
@@ -282,6 +381,8 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  window.removeEventListener('resize', syncHeaderHeight)
+  if (headerObserver) { headerObserver.disconnect(); headerObserver = null }
   window.removeEventListener('scroll', onScroll)
   clearTimeout(particleTimer)
   clearInterval(footerTimer)
@@ -404,6 +505,41 @@ onUnmounted(() => {
 }
 .portal-nav .nav-pill.router-link-active svg {
   transform: scale(1.08);
+}
+/* 手机端的栏目下拉：默认隐藏，只在 ≤640px 出现 */
+.mobile-nav {
+  display: none;
+}
+/* 两半拼成一个胶囊：左半边「前往」，右半边「切换目标」 */
+.mobile-nav-go,
+.mobile-nav-caret {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 30px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  font-size: 13px;
+  white-space: nowrap;
+  transition: color 0.2s ease, background 0.2s ease;
+}
+.mobile-nav-go {
+  padding: 0 4px 0 12px;
+}
+.mobile-nav-caret {
+  padding: 0 8px 0 6px;
+  border-left: 1px solid var(--border);
+}
+.mobile-nav-go:hover,
+.mobile-nav-caret:hover {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+/* 放大镜按钮：只在手机端出现（见下面的媒体查询） */
+.search-toggle {
+  display: none;
 }
 .search {
   margin-left: auto;
@@ -570,6 +706,12 @@ onUnmounted(() => {
 }
 .icp {
   color: var(--text-muted);
+  text-decoration: none;
+  transition: color 0.2s ease;
+}
+.icp:hover {
+  color: var(--accent);
+  text-decoration: underline;
 }
 .footer-link {
   color: var(--text-muted);
@@ -582,18 +724,64 @@ onUnmounted(() => {
   .header-inner {
     padding: 0 12px;
     gap: 10px;
+    /* 手机端也只占一行：搜索收成放大镜、三个入口收成下拉，都塞进这一行 */
+    flex-wrap: nowrap;
+    gap: 8px;
   }
   .brand {
     font-size: 19px;
+    flex-shrink: 0;
   }
   .search {
-    width: 150px;
+    /* 手机端搜索默认收起（用上面的放大镜图标展开），否则一定挤到第二行 */
+    display: none;
   }
+  /* 展开搜索时临时允许换行，让输入框独占一行 */
+  .header-inner:has(.search-open) {
+    flex-wrap: wrap;
+  }
+  .search.search-open {
+    display: flex;
+    order: 8;
+    flex: 1 0 100%;
+    width: 100%;
+    max-width: none;
+    margin-top: 2px;
+  }
+  .search-toggle {
+    display: inline-flex;
+  }
+  /* 一行放不下三个入口：手机端收成一个"两半胶囊"（左边跳转 / 右边切换目标） */
   .portal-nav {
     display: none;
   }
+  .mobile-nav {
+    display: inline-flex;
+    align-items: center;
+    flex-shrink: 0;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--glass-bg);
+    overflow: hidden;
+  }
   .member-name {
     display: none;
+  }
+}
+
+/* 更窄的手机（≤420px）：公告图标收起来，免得把站点名和搜索挤变形 */
+@media (max-width: 480px) {
+  /* 窄屏只留站点 Logo，文字收起来——这样第一行一定放得下：Logo + 搜索/主题/登录注册 */
+  .brand-text {
+    display: none;
+  }
+}
+@media (max-width: 420px) {
+  .announcement-link {
+    display: none;
+  }
+  .portal-nav .nav-pill {
+    font-size: 12px;
   }
 }
 </style>

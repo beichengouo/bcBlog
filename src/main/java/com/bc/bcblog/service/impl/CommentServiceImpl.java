@@ -57,6 +57,35 @@ public class CommentServiceImpl implements CommentService {
         return PageResult.of(result.getTotal(), vos);
     }
 
+    /**
+     * 首页「最近评论」：最新的已通过评论（跨文章），原生评论模式下前台读这个。
+     * 顺带补上文章标题，前台要显示"评论于《xxx》"。
+     */
+    @Override
+    public List<CommentVO> recentForPortal(int limit) {
+        int size = Math.max(1, Math.min(20, limit));
+        List<BlogComment> list = commentMapper.selectList(new LambdaQueryWrapper<BlogComment>()
+                .eq(BlogComment::getStatus, 1)
+                .orderByDesc(BlogComment::getCreateTime)
+                .last("limit " + size));
+        if (list.isEmpty()) {
+            return new java.util.ArrayList<>();
+        }
+        List<CommentVO> vos = list.stream().map(this::toVo).collect(Collectors.toList());
+        Set<Long> articleIds = vos.stream().map(CommentVO::getArticleId)
+                .filter(java.util.Objects::nonNull).collect(Collectors.toSet());
+        if (!articleIds.isEmpty()) {
+            Map<Long, String> titles = new HashMap<>();
+            for (BlogArticle article : articleMapper.selectBatchIds(articleIds)) {
+                titles.put(article.getId(), article.getTitle());
+            }
+            for (CommentVO vo : vos) {
+                vo.setArticleTitle(titles.get(vo.getArticleId()));
+            }
+        }
+        return vos;
+    }
+
     @Override
     public void save(CommentDTO dto) {
         Long userId;

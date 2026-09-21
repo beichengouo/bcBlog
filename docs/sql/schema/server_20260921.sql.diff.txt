@@ -1,0 +1,68 @@
+# 结构差异报告
+
+- 服务器结构来源：E:\IdeaPooject\bcBlog\docs\sql\schema\server_20260921.sql（导入临时库 bc_schema_diff_tmp）
+- 本地目标库：bc_blog
+- 生成时间：2026-09-21 17:34:00
+
+## 一、表（本地有、服务器没有 → 需要升级脚本新增）共 28 张
+
+- admin_api_key
+- admin_api_log
+- music_fallback
+- page_background
+- sandbox_act
+- sandbox_area_lock
+- sandbox_attitude_log
+- sandbox_character
+- sandbox_coin_log
+- sandbox_gift
+- sandbox_interaction
+- sandbox_item
+- sandbox_location
+- sandbox_memory
+- sandbox_news
+- sandbox_quest
+- sandbox_relation
+- sandbox_shop_item
+- sandbox_shop_order
+- sandbox_world
+- sys_email_template
+- sys_emoji
+- sys_invite_code
+- sys_level
+- sys_login_ip
+- sys_point_log
+- sys_resource_unlock
+- sys_sign_log
+
+## 二、字段（本地有、服务器没有 → 需要升级脚本新增）共 16 个
+
+- ai_provider.owner_id  (bigint)
+- blog_comment.user_id  (bigint)
+- blog_comment.avatar  (varchar(500))
+- blog_comment.level  (int)
+- blog_comment.level_name  (varchar(50))
+- blog_resource.cover  (varchar(500))
+- blog_resource.points  (int)
+- blog_resource.content  (text)
+- sys_user.security_password  (varchar(100))
+- sys_user.email  (varchar(100))
+- sys_user.exp  (int)
+- sys_user.points  (int)
+- sys_user.level  (int)
+- sys_user.can_invite  (tinyint)
+- sys_user.sign_days  (int)
+- sys_user.last_sign_date  (date)
+
+## 三、字段（两边都有但定义不同 → 需要人工确认）共 0 个
+
+（无）
+
+## 四、索引（本地有、服务器没有 → 需要升级脚本新增）共 1 个
+
+- sys_user.uk_email
+
+## 五、结论
+
+存在差异：按上面的「需要新增」清单补一份升级脚本即可（字段定义不同与服务器多出的对象需要人工确认）。
+

@@ -606,6 +606,8 @@ const savingNews = ref(false)
 const generatingNews = ref(false)
 const newsForm = reactive({
   id: null,
+  // 世界归属：新建和编辑都带上（曾经编辑不带，导致事件被搬回默认世界）
+  worldId: null,
   title: '',
   content: '',
   locationName: '',
@@ -767,6 +769,7 @@ function openNewsEdit(row) {
   if (row) {
     Object.assign(newsForm, {
       id: row.id,
+      worldId: row.worldId,
       title: row.title,
       content: row.content || '',
       locationName: row.locationName || '',
@@ -778,6 +781,7 @@ function openNewsEdit(row) {
   } else {
     Object.assign(newsForm, {
       id: null,
+      worldId: selectedWorldId.value,
       title: '',
       content: '',
       locationName: '',
@@ -852,7 +856,7 @@ async function onGenerateNews() {
 
 async function loadNewsSetting() {
   try {
-    const data = await sandboxSettings()
+    const data = await sandboxSettings(selectedWorldId.value)
     newsSetting.newsTitle = data.newsTitle || '旅人纪闻'
     newsSetting.newsEnabled = data.newsEnabled === undefined ? '1' : data.newsEnabled
     newsSetting.newsPerGenerate = data.newsPerGenerate || '3'
@@ -897,7 +901,7 @@ async function onSaveNewsSetting() {
   savingNewsSetting.value = true
   try {
     // 用纪闻专用接口：只写纪闻相关配置，改不到世界运行参数
-    await saveSandboxNewsSettings({ ...newsSetting })
+    await saveSandboxNewsSettings({ ...newsSetting, worldId: selectedWorldId.value })
     ElMessage.success('设置已保存')
     newsSettingVisible.value = false
   } finally {

@@ -141,8 +141,9 @@ public class AdminSandboxController {
     // ---------------- 运行参数 ----------------
 
     @GetMapping("/settings")
-    public Result<SandboxSettingVO> settings() {
-        return Result.ok(sandboxService.settings());
+    public Result<SandboxSettingVO> settings(@RequestParam(required = false) Long worldId) {
+        // 带 worldId 时返回"这个世界自己的"沙盒参数（方案 C：每个世界一套配置）
+        return Result.ok(sandboxService.settings(worldId));
     }
 
     @PostMapping("/settings")

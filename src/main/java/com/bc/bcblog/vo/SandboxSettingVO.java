@@ -128,6 +128,11 @@ public class SandboxSettingVO {
     private String questStepMaxByDifficulty;
     /** 完成委托允许的战力成长表："hunt:0-1,0-1,0-2,1-3,1-3|gather:0,0,0,0,0-1"（类型 × 难度 1~5） */
     private String questCombatGain;
+    /**
+     * 这些设置属于哪个世界（方案 C：每个世界一套完整独立的沙盒参数）。
+     * 后台保存/读取设置时带上它；留空表示按老行为操作全局配置。
+     */
+    private Long worldId;
     /** 闲着主动修炼时单次允许的战力成长上限（默认 2） */
     private String idleTrainGainMax;
     /** 是否按间隔自动刷新委托 */

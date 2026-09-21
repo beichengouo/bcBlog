@@ -574,7 +574,7 @@ async function load() {
       scope: scopeFilter.value
     })) || []
     locations.value = (await sandboxLocations(selectedWorldId.value)) || []
-    const s = await sandboxSettings()
+    const s = await sandboxSettings(selectedWorldId.value)
     for (const key of Object.keys(settings)) {
       if (s && s[key] != null) {
         settings[key] = s[key]
@@ -677,7 +677,8 @@ async function onSave() {
   try {
     await saveSandboxQuest({
       id: form.id,
-      worldId: form.id ? undefined : selectedWorldId.value,
+      // 世界归属：新建和编辑都带上（后端以库里的记录为准）
+      worldId: selectedWorldId.value,
       title: form.title,
       questType: form.questType,
       difficulty: form.difficulty,
@@ -787,7 +788,7 @@ async function onSaveSettings() {
   savingSetting.value = true
   try {
     // 用委托专用接口：普通管理员只会写委托相关配置，改不到世界运行参数
-    await saveSandboxQuestSettings({ ...settings })
+    await saveSandboxQuestSettings({ ...settings, worldId: selectedWorldId.value })
     ElMessage.success('设置已保存')
     await load()
   } finally {

@@ -1,8 +1,19 @@
 <template>
-  <div v-if="weather" class="weather-card glass">
+  <!-- 隐藏后只在原来的位置留一个小按钮，点一下就能收回来（选择记在本地） -->
+  <button
+    v-if="weather && hidden"
+    class="weather-show"
+    title="显示天气"
+    aria-label="显示天气"
+    @click="toggleHidden(false)"
+  >☁</button>
+  <div v-else-if="weather" class="weather-card glass">
     <div class="weather-head">
       <span class="weather-city">{{ city }}</span>
-      <button class="weather-refresh" @click="load" title="刷新天气">↻</button>
+      <span class="weather-actions">
+        <button class="weather-refresh" @click="load" title="刷新天气">↻</button>
+        <button class="weather-hide" @click="toggleHidden(true)" title="隐藏天气卡片" aria-label="隐藏天气卡片">×</button>
+      </span>
     </div>
     <div class="weather-main">
       <span class="weather-temp">{{ weather.temp }}°</span>
@@ -20,6 +31,13 @@ import { ref, onMounted } from 'vue'
 import { getPortalConfig } from '@/api/config'
 
 const city = ref('北京')
+// 访客可以把天气卡片收起来，选择记在本地（换设备/清缓存后重新出现）
+const hidden = ref(localStorage.getItem('portalWeatherHidden') === '1')
+
+function toggleHidden(value) {
+  hidden.value = value
+  try { localStorage.setItem('portalWeatherHidden', value ? '1' : '0') } catch (e) { /* 隐私模式下忽略 */ }
+}
 const weather = ref(null)
 
 /** UAPIS：查询当前登录 IP 的位置信息，失败时返回空。 */
@@ -72,7 +90,48 @@ onMounted(async () => {
 })
 </script>
 
-<style scoped>
+<style scoped>.weather-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.weather-hide {
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 16px;
+  line-height: 1;
+  padding: 0 2px;
+  cursor: pointer;
+  transition: color 0.2s ease;
+}
+.weather-hide:hover {
+  color: var(--accent);
+}
+/* 收起后的小圆按钮：贴在原位置，点一下把卡片叫回来 */
+.weather-show {
+  position: fixed;
+  left: 18px;
+  top: calc(var(--header-height) + 22px);
+  z-index: 40;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--glass-bg);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  color: var(--text);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: var(--shadow);
+  transition: color 0.2s ease, border-color 0.2s ease;
+}
+.weather-show:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
 .weather-card {
   position: fixed;
   left: 18px;

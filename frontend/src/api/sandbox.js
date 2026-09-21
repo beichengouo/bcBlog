@@ -69,8 +69,9 @@ export function deleteSandboxLocation(id) {
 }
 
 // 运行参数（开关、间隔、夜间静默、每日上限、低语积分）
-export function sandboxSettings() {
-  return request.get('/admin/sandbox/settings')
+// 方案 C：每个世界一套自己的参数，所以读的时候要带上 worldId
+export function sandboxSettings(worldId) {
+  return request.get('/admin/sandbox/settings', { params: { worldId: worldId || undefined } })
 }
 
 export function saveSandboxSettings(data) {

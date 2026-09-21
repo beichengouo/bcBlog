@@ -226,8 +226,8 @@
             </el-form-item>
             <el-form-item label="区域形状">
               <el-radio-group v-model="drawingMode" size="small">
-                <el-radio-button label="polygon">描边区域</el-radio-button>
-                <el-radio-button label="point">单点地点</el-radio-button>
+                <el-radio-button value="polygon">描边区域</el-radio-button>
+                <el-radio-button value="point">单点地点</el-radio-button>
               </el-radio-group>
             </el-form-item>
             <el-form-item v-if="drawingMode === 'polygon'" label="描边">
@@ -383,8 +383,8 @@
             </span>
           </template>
           <el-radio-group v-model="distMode" size="small">
-            <el-radio-button label="km">距离（km）</el-radio-button>
-            <el-radio-button v-for="mode in distanceModes" :key="mode.name" :label="mode.name">
+            <el-radio-button value="km">距离（km）</el-radio-button>
+            <el-radio-button v-for="mode in distanceModes" :key="mode.name" :value="mode.name">
               {{ mode.name }}用时
             </el-radio-button>
           </el-radio-group>
@@ -414,6 +414,18 @@
       </template>
 
       <el-form label-width="140px" class="setting-form">
+        <el-alert
+          type="info"
+          :closable="false"
+          show-icon
+          class="mb"
+          :title="'下面这些参数只作用于当前世界：' + (currentWorld.name || '未选择世界')"
+        >
+          <template #default>
+            每个世界一套独立参数，改这个世界的间隔、提示词、系统服务商或模型都不会影响其它世界；
+            <b>「AI 调用开关」是唯一的全局总闸</b>（一键停掉全部世界），单个世界的启停请用上面世界列表里的「启用 / 停用」。
+          </template>
+        </el-alert>
         <el-form-item label="AI 调用开关">
           <el-switch v-model="settings.enabled" active-value="1" inactive-value="0" />
           <span class="tip">关闭后所有角色都不再自动行动（前台仍可查看历史记录）</span>
@@ -1040,7 +1052,7 @@ async function loadAll() {
       selectedWorldId.value = null
     Object.assign(world, { id: null, name: '', description: '', mapImage: '', worldPrompt: '', manaLabel: '魔力', enabled: 1, portalVisible: 1 })
       locations.value = []
-      Object.assign(settings, (await sandboxSettings()) || {})
+      Object.assign(settings, (await sandboxSettings(selectedWorldId.value)) || {})
       return
     }
     const stored = currentWorldId.value
@@ -1051,7 +1063,7 @@ async function loadAll() {
     const [w, locs, s] = await Promise.all([
       sandboxWorld(selectedWorldId.value),
       sandboxLocations(selectedWorldId.value),
-      sandboxSettings()
+      sandboxSettings(selectedWorldId.value)
     ])
     Object.assign(world, w || {})
     if (!world.name) world.name = ''
@@ -1297,14 +1309,14 @@ async function onSaveWorld() {
 
 async function onToggleEnabled(val) {
   settings.enabled = val ? '1' : '0'
-  await saveSandboxSettings({ ...settings })
+  await saveSandboxSettings({ ...settings, worldId: selectedWorldId.value })
   ElMessage.success(val ? '已开启沙盒 AI 自动行动' : '已关闭沙盒 AI 自动行动')
 }
 
 async function onSaveSettings() {
   savingSetting.value = true
   try {
-    await saveSandboxSettings({ ...settings })
+    await saveSandboxSettings({ ...settings, worldId: selectedWorldId.value })
     ElMessage.success('运行参数已保存')
   } finally {
     savingSetting.value = false
@@ -1484,8 +1496,9 @@ async function onSaveLocation() {
       powerMin: form.powerMin,
       powerMax: form.powerMax,
       sortOrder: form.sortOrder,
-      // 新建地点要指明属于哪个世界；编辑时后端已经有记录，不必再传
-      worldId: form.id ? undefined : selectedWorldId.value
+      // 世界归属：新建和编辑都带上（后端以库里的记录为准，这里传是为了让"跨世界重叠"这类
+      // 问题不会再出现——曾经编辑时省略它，导致重叠校验把别的世界的地点也算进来）
+      worldId: selectedWorldId.value
     }
     if (drawingMode.value === 'polygon') {
       // 多边形区域：宽高由后端按外接矩形自动算

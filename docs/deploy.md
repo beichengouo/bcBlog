@@ -18,9 +18,17 @@
 
 ### 已有数据库的增量升级
 
-`docs/sql/upgrade_*.sql` 是给已经跑起来的库用的，**按编号从小到大执行**即可。
-每一个脚本都是幂等的（新增列前会先查 `information_schema`，配置项用 `INSERT IGNORE`），
-所以"已经执行过的再跑一遍"不会出错，升级时不必逐个确认跑到哪了：
+**优先用合并版**：`docs/sql/upgrade_20260921_server_batch.sql` 是用 `tools/schema-diff`
+拿服务器导出的库比对后生成的整包脚本，一次补齐结构、配置项与默认数据，
+服务器不管停在哪一版都可以直接跑这一份。脚本末尾会打印自检清单。
+
+```bash
+mysql --default-character-set=utf8mb4 -uroot -p bc_blog < docs/sql/upgrade_20260921_server_batch.sql
+```
+
+如果只是一次小改动（比如新增一两个配置项），也可以直接执行对应的分步脚本。
+`docs/sql/upgrade_*.sql` 里的每个脚本都是幂等的（新增列前会先查 `information_schema`，
+配置项用 `INSERT IGNORE`），所以"已经执行过的再跑一遍"不会出错，不必逐个确认跑到哪了：
 
 ```bash
 for f in docs/sql/upgrade_0{53..68}_*.sql; do

@@ -37,4 +37,10 @@ public class PortalCommentController {
         commentService.save(dto);
         return Result.ok();
     }
+
+    /** 首页「最近评论」（原生评论模式）：最新的已通过评论，跨文章取 */
+    @GetMapping("/recent")
+    public Result<java.util.List<CommentVO>> recent(@RequestParam(defaultValue = "10") int limit) {
+        return Result.ok(commentService.recentForPortal(limit));
+    }
 }
