@@ -33,6 +33,8 @@ public final class SecurityPathRules {
             "/api/admin/email/**",
             "/api/admin/deepseek/**",
             "/api/admin/ai/**",
+            // 网站AI「IRIS」：她能直接发文、发评论、改参数（写操作），整套菜单都要安全密码
+            "/api/admin/site-ai/**",
             "/api/admin/acg-cover/**",
             "/api/admin/ip-location/**",
             // 站点设置：站点名、Logo、备案、SEO、注册规则、清理策略等

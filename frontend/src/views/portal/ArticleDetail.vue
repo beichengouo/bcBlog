@@ -1,7 +1,7 @@
 <template>
   <div class="detail" v-loading="loading">
     <template v-if="article">
-      <h1 class="title">{{ article.title }}</h1>
+      <h1 class="title"><span v-if="article.aiGenerated === 1" class="ai-badge">AI 生成</span>{{ article.title }}</h1>
       <div class="meta">
         <span>{{ article.authorName || '管理员' }}</span>
         <span>{{ article.createTime }}</span>
@@ -383,4 +383,5 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 .lightbox-leave-to {
   opacity: 0;
 }
+.ai-badge { display:inline-block; margin-right:8px; padding:0 8px; font-size:12px; line-height:20px; vertical-align:middle; color:#fff; border-radius:999px; background:linear-gradient(135deg, var(--accent), var(--accent-2)); }
 </style>

@@ -37,7 +37,8 @@ public class PortalSandboxController {
     /** 沙盒首页：世界、地图地点、角色与最近行动 */
     @GetMapping
     public Result<SandboxPortalVO> portal(@RequestParam(required = false) Long worldId) {
-        // 不传 worldId 时用第一个世界（兼容旧链接）
+        // 不传 worldId 时用第一个「前台可见」的世界（兼容旧链接）；
+        // 传了没开放的世界会直接报错——服务层里统一校验（见 resolvePortalWorldId）
         return Result.ok(sandboxService.portal(worldId));
     }
 
@@ -54,7 +55,15 @@ public class PortalSandboxController {
                                                @RequestParam(required = false) Long worldId,
                                                @RequestParam(defaultValue = "1") long page,
                                                @RequestParam(defaultValue = "10") long size) {
-        PageResult<SandboxAct> result = sandboxService.acts(characterId, locationName, worldId, page, size);
+        // 角色已知时按角色所在世界校验；否则按 worldId 解析出「前台可见」的世界
+        Long wid = characterId != null
+                ? sandboxService.requirePortalVisibleCharacter(characterId)
+                : sandboxService.resolvePortalWorldId(worldId);
+        if (wid == null) {
+            // 一个「前台可见」的世界都没有：别再不带世界条件去查行动记录，那会把隐藏世界的内容全捞出来
+            return Result.ok(PageResult.of(0, java.util.Collections.emptyList()));
+        }
+        PageResult<SandboxAct> result = sandboxService.acts(characterId, locationName, wid, page, size);
         // 前台不需要 AI 原始回复（里面可能含 <draft>/<review> 这类提示词段落），这里直接抹掉再返回
         if (result != null && result.getList() != null) {
             result.getList().forEach(act -> act.setRawResponse(null));
@@ -71,6 +80,7 @@ public class PortalSandboxController {
         if (itemId == null || characterId == null) {
             return Result.fail(400, "请选择要赠送的商品和角色");
         }
+        sandboxService.requirePortalVisibleCharacter(characterId);
         return Result.ok(sandboxService.buyShopItem(itemId, characterId));
     }
 
@@ -78,6 +88,7 @@ public class PortalSandboxController {
     public Result<PageResult<SandboxInteraction>> interactions(@RequestParam Long characterId,
                                                                @RequestParam(defaultValue = "1") long page,
                                                                @RequestParam(defaultValue = "10") long size) {
+        sandboxService.requirePortalVisibleCharacter(characterId);
         return Result.ok(sandboxService.interactions(characterId, page, size));
     }
 
@@ -88,6 +99,7 @@ public class PortalSandboxController {
         if (characterId == null) {
             return Result.fail(400, "缺少角色 ID");
         }
+        sandboxService.requirePortalVisibleCharacter(characterId);
         String content = body.get("content") == null ? "" : String.valueOf(body.get("content"));
         return Result.ok(sandboxService.whisper(characterId, content));
     }
@@ -99,6 +111,7 @@ public class PortalSandboxController {
         if (characterId == null) {
             return Result.fail(400, "缺少角色 ID");
         }
+        sandboxService.requirePortalVisibleCharacter(characterId);
         int points = Convert.toInt(body.get("points"), 1);
         return Result.ok(sandboxService.contributeCoins(characterId, points));
     }
@@ -108,6 +121,7 @@ public class PortalSandboxController {
     public Result<PageResult<SandboxCoinLog>> coins(@RequestParam Long characterId,
                                                     @RequestParam(defaultValue = "1") long page,
                                                     @RequestParam(defaultValue = "10") long size) {
+        sandboxService.requirePortalVisibleCharacter(characterId);
         return Result.ok(sandboxService.coinLogs(characterId, page, size));
     }
 }

@@ -221,6 +221,16 @@ public interface SandboxService {
 
     SandboxPortalVO portal(Long worldId);
 
+    /**
+     * 前台沙盒入口校验：世界必须设成「前台可见」。
+     * 传 null 时返回**第一个前台可见**的世界 id（没有可见世界时返回 null）。
+     * 传了 id 但那个世界没开放时抛错（404），避免有人直接改 worldId 读隐藏世界。
+     */
+    Long resolvePortalWorldId(Long worldId);
+
+    /** 前台沙盒入口校验：这个角色所在世界必须对外开放，返回它的世界 id */
+    Long requirePortalVisibleCharacter(Long characterId);
+
     // ---------------- 旅人集市 ----------------
 
     /** 当前世界最新一批商品（前台用，带赠送记录；已下架的不返回） */

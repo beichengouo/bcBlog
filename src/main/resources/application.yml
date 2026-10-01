@@ -17,10 +17,21 @@ spring:
     multipart:
       max-file-size: 200MB
       max-request-size: 200MB
+  # 定时任务线程池：默认只有 1 个线程。集市/委托/纪闻刷新与角色自动行动都要调 AI（一次几十秒），
+  # 单线程时一个任务慢下来，其余定时任务（角色行动、每日记忆、数据清理）全部排队往后拖。
+  # 各任务本身都有防重入开关（AtomicBoolean），调大不会重复执行。
+  task:
+    scheduling:
+      pool:
+        size: 4
+      thread-name-prefix: bcblog-sched-
 
 # 本地图片上传目录（相对项目根目录）
 bcblog:
   upload-dir: ./uploads
+  # 单张图片上传上限（字节）：默认 20MB。以前写死 5MB，高分辨率封面图会被挡住。
+  # 注意还要同时满足这里的 multipart 限制与服务器 nginx 的 client_max_body_size
+  upload-max-image-size: 20971520
   # 敏感词（英文逗号分隔，会与内置默认词合并；留空则仅用内置默认词）
   sensitive-words:
 

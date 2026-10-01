@@ -17,6 +17,14 @@ export const adminMenus = [
     ]
   },
   {
+    key: 'siteAi',
+    title: '网站AI',
+    icon: 'MagicStick',
+    // 她能直接发文与评论，参数与执行都收在超管专属菜单里
+    children: [
+      { key: 'siteAi', path: '/admin/site-ai', title: 'IRIS 管理', icon: 'MagicStick', superOnly: true }
+    ]
+  },  {
     key: 'site',
     title: '站点管理',
     icon: 'Setting',

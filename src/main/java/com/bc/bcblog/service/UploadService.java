@@ -21,7 +21,13 @@ public class UploadService {
     private String uploadDir;
 
     private static final List<String> ALLOWED_EXT = Arrays.asList("jpg", "jpeg", "png", "gif", "webp", "bmp");
-    private static final long MAX_SIZE = 5 * 1024 * 1024L;
+    /**
+     * 单张图片上限（字节）。默认 20MB——以前的 5MB 会挡住分辨率较高的封面图。
+     * 需要更大的图可以改 application.yml 的 bcblog.upload-max-image-size，
+     * 上限同时受 Spring 的 multipart.max-file-size 与 nginx 的 client_max_body_size 约束（当前都是 200MB）。
+     */
+    @Value("${bcblog.upload-max-image-size:20971520}")
+    private long maxImageSize;
 
     public String uploadImage(MultipartFile file) {
         if (file == null || file.isEmpty()) {
@@ -33,8 +39,8 @@ public class UploadService {
         if (!ALLOWED_EXT.contains(ext)) {
             throw new BusinessException("仅支持 jpg/jpeg/png/gif/webp/bmp 格式");
         }
-        if (file.getSize() > MAX_SIZE) {
-            throw new BusinessException("图片大小不能超过 5MB");
+        if (file.getSize() > maxImageSize) {
+            throw new BusinessException("图片大小不能超过 " + (maxImageSize / 1024 / 1024) + "MB");
         }
 
         File dir = new File(uploadDir);

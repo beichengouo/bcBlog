@@ -27,7 +27,7 @@
         <div v-else class="comment-avatar placeholder">{{ (c.nickname || 'U').slice(0, 1) }}</div>
         <div class="comment-body">
           <div class="comment-head">
-            <span class="comment-nickname">{{ c.nickname }}</span>
+            <span class="comment-nickname">{{ c.nickname }}</span>`n            <span v-if="c.aiGenerated === 1" class="ai-badge">AI</span>
             <span v-if="c.level" class="level-badge">Lv.{{ c.level }} {{ c.levelName }}</span>
             <span class="comment-time">{{ c.createTime }}</span>
             <button
@@ -179,7 +179,18 @@ watch(() => props.articleId, () => {
 onMounted(load)
 </script>
 
-<style scoped>/* 举报弹窗被 append-to-body 提到了 body 下，这里做一点小样式兜底 */
+<style scoped>
+.ai-badge {
+  display: inline-block;
+  margin: 0 6px;
+  padding: 0 6px;
+  font-size: 11px;
+  line-height: 16px;
+  color: #fff;
+  border-radius: 999px;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+}
+/* 举报弹窗被 append-to-body 提到了 body 下，这里做一点小样式兜底 */
 :global(.report-dialog .el-dialog__body) {
   padding-top: 12px;
 }.report-link {

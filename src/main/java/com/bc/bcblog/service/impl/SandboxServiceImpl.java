@@ -35,6 +35,7 @@ import com.bc.bcblog.component.SensitiveWordFilter;
 import com.bc.bcblog.component.AuditContext;
 import com.bc.bcblog.entity.AiProvider;
 import com.bc.bcblog.entity.SandboxAct;
+import com.bc.bcblog.entity.SandboxAreaLock;
 import com.bc.bcblog.entity.SandboxCharacter;
 import com.bc.bcblog.entity.SandboxCoinLog;
 import com.bc.bcblog.entity.SandboxInteraction;
@@ -425,6 +426,7 @@ public class SandboxServiceImpl implements SandboxService {
      * 这些数据都带 world_id（低语与金币流水是本次迁移补上的），所以按世界删除是干净的。
      */
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public void deleteWorld(Long worldId) {
         requireWorld(worldId);
         for (SandboxCharacter character : characters(worldId)) {
@@ -448,6 +450,13 @@ public class SandboxServiceImpl implements SandboxService {
         relationMapper.delete(new LambdaQueryWrapper<SandboxRelation>().eq(SandboxRelation::getWorldId, worldId));
         newsMapper.delete(new LambdaQueryWrapper<SandboxNews>().eq(SandboxNews::getWorldId, worldId));
         questMapper.delete(new LambdaQueryWrapper<SandboxQuest>().eq(SandboxQuest::getWorldId, worldId));
+        // 这几张表以前漏了：删掉世界后它们会一直留在库里（前台后台都看不到，但会越堆越多，
+        // 导出的存档与金币/态度对账口径也会不一致）。resetWorld 一直是删的，这里补齐。
+        shopOrderMapper.delete(new LambdaQueryWrapper<SandboxShopOrder>().eq(SandboxShopOrder::getWorldId, worldId));
+        shopItemMapper.delete(new LambdaQueryWrapper<SandboxShopItem>().eq(SandboxShopItem::getWorldId, worldId));
+        giftMapper.delete(new LambdaQueryWrapper<SandboxGift>().eq(SandboxGift::getWorldId, worldId));
+        attitudeLogMapper.delete(new LambdaQueryWrapper<SandboxAttitudeLog>().eq(SandboxAttitudeLog::getWorldId, worldId));
+        areaLockMapper.delete(new LambdaQueryWrapper<SandboxAreaLock>().eq(SandboxAreaLock::getWorldId, worldId));
         characterMapper.delete(new LambdaQueryWrapper<SandboxCharacter>().eq(SandboxCharacter::getWorldId, worldId));
         locationMapper.delete(new LambdaQueryWrapper<SandboxLocation>().eq(SandboxLocation::getWorldId, worldId));
         worldMapper.deleteById(worldId);
@@ -2797,6 +2806,7 @@ public class SandboxServiceImpl implements SandboxService {
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public SandboxCoinResultVO contributeCoins(Long characterId, int points) {
         Long userId = currentUserId();
         if (userId == null) {
@@ -3002,8 +3012,55 @@ public class SandboxServiceImpl implements SandboxService {
 
     @Override
     public SandboxPortalVO portal(Long worldId) {
+        Long wid = resolvePortalWorldId(worldId);
+        if (wid == null) {
+            // 一个「前台可见」的世界都没有：返回空壳，绝不能把没开放的世界内容漏出去
+            SandboxPortalVO empty = new SandboxPortalVO();
+            empty.setEnabled(false);
+            empty.setWhisperEnabled(false);
+            empty.setShopEnabled(false);
+            empty.setQuestEnabled(false);
+            empty.setCoinRate(1);
+            empty.setLocations(new ArrayList<>());
+            empty.setCharacters(new ArrayList<>());
+            empty.setNews(new ArrayList<>());
+            empty.setShopItems(new ArrayList<>());
+            empty.setQuests(new ArrayList<>());
+            return empty;
+        }
         // 前台的展示开关（旅人低语、集市、委托、纪闻…）都取这个世界自己的配置
-        return withWorldConfig(worldId, () -> portalInWorld(worldId));
+        return withWorldConfig(wid, () -> portalInWorld(wid));
+    }
+
+    /**
+     * 前台沙盒入口校验：世界必须设成「前台可见」。
+     *
+     * 为什么要有：以前只有「世界列表」接口过滤了可见性，其余前台接口只要带上 worldId / characterId
+     * 就能读到隐藏世界的角色、行动、纪闻、金币流水——前端下拉里没有入口，但直接调接口可以绕过。
+     */
+    @Override
+    public Long resolvePortalWorldId(Long worldId) {
+        if (worldId != null) {
+            SandboxWorld world = worldMapper.selectById(worldId);
+            if (world == null || world.getPortalVisible() == null || world.getPortalVisible() != 1) {
+                throw new BusinessException(404, "该沙盒世界未对外开放");
+            }
+            return worldId;
+        }
+        SandboxWorld first = worldMapper.selectOne(new LambdaQueryWrapper<SandboxWorld>()
+                .eq(SandboxWorld::getPortalVisible, 1)
+                .orderByAsc(SandboxWorld::getId)
+                .last("limit 1"));
+        return first == null ? null : first.getId();
+    }
+
+    @Override
+    public Long requirePortalVisibleCharacter(Long characterId) {
+        SandboxCharacter character = characterId == null ? null : characterMapper.selectById(characterId);
+        if (character == null) {
+            throw new BusinessException(404, "角色不存在");
+        }
+        return resolvePortalWorldId(character.getWorldId());
     }
 
     private SandboxPortalVO portalInWorld(Long worldId) {
@@ -8448,7 +8505,10 @@ public class SandboxServiceImpl implements SandboxService {
                     .eq(SandboxShopOrder::getUserId, userId)
                     .eq(SandboxShopOrder::getCharacterId, characterId));
             if (bought != null && bought >= limit) {
-                throw new BusinessException("你今天已经把这件商品送给「" + character.getName() + "」了");
+                // 这里没有日期条件：限购是「同一用户 × 同一商品 × 同一角色」的总次数（集市管理里叫「每人限购」），
+                // 文案以前写的是"今天"，会让人以为是每日限制
+                throw new BusinessException("这件商品你送给「" + character.getName()
+                        + "」的次数已达上限（集市管理 → 每人限购）");
             }
         }
         // 先确认背包收得下（新物品且背包已满时直接拒绝，避免扣了库存又塞不进去）

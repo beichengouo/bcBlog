@@ -1,0 +1,38 @@
+# 结构差异报告
+
+- 服务器结构来源：E:\IdeaPooject\bcBlog\docs\sql\schema\server_20261001.sql（导入临时库 bc_schema_diff_tmp）
+- 本地目标库：bc_blog
+- 生成时间：2026-10-01 12:40:02
+
+## 一、表（本地有、服务器没有 → 需要升级脚本新增）共 1 张
+
+- sys_report
+
+## 二、字段（本地有、服务器没有 → 需要升级脚本新增）共 0 个
+
+（无）
+
+## 三、字段（两边都有但定义不同 → 需要人工确认）共 13 个
+
+- site_ai_profile.article_avoid：注释：写文章的禁忌与边界（后台可改：哪些内容不许写） → 写文章的禁忌与边界（哪些内容不许写）
+- site_ai_profile.article_daily_limit：注释：每天最多写几篇（后台可改） → 每天最多写几篇文章（后台可改）
+- site_ai_profile.article_topics：注释：写文章的选题偏好（后台可改：想让她多写什么） → 写文章的选题偏好（想让她多写什么）
+- site_ai_profile.count_reset_at：注释：今日调用计数的起点（后台重置今日计数时写入，只影响计数不删日志） → 今日调用计数的起点（后台点重置今日计数时写入，只影响计数不删日志）
+- site_ai_profile.cover_pool：注释：封面池：每行一个图片地址（cover_source=pool 时按顺序轮换） → 封面池：每行一个图片地址（封面来源=封面池轮换时按顺序用）
+- site_ai_profile.cover_source：默认值：fixed → acg；注释：封面来源：fixed 管理员指定的一张 / pool 管理员维护的封面池轮换 / acg 随机封面接口 / none 不要封面 → 封面来源：acg 随机封面接口 / fixed 固定图 / none 不要封面
+- site_ai_profile.digest_enabled：注释：写文章时是否参考站内运行数据（聚合数字） → 写文章时是否参考站内运行数据
+- site_ai_profile.digest_scope：注释：数据范围：site 只给本站聚合数字 / site+sandbox 再加上沙盒世界细节 → site 只给本站聚合数字 / site+sandbox 再加上沙盒细节
+- site_ai_profile.digest_tone：注释：吐槽语气：gentle 克制观察 / spicy 更直接（后台可切换） → gentle 克制观察 / spicy 更毒舌一点
+- site_ai_profile.model_no：默认值：IRIS → IRIS-09；注释：型号（前台展示为「伊莉丝 IRIS」，不带编号后缀） → 型号
+- site_ai_profile.report_enabled：注释：每天是否写一篇「今日运行情况」 → 每天是否写一篇今日运行情况
+- site_ai_profile.report_time：注释：运行报告时间 → 运行报告时间 HH:mm
+- site_ai_profile.sensitive_filter_enabled：注释：发布前是否过站内敏感词过滤（关掉则只依赖 AI 服务商自身的判断） → 发布前是否过站内敏感词过滤
+
+## 四、索引（本地有、服务器没有 → 需要升级脚本新增）共 0 个
+
+（无）
+
+## 五、结论
+
+存在差异：按上面的「需要新增」清单补一份升级脚本即可（字段定义不同与服务器多出的对象需要人工确认）。
+

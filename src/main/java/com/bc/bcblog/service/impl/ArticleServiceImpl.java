@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.bc.bcblog.common.BusinessException;
+import com.bc.bcblog.common.HtmlSanitizer;
 import com.bc.bcblog.common.PageResult;
 import com.bc.bcblog.dto.ArticleDTO;
 import com.bc.bcblog.entity.BlogArticle;
@@ -196,11 +197,27 @@ public class ArticleServiceImpl implements ArticleService {
         }
         article.setTitle(dto.getTitle().trim());
         article.setSummary(dto.getSummary());
-        article.setContent(dto.getContent());
+        // 非超级管理员写的内容做「降权净化」：正文在前台是 v-html 直接渲染的，
+        // 不处理的话被授权「文章管理」的普通管理员能塞脚本，在超管浏览器里执行（超管 token 就在 localStorage）
+        article.setContent(currentUserIsSuper() ? dto.getContent() : HtmlSanitizer.stripDangerous(dto.getContent()));
         article.setCover(dto.getCover());
         article.setCategoryId(dto.getCategoryId());
         article.setStatus(dto.getStatus() == null ? 0 : dto.getStatus());
         article.setIsTop(dto.getIsTop() == null ? 0 : dto.getIsTop());
+    }
+
+    /** 当前登录用户是不是超级管理员（拿不到登录态时按"不是"处理，宁可多净化一次） */
+    private boolean currentUserIsSuper() {
+        Long uid = currentUserId();
+        if (uid == null) {
+            return false;
+        }
+        try {
+            SysUser user = sysUserMapper.selectById(uid);
+            return user != null && "SUPER".equals(user.getRole());
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     /** 记录文章发布人，为后续论坛化预留 */

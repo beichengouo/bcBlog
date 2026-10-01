@@ -19,7 +19,8 @@ const routes = [
       { path: 'user', component: () => import('@/views/portal/UserCenter.vue') },
       { path: 'announcements', component: () => import('@/views/portal/Announcements.vue') },
       { path: 'privacy', component: () => import('@/views/portal/PrivacyPolicy.vue') },
-      { path: 'terms', component: () => import('@/views/portal/TermsOfService.vue') }
+      { path: 'terms', component: () => import('@/views/portal/TermsOfService.vue') },
+      { path: 'iris', component: () => import('@/views/portal/Iris.vue') }
     ]
   },
   { path: '/login', component: () => import('@/views/Login.vue') },
@@ -36,6 +37,7 @@ const routes = [
       { path: 'tags', component: () => import('@/views/admin/TagManage.vue'), meta: { title: '标签管理', menu: 'tags' } },
       { path: 'comments', component: () => import('@/views/admin/CommentManage.vue'), meta: { title: '评论管理', menu: 'comments' } },
       { path: 'reports', component: () => import('@/views/admin/ReportManage.vue'), meta: { title: '举报管理', menu: 'reports' } },
+      { path: 'site-ai', component: () => import('@/views/admin/SiteAiManage.vue'), meta: { title: 'IRIS 管理', menu: 'siteAi' } },
       { path: 'gitalk', component: () => import('@/views/admin/GitalkManage.vue'), meta: { title: 'Gitalk 评论', menu: 'gitalk' } },
       { path: 'deepseek', component: () => import('@/views/admin/DeepseekBalance.vue'), meta: { title: 'DeepSeek 接口', menu: 'deepseek' } },
       { path: 'music', component: () => import('@/views/admin/MusicPlaylist.vue'), meta: { title: '网易云音乐', menu: 'music' } },
@@ -81,6 +83,7 @@ const SECURITY_MENUS = new Set([
   'email',
   'deepseek',
   'api',
+  'siteAi',
   'third',
   'sandboxWorld',
   'sandboxCharacters',

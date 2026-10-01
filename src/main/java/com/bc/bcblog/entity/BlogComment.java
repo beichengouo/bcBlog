@@ -27,6 +27,8 @@ public class BlogComment {
     private Integer level;
     private String levelName;
     private Integer status;
+    /** 是否由网站AI（IRIS）生成：1 是，前台显示 AI 角标 */
+    private Integer aiGenerated;
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     private LocalDateTime createTime;
 }

@@ -5,6 +5,7 @@ import com.bc.bcblog.service.EmailCodeService;
 import com.bc.bcblog.service.EmailService;
 import com.bc.bcblog.vo.EmailCodeResultVO;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.security.SecureRandom;
@@ -36,6 +37,10 @@ public class EmailCodeServiceImpl implements EmailCodeService {
     private final SecureRandom random = new SecureRandom();
     private final ConcurrentHashMap<String, CodeItem> codes = new ConcurrentHashMap<>();
 
+    /** 当前生效的 profile：生产环境不允许把验证码明文返回给请求方 */
+    @Value("${spring.profiles.active:}")
+    private String activeProfiles;
+
     @Override
     public EmailCodeResultVO send(String email) {
         if (email == null || !email.contains("@")) {
@@ -66,7 +71,11 @@ public class EmailCodeServiceImpl implements EmailCodeService {
             result.setSent(true);
             return result;
         }
-        // 未配置邮件服务时，把验证码返回给前端用于测试
+        // 未配置邮件服务时，把验证码返回给前端用于测试。
+        // 但生产环境绝对不能这么干：那等于任何人输入别人的邮箱就能拿到验证码。
+        if (activeProfiles != null && activeProfiles.contains("prod")) {
+            throw new BusinessException("邮件服务未配置，暂时无法发送验证码，请联系站长");
+        }
         result.setSent(false);
         result.setCode(code);
         return result;

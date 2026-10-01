@@ -23,6 +23,8 @@ public class BlogArticle {
     private Integer viewCount;
     private Long authorId;
     private String authorName;
+    /** 是否由网站AI（IRIS）生成：1 是，前台显示 AI 角标 */
+    private Integer aiGenerated;
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     private LocalDateTime createTime;
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")

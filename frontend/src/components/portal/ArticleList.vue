@@ -23,7 +23,7 @@
           <span v-if="a.isTop === 1" class="badge">置顶</span>
         </div>
         <div class="body">
-          <h3 class="title">{{ a.title }}</h3>
+          <h3 class="title"><span v-if="a.aiGenerated === 1" class="ai-badge">AI</span>{{ a.title }}</h3>
           <p v-if="a.summary" class="summary">{{ a.summary }}</p>
           <div class="meta">
             <span>{{ shortDate(a.createTime) }} · {{ a.authorName || '管理员' }}</span>
@@ -170,7 +170,18 @@ onMounted(load)
 onUnmounted(() => observer && observer.disconnect())
 </script>
 
-<style scoped>
+<style scoped>/* 网站AI 生成的内容角标 */
+.ai-badge {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 0 6px;
+  font-size: 11px;
+  line-height: 16px;
+  vertical-align: middle;
+  color: #fff;
+  border-radius: 999px;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+}
 .masonry {
   column-count: 3;
   column-gap: 20px;

@@ -60,6 +60,8 @@ public class WebConfig implements WebMvcConfigurer {
         MENU_PATHS.put("comments", new String[]{"/api/admin/comment/**"});
         // 举报管理：受菜单授权管辖（未授权的管理员看不到也调不到）
         MENU_PATHS.put("reports", new String[]{"/api/admin/report/**"});
+        // 网站AI：她能直接发布内容，整体按超管专属收紧（见 AdminPathRules）
+        MENU_PATHS.put("siteAi", new String[]{"/api/admin/site-ai/**"});
         MENU_PATHS.put("gitalk", new String[]{"/api/admin/gitalk/**"});
         MENU_PATHS.put("photos", new String[]{"/api/admin/photo/**"});
         MENU_PATHS.put("resources", new String[]{"/api/admin/resource/**"});
@@ -94,6 +96,13 @@ public class WebConfig implements WebMvcConfigurer {
     /** 本地上传目录，用于把 /uploads/** 映射到磁盘文件 */
     @Value("${bcblog.upload-dir:./uploads}")
     private String uploadDir;
+
+    /**
+     * 允许跨域访问的源（英文逗号分隔）。默认 *（保持老行为），
+     * 想收紧就在 application.yml 里配 bcblog.cors.allowed-origins=https://你的域名
+     */
+    @Value("${bcblog.cors.allowed-origins:*}")
+    private String allowedOrigins;
 
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
@@ -222,11 +231,23 @@ public class WebConfig implements WebMvcConfigurer {
 
     @Override
     public void addCorsMappings(CorsRegistry registry) {
+        // 注意：这里**不再**返回 Access-Control-Allow-Credentials。
+        // 登录态走 Authorization 头（前端从 localStorage 取 token），跨域时不需要带 Cookie；
+        // 而一旦允许带凭证，任意网站都能"带着访客/管理员的登录态"读接口数据。
+        java.util.List<String> origins = new java.util.ArrayList<>();
+        for (String one : (allowedOrigins == null ? "" : allowedOrigins).split(",")) {
+            String origin = one.trim();
+            if (!origin.isEmpty()) {
+                origins.add(origin);
+            }
+        }
+        if (origins.isEmpty()) {
+            origins.add("*");
+        }
         registry.addMapping("/**")
-                .allowedOriginPatterns("*")
+                .allowedOriginPatterns(origins.toArray(new String[0]))
                 .allowedMethods("*")
                 .allowedHeaders("*")
-                .allowCredentials(true)
                 .maxAge(3600);
     }
 

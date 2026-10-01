@@ -1,4 +1,15 @@
 -- ============================================================
+-- 070 举报表（兼容版：不含 USE / SET NAMES，排序规则用 general_ci）
+--
+-- 用法（二选一）：
+--   A. Navicat：先在左侧双击选中要升级的数据库（例如 bc_blog），再打开本文件「运行 SQL 文件」；
+--   B. 命令行：mysql --default-character-set=utf8mb4 -uroot -p 你的库名 < upgrade_070_report_no_use.sql
+--
+-- 说明：原版 upgrade_070_report.sql 里带了 USE `bc_blog`（假设库名就是 bc_blog）。
+--       如果你服务器上的库名不叫 bc_blog，或者 Navicat 里没选中库，就会报
+--       "Unknown database 'bc_blog'" 或 "No database selected"，看起来像 CREATE TABLE 出错。
+-- ============================================================
+-- ============================================================
 -- 070 违法有害信息举报（前台举报入口 + 后台处理队列）
 --
 -- 背景：备案安全评估会检查"用户举报渠道"与"违法有害信息处置记录"。
@@ -11,8 +22,6 @@
 -- 脚本幂等，可重复执行。
 -- ============================================================
 
-SET NAMES utf8mb4;
-USE `bc_blog`;
 
 CREATE TABLE IF NOT EXISTS `sys_report` (
   `id` bigint NOT NULL AUTO_INCREMENT,

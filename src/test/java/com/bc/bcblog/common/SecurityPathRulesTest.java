@@ -62,6 +62,17 @@ class SecurityPathRulesTest {
     }
 
     @Test
+    @DisplayName("网站AI「IRIS」整套菜单都要二次验证（她能直接发文、发评论、改参数）")
+    void testSiteAiProtected() {
+        assertTrue(SecurityPathRules.needVerify("/api/admin/site-ai/overview", "GET"));
+        assertTrue(SecurityPathRules.needVerify("/api/admin/site-ai/profile", "GET"));
+        assertTrue(SecurityPathRules.needVerify("/api/admin/site-ai/profile", "PUT"));
+        assertTrue(SecurityPathRules.needVerify("/api/admin/site-ai/run", "POST"));
+        assertTrue(SecurityPathRules.needVerify("/api/admin/site-ai/activities", "GET"));
+        assertTrue(SecurityPathRules.needVerify("/api/admin/site-ai/activities/12/revert", "POST"));
+    }
+
+    @Test
     @DisplayName("日常内容运营与公共接口不受二次验证影响")
     void testDailyPathsNotProtected() {
         assertFalse(SecurityPathRules.needVerify("/api/admin/article/page", "GET"));

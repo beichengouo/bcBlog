@@ -43,6 +43,8 @@ public class CommentServiceImpl implements CommentService {
     private final BlogArticleMapper articleMapper;
     private final SysUserMapper sysUserMapper;
     private final SensitiveWordFilter sensitiveWordFilter;
+    /** 网站AI：读者在她内容下留言时触发她回复 */
+    private final com.bc.bcblog.service.SiteAiService siteAiService;
     private final LevelService levelService;
     private final UserService userService;
 
@@ -130,6 +132,14 @@ public class CommentServiceImpl implements CommentService {
         c.setStatus(1);
         c.setCreateTime(LocalDateTime.now());
         commentMapper.insert(c);
+
+        // 读者在她（IRIS）自己的内容下留言时，让她回复一句。
+        // 放在异步线程里执行：AI 调用要几秒，不能让读者提交评论时干等。
+        try {
+            siteAiService.maybeReplyAsync(c.getId());
+        } catch (Exception e) {
+            // 回复失败不影响评论本身
+        }
 
         // 当日前三次评论获得经验
         userService.addCommentExp(user);

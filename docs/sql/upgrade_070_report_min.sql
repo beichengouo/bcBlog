@@ -1,0 +1,22 @@
+CREATE TABLE IF NOT EXISTS `sys_report` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `target_type` varchar(20) NOT NULL DEFAULT 'comment' COMMENT '被举报对象类型：comment / article / user',
+  `target_id` bigint NOT NULL COMMENT '被举报对象ID',
+  `article_id` bigint DEFAULT NULL COMMENT '所属文章ID',
+  `article_title` varchar(200) DEFAULT NULL COMMENT '文章标题快照',
+  `content_snapshot` varchar(1000) DEFAULT NULL COMMENT '被举报内容快照（对象被删后仍可追溯）',
+  `reason` varchar(40) NOT NULL COMMENT '举报原因',
+  `detail` varchar(500) DEFAULT NULL COMMENT '补充说明',
+  `reporter_user_id` bigint DEFAULT NULL COMMENT '举报人用户ID',
+  `reporter_name` varchar(100) DEFAULT NULL COMMENT '举报人昵称快照',
+  `status` varchar(20) NOT NULL DEFAULT 'pending' COMMENT 'pending 待处理 / handled 已处理 / ignored 已忽略',
+  `handle_note` varchar(300) DEFAULT NULL COMMENT '处理结论与说明',
+  `handler_id` bigint DEFAULT NULL COMMENT '处理人ID',
+  `handler_name` varchar(100) DEFAULT NULL COMMENT '处理人快照',
+  `handle_time` datetime DEFAULT NULL COMMENT '处理时间',
+  `create_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '举报时间',
+  PRIMARY KEY (`id`),
+  KEY `idx_status` (`status`),
+  KEY `idx_target` (`target_type`,`target_id`),
+  KEY `idx_create_time` (`create_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='违法有害信息举报记录';

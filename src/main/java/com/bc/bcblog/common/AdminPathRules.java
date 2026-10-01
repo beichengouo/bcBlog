@@ -39,6 +39,8 @@ public final class AdminPathRules {
             "/api/admin/config/ip-location-provider/**",
             // 审计与安全
             "/api/admin/audit/**",
+            // 网站AI「IRIS」：她能直接发文与评论，参数与执行都只有超级管理员能碰
+            "/api/admin/site-ai/**",
             "/api/admin/security/**",
             "/api/admin/log/**",
             // 沙盒「世界与地图」：世界/地点的增删改、世界启停、导出导入、清空

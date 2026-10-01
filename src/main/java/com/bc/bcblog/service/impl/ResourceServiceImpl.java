@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.bc.bcblog.common.BusinessException;
+import com.bc.bcblog.common.HtmlSanitizer;
 import com.bc.bcblog.common.PageResult;
 import com.bc.bcblog.entity.BlogResource;
 import com.bc.bcblog.entity.SysResourceUnlock;
@@ -57,6 +58,11 @@ public class ResourceServiceImpl implements ResourceService {
         }
         if (resource.getPoints() == null || resource.getPoints() < 0) {
             resource.setPoints(1);
+        }
+        // 资源正文在前台也是 v-html 渲染：非超级管理员写的内容做「降权净化」，
+        // 否则被授权「智库」菜单的普通管理员能塞脚本，在超管浏览器里执行
+        if (!currentUserIsSuper()) {
+            resource.setContent(HtmlSanitizer.stripDangerous(resource.getContent()));
         }
         if (resource.getId() == null) {
             resource.setCreateTime(LocalDateTime.now());
@@ -136,6 +142,17 @@ public class ResourceServiceImpl implements ResourceService {
             return false;
         }
         return "SUPER".equals(user.getRole()) || "ADMIN1".equals(user.getRole()) || "ADMIN2".equals(user.getRole());
+    }
+
+    /** 当前登录用户是不是超级管理员（拿不到登录态时按"不是"处理，宁可多净化一次） */
+    private boolean currentUserIsSuper() {
+        try {
+            Long uid = cn.dev33.satoken.stp.StpUtil.getLoginIdAsLong();
+            SysUser user = userMapper.selectById(uid);
+            return user != null && "SUPER".equals(user.getRole());
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     private ResourceVO toVO(BlogResource resource, boolean unlocked) {

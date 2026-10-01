@@ -28,6 +28,7 @@
             <template #dropdown>
               <el-dropdown-menu>
                 <el-dropdown-item command="/portal/sandbox">沙盒</el-dropdown-item>
+              <el-dropdown-item command="/portal/iris">IRIS</el-dropdown-item>
                 <el-dropdown-item command="/portal/photos">流光忆庭</el-dropdown-item>
                 <el-dropdown-item command="/portal/resources">智库</el-dropdown-item>
               </el-dropdown-menu>
@@ -35,7 +36,13 @@
           </el-dropdown>
         </div>
         <nav class="portal-nav">
-          <router-link to="/portal/photos" class="nav-pill">
+          <router-link to="/portal/iris" class="nav-pill">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="9" />
+              <path d="M12 3v18M3 12h18" />
+            </svg>
+            <span>IRIS</span>
+          </router-link>          <router-link to="/portal/photos" class="nav-pill">
             <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <rect x="3" y="4" width="18" height="16" rx="3" />
               <circle cx="9" cy="10" r="2" />
@@ -159,6 +166,7 @@
         >{{ siteIcp }}</a>
           <router-link class="footer-link" to="/portal/photos">流光忆庭</router-link>
           <router-link class="footer-link" to="/portal/resources">智库</router-link>
+          <router-link class="footer-link" to="/portal/iris">IRIS</router-link>
           <router-link class="footer-link" to="/portal/terms">用户协议</router-link>
           <router-link class="footer-link" to="/portal/privacy">隐私政策</router-link>
           <span>Powered by bcBlog</span>
@@ -211,6 +219,7 @@ const mobileSearchOpen = ref(false)
  */
 const MOBILE_NAV_OPTIONS = [
   { path: '/portal/sandbox', label: '沙盒' },
+  { path: '/portal/iris', label: 'IRIS' },
   { path: '/portal/photos', label: '流光忆庭' },
   { path: '/portal/resources', label: '智库' }
 ]
