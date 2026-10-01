@@ -56,6 +56,7 @@ public class CommentServiceImpl implements CommentService {
                 .eq(BlogComment::getStatus, 1)
                 .orderByDesc(BlogComment::getCreateTime));
         List<CommentVO> vos = result.getRecords().stream().map(this::toVo).collect(Collectors.toList());
+        fillCurrentAvatars(vos);
         return PageResult.of(result.getTotal(), vos);
     }
 
@@ -85,7 +86,34 @@ public class CommentServiceImpl implements CommentService {
                 vo.setArticleTitle(titles.get(vo.getArticleId()));
             }
         }
+        fillCurrentAvatars(vos);
         return vos;
+    }
+
+    /**
+     * 头像取**用户当前的头像**：blog_comment.avatar 是发表时的快照，
+     * 用户换过头像之后旧评论还挂着快照，前台就会一直显示默认头像。
+     * 这里按 userId 批量补一次（一次查询，不会 N+1）；用户已注销时保留快照。
+     */
+    private void fillCurrentAvatars(List<CommentVO> vos) {
+        if (vos == null || vos.isEmpty()) {
+            return;
+        }
+        Set<Long> userIds = vos.stream().map(CommentVO::getUserId)
+                .filter(java.util.Objects::nonNull).collect(Collectors.toSet());
+        if (userIds.isEmpty()) {
+            return;
+        }
+        Map<Long, String> avatars = new HashMap<>();
+        for (SysUser user : sysUserMapper.selectBatchIds(userIds)) {
+            avatars.put(user.getId(), user.getAvatar());
+        }
+        for (CommentVO vo : vos) {
+            String current = vo.getUserId() == null ? null : avatars.get(vo.getUserId());
+            if (current != null && !current.trim().isEmpty()) {
+                vo.setAvatar(current);
+            }
+        }
     }
 
     @Override
@@ -195,6 +223,8 @@ public class CommentServiceImpl implements CommentService {
         vo.setLevel(c.getLevel());
         vo.setLevelName(c.getLevelName());
         vo.setContent(c.getContent());
+        // 前台靠这个字段显示「AI」角标：以前 VO 里没有它，AI 评论的角标一直没显示出来
+        vo.setAiGenerated(c.getAiGenerated());
         vo.setCreateTime(c.getCreateTime());
         return vo;
     }

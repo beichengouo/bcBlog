@@ -1,5 +1,9 @@
 package com.bc.bcblog.common;
 
+import cn.hutool.json.JSONArray;
+import cn.hutool.json.JSONObject;
+import cn.hutool.json.JSONUtil;
+
 /**
  * 网站 AI「IRIS」的四套提示词。
  *
@@ -16,6 +20,248 @@ public final class SiteAiPrompt {
 
     /** 提示词版本：记进活动日志，便于回溯"这条内容是哪版提示词产出的" */
     public static final String VERSION = "iris-v1";
+
+    /** 本该是纯文本的用途里，模型最爱套的那层 JSON 字段名（按优先级） */
+    private static final String[] TEXT_ENVELOPE_KEYS = {
+            "reply", "content", "text", "comment", "musing", "status", "summary",
+            "message", "output", "value", "result", "data"
+    };
+
+    /**
+     * 三段式思考的输出要求（IRIS 的每个行为都走这个）：思考 → 草稿 → 终稿。
+     *
+     * 为什么加：她的行为都是一次调用直接出结果，模型容易不多想就写、也更容易漏字段。
+     * 让它先显式想一遍、写一版草稿，再给终稿，质量和稳定性都更好；
+     * 三段里**只有 <final> 会发布出去**，<think>/<draft> 永远不会出现在前台
+     * （解析见 {@link SandboxReplyParser}，兜底展示见它的 displayText）。
+     *
+     * @param example     终稿 JSON 的样子（直接写进提示词，别让模型把占位符抄进去）
+     * @param finalFields 终稿 JSON 必须包含的字段
+     */
+    public static String stageSection(String example, String... finalFields) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("\n\n【输出格式：三段式思考，必须照做】\n");
+        sb.append("1. 第一段用 <think> 包起来：先想清楚这次要做什么、依据哪些材料、有哪些限制与容易出错的地方——写给你自己看；\n");
+        sb.append("2. 第二段用 <draft> 包起来：按上面的思路先写一版草稿——也只是草稿，别发布；\n");
+        sb.append("3. 第三段用 <final> 包起来，里面**只放一个 JSON 对象**，必须包含这些字段：");
+        sb.append(String.join("、", finalFields == null ? new String[0] : finalFields));
+        sb.append("（都是非空字符串），形如 ").append(example).append("。\n");
+        sb.append("除这三段标记之外不要再输出任何内容；只有 <final> 里的 JSON 会被使用，")
+                .append("<think> 与 <draft> 读者永远看不到。\n");
+        sb.append("JSON 里的换行必须写成 \\n 转义，不要直接敲回车，也不要在 JSON 外面单独写 \\n。\n");
+        return sb.toString();
+    }
+
+    /**
+     * 把"本该是纯文本"的模型输出洗干净：评论 / 回复 / 状态 / 记忆都走这里。
+     *
+     * 为什么需要：实测有的模型即使被要求"只输出正文"，仍会把答案包一层 JSON 信封
+     * （例如 {"reply": "你好。"}），前面还带一个字面量的 \n，
+     * 以前原文直接进了评论，前台就把整段 JSON 显示给读者了。
+     *
+     * 处理顺序：去围栏与 <final> 这类标签 → 整段是 JSON 对象就取文本字段 → 还原被写成
+     * 两个字符的 \n。取不到就按原文返回（宁可原样显示，也不要把内容弄丢）。
+     *
+     * 注意：写文章那条路要的是 JSON 本身，不能用这个方法。
+     *
+     * @param preferred 调用方知道的字段名，例如回复用 "reply"；可以为空
+     */
+    public static String plainText(String raw, String... preferred) {
+        if (raw == null) {
+            return "";
+        }
+        String text = raw.replace("\uFEFF", "").trim();
+        text = text.replace("```json", "").replace("```", "").trim();
+        text = text.replaceAll("(?i)</?(final|draft|review|think|recap)>", "").trim();
+        if (text.isEmpty()) {
+            return "";
+        }
+        // ① 整段就是一个 JSON 对象：把里面的正文取出来
+        // （先把开头/结尾那串字面量 \n 去掉——模型经常把换行写在 JSON 外面）
+        String candidate = trimLiteralEscapes(text);
+        if (candidate.startsWith("{") && candidate.endsWith("}")) {
+            try {
+                String picked = pickFromObject(JSONUtil.parseObj(candidate), preferred, 0);
+                if (picked != null && !picked.trim().isEmpty()) {
+                    return unescapeLiteral(picked).trim();
+                }
+            } catch (Exception ignored) {
+                // 解析不了就走下面的宽松提取（模型常把 JSON 里的换行写成字面量 \n，严格 JSON 会判非法）
+            }
+            String loose = regexPick(candidate, preferred);
+            if (loose != null && !loose.trim().isEmpty()) {
+                return loose.trim();
+            }
+        }
+        // ② 整段被写成 JSON 字符串（两边带引号）
+        if (text.length() >= 2 && text.startsWith("\"") && text.endsWith("\"")) {
+            String inner = text.substring(1, text.length() - 1);
+            if (inner.indexOf('"') < 0) {
+                text = inner;
+            }
+        }
+        return unescapeLiteral(trimLiteralEscapes(text)).trim();
+    }
+
+    /** 去掉开头/结尾的字面量 \n、\t（不是真的换行，是两个字面字符） */
+    private static String trimLiteralEscapes(String text) {
+        if (text == null) {
+            return "";
+        }
+        return text.replaceAll("^(?:\\\\[nrt]|\\s)+", "")
+                .replaceAll("(?:\\\\[nrt]|\\s)+$", "")
+                .trim();
+    }
+
+    /**
+     * 宽松提取：不要求整段是合法 JSON，只要求出现 "字段名": "值" 这种形式。
+     * 用于模型把 JSON 写坏（字符串外多了字面量 \n、少了逗号等）的情况——这时候严格解析会失败，
+     * 但我们要的是那段正文，别因为它前后多带了个字符就把整段 JSON 发给读者。
+     */
+    private static String regexPick(String text, String... preferred) {
+        java.util.List<String> keys = new java.util.ArrayList<>();
+        if (preferred != null) {
+            for (String key : preferred) {
+                if (key != null && !key.trim().isEmpty()) {
+                    keys.add(key.trim());
+                }
+            }
+        }
+        for (String key : TEXT_ENVELOPE_KEYS) {
+            keys.add(key);
+        }
+        for (String key : keys) {
+            String hit = regexPickKey(text, key);
+            if (hit != null) {
+                return hit;
+            }
+        }
+        return null;
+    }
+
+    /** 在文本里找 "字段名": "值"（不要求整段是合法 JSON） */
+    private static String regexPickKey(String text, String key) {
+        java.util.regex.Matcher m = java.util.regex.Pattern
+                .compile("(?is)\"?\\s*" + java.util.regex.Pattern.quote(key)
+                        + "\\s*\"?\\s*[:：]\\s*\"((?:\\\\.|[^\"\\\\])*)\"")
+                .matcher(text);
+        if (m.find()) {
+            String value = unescapeLiteral(m.group(1)).trim();
+            if (!value.isEmpty()) {
+                return value;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 取 JSON 对象里的一个字段（非空字符串才算）：写文章取 title/content、评论取 comment、回复取 reply……
+     * 顺带兼容模型多包一层：{"data": {"reply": "…"}}
+     */
+    public static String jsonField(JSONObject obj, String field) {
+        if (obj == null || field == null || field.trim().isEmpty()) {
+            return null;
+        }
+        String key = field.trim();
+        String hit = stringValue(obj.get(key));
+        if (hit != null) {
+            return hit;
+        }
+        for (Object value : obj.values()) {
+            if (value instanceof JSONObject) {
+                hit = stringValue(((JSONObject) value).get(key));
+                if (hit != null) {
+                    return hit;
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 宽松解析：严格 JSON 解析失败时（模型常把换行写成字面量 \n、或少个逗号），
+     * 用正则把能认出来的字段拼成一个 JSONObject；一个字段都没认出来就返回 null。
+     */
+    public static JSONObject looseJson(String raw, String... fields) {
+        if (raw == null || fields == null || fields.length == 0) {
+            return null;
+        }
+        String text = raw.replace("```json", "").replace("```", "");
+        JSONObject obj = new JSONObject();
+        for (String field : fields) {
+            if (field == null || field.trim().isEmpty()) {
+                continue;
+            }
+            String value = regexPickKey(text, field.trim());
+            if (value != null && !value.trim().isEmpty()) {
+                obj.set(field.trim(), value.trim());
+            }
+        }
+        return obj.isEmpty() ? null : obj;
+    }
+
+    /** 从 JSON 对象里按"调用方指定 → 通用字段 → 一层嵌套"的顺序找正文 */
+    private static String pickFromObject(JSONObject obj, String[] preferred, int depth) {
+        if (preferred != null) {
+            for (String key : preferred) {
+                String hit = stringValue(obj.get(key == null ? "" : key.trim()));
+                if (hit != null) {
+                    return hit;
+                }
+            }
+        }
+        for (String key : TEXT_ENVELOPE_KEYS) {
+            String hit = stringValue(obj.get(key));
+            if (hit != null) {
+                return hit;
+            }
+        }
+        if (depth < 1) {
+            for (Object value : obj.values()) {
+                if (value instanceof JSONObject) {
+                    String hit = pickFromObject((JSONObject) value, preferred, depth + 1);
+                    if (hit != null) {
+                        return hit;
+                    }
+                } else if (value instanceof JSONArray) {
+                    for (Object one : (JSONArray) value) {
+                        String hit = stringValue(one);
+                        if (hit != null) {
+                            return hit;
+                        }
+                        if (one instanceof JSONObject) {
+                            hit = pickFromObject((JSONObject) one, preferred, depth + 1);
+                            if (hit != null) {
+                                return hit;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    /** 只有非空的字符串才算正文（数字/布尔/null 当正文没意义） */
+    private static String stringValue(Object value) {
+        if (value instanceof CharSequence) {
+            String s = value.toString().trim();
+            return s.isEmpty() ? null : s;
+        }
+        return null;
+    }
+
+    /** 模型有时把换行写成两个字面量字符 \n（而不是真的换行），这里还原回来 */
+    private static String unescapeLiteral(String text) {
+        if (text == null) {
+            return "";
+        }
+        if (text.indexOf('\\') < 0) {
+            return text;
+        }
+        return text.replace("\\r\\n", "\n").replace("\\n", "\n")
+                .replace("\\r", "\n").replace("\\t", " ");
+    }
 
     /** 她在前台显示的名字（英文名为主，中文名只在档案里出现） */
     public static String displayName(String nameCn, String nameEn) {
@@ -44,7 +290,11 @@ public final class SiteAiPrompt {
         sb.append("5. 写文章时**直接输出 HTML**：<h2>/<h3> 小标题、<p> 段落、<ul><li> 列表、<blockquote> 引用、<strong> 强调，")
                 .append("需要列数据或对照时用 <table>（thead/th + tbody/td 完整写出），涉及命令/配置时才用 <pre><code>；")
                 .append("不要写 <script>/<style>/<iframe>，不要用行内 style 与 onclick 这类属性。\n");
-        sb.append("6. 写评论、回复、状态时用纯文本，不要带任何标记。\n");
+        sb.append("6. 所有行为都按**三段式**输出：<think> 想清楚 → <draft> 打草稿 → <final> 只放结果；")
+                .append("<final> 里是**一个 JSON 对象**（字段名在各自的要求里给出，例如 {\"comment\": \"…\"}）：")
+                .append("JSON 里只放要求的字段，不要在外面再套一层；")
+                .append("字面内容里不要出现 HTML/Markdown 标记；JSON 里的换行必须写成 \\n 转义，")
+                .append("不要直接敲回车、也不要在 JSON 外面单独写 \\n。\n");
         if (extra != null && !extra.trim().isEmpty()) {
             sb.append("\n【主人补充要求】\n").append(extra.trim()).append("\n");
         }
@@ -109,7 +359,7 @@ public final class SiteAiPrompt {
         sb.append("4. 人设的用法是**克制**的：它只体现在语气、比喻和偶尔一句自嘲上，")
                 .append("关于你自己的叙述**不要超过全文五分之一（两三句）**；技术教程里更要少写你自己；\n");
         sb.append("5. 不要写成产品说明或客服口吻，也不要喊口号；可以有她特有的克制与笨拙的温柔；\n");
-        sb.append("6. 只输出一个 JSON 对象，不要解释、不要代码块标记，格式：\n");
+        sb.append("6. 终稿（<final> 段）里只放这一个 JSON 对象，不要解释、不要代码块标记，格式：\n");
         sb.append("{\"title\":\"标题（8~20 字，不要用书名号；直接写主题，例如「Git 分支管理入门」，")
                 .append("不要用「XX 的日志」「我与…」这种自我指涉的标题）\",\"summary\":\"摘要（40~80 字，一段话）\",")
                 .append("\"content\":\"正文（HTML 标签，例如 <p>段落</p><h2>小节</h2><ul><li>要点</li></ul>）\"}");
@@ -131,7 +381,7 @@ public final class SiteAiPrompt {
         sb.append("3. 表格之后分 2~4 段展开：挑其中 1~2 个值得说的点，写你的观察、推断与感受；\n");
         sb.append("4. 结尾可以用一句话收束（例如对明天的期待、或一句自我吐槽），不要喊口号；\n");
         sb.append("5. 不要写成产品周报、不要罗列所有数字、不要做流量承诺；\n");
-        sb.append("6. 只输出一个 JSON 对象，不要解释、不要代码块标记，格式：\n");
+        sb.append("6. 终稿（<final> 段）里只放这一个 JSON 对象，不要解释、不要代码块标记，格式：\n");
         sb.append("{\"title\":\"标题（8~20 字，例如「今日运行情况：比昨天安静」）\",\"summary\":\"摘要（40~80 字）\",")
                 .append("\"content\":\"正文（HTML 标签；表格用 <table><thead>…</thead><tbody>…</tbody></table>）\"}");
         return sb.toString();
@@ -175,7 +425,8 @@ public final class SiteAiPrompt {
         sb.append("\n要求：\n");
         sb.append("1. 20~60 字，一到两句话，就事论事地回应这篇文章，可以补充、可以吐槽、也可以说自己的困惑；\n");
         sb.append("2. 不要客套、不要「学习了」「受益匪浅」这类空话，也不要 @ 或称呼任何人；\n");
-        sb.append("3. 只输出评论正文本身，不要引号、不要解释。");
+        sb.append("3. 终稿（<final> 段）里只放一个 JSON 对象：{\"comment\": \"你的评论\"}；")
+                .append("不要引号包整段、不要解释、不要代码块标记、不要多余字段。");
         return sb.toString();
     }
 
@@ -188,7 +439,8 @@ public final class SiteAiPrompt {
         sb.append("\n要求：\n");
         sb.append("1. 15~50 字，直接回应对方的这句话，可以认真、可以笨拙地幽默，但不要油滑；\n");
         sb.append("2. 不引用对方的昵称，不索取任何个人信息，不承诺做不到的事；\n");
-        sb.append("3. 只输出回复正文本身，不要引号、不要解释。");
+        sb.append("3. 终稿（<final> 段）里只放一个 JSON 对象：{\"reply\": \"你的回复\"}；")
+                .append("不要引号包整段、不要解释、不要代码块标记、不要多余字段。");
         return sb.toString();
     }
 
@@ -202,7 +454,8 @@ public final class SiteAiPrompt {
         if (todaySummary != null && !todaySummary.trim().isEmpty()) {
             sb.append("你今天的心情记录：").append(todaySummary.trim()).append("\n");
         }
-        sb.append("\n要求：12~30 字，包含一点点具体细节（正在做什么、观察到什么），不要喊口号；只输出这一句。");
+        sb.append("\n要求：12~30 字，包含一点点具体细节（正在做什么、观察到什么），不要喊口号；")
+                .append("终稿（<final> 段）里只放一个 JSON 对象：{\"status\": \"这一句\"}，不要解释、不要多余字段。");
         return sb.toString();
     }
 
@@ -214,7 +467,8 @@ public final class SiteAiPrompt {
         sb.append("\n要求：\n");
         sb.append("1. 120~220 字，写成一小段连贯的回忆（像人回想一天），不要逐条罗列活动；\n");
         sb.append("2. 保留 2~3 个具体细节，以及你当时「无法确认」的感受；\n");
-        sb.append("3. 只输出这段记忆本身，不要标题、不要解释。");
+        sb.append("3. 终稿（<final> 段）里只放一个 JSON 对象：{\"summary\": \"这段记忆\"}；")
+                .append("不要标题、不要解释、不要多余字段。");
         return sb.toString();
     }
 }

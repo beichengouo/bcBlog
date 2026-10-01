@@ -19,6 +19,8 @@ public class CommentVO {
     private Integer level;
     private String levelName;
     private String content;
+    /** 是否由网站AI（IRIS）生成：1 是，前台评论昵称旁显示 AI 角标 */
+    private Integer aiGenerated;
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     private LocalDateTime createTime;
 }

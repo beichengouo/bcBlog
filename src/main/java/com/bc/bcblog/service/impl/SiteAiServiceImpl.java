@@ -9,6 +9,7 @@ import com.bc.bcblog.common.BusinessException;
 import com.bc.bcblog.common.HtmlSanitizer;
 import com.bc.bcblog.common.MarkdownLite;
 import com.bc.bcblog.common.PageResult;
+import com.bc.bcblog.common.SandboxReplyParser;
 import com.bc.bcblog.common.SiteAiPrompt;
 import com.bc.bcblog.component.SensitiveWordFilter;
 import com.bc.bcblog.entity.AdminApiLog;
@@ -738,15 +739,18 @@ public class SiteAiServiceImpl implements SiteAiService {
         String system = SiteAiPrompt.system(displayName(p), p.getPersonalityJson(), p.getPromptExtra());
         String user = SiteAiPrompt.reportUser(digest, p.getDigestTone());
         long start = System.currentTimeMillis();
-        String raw = chat(p.getArticleProviderId(), p.getArticleModel(), system, user, 0.85);
-        JSONObject obj = parseJson(raw);
-        if (obj == null || !obj.containsKey("content")) {
-            return record(p, "report", null, null, null, null, raw, "failed", "模型没有返回约定格式", null,
+        JsonCall call = chatJson(p.getArticleProviderId(), p.getArticleModel(), system, user, 0.85,
+                "{\"title\": \"今日运行情况\", \"summary\": \"一句话摘要\", \"content\": \"<p>正文（HTML）</p>\"}",
+                "content");
+        String raw = call.raw;
+        if (call.json == null) {
+            return record(p, "report", null, null, null, null, raw, "failed",
+                    "模型两次都没有返回约定格式（需要 content 字段）", null,
                     (int) (System.currentTimeMillis() - start));
         }
-        String title = trim(obj.getStr("title"), 190);
-        String summary = trim(obj.getStr("summary"), 400);
-        String content = normalizeArticleBody(obj.getStr("content"));
+        String title = trim(SiteAiPrompt.jsonField(call.json, "title"), 190);
+        String summary = trim(SiteAiPrompt.jsonField(call.json, "summary"), 400);
+        String content = normalizeArticleBody(SiteAiPrompt.jsonField(call.json, "content"));
         String hit = sensitiveHit(title + summary + content);
         if (hit != null) {
             return record(p, "report", null, null, title, content, raw, "blocked",
@@ -783,28 +787,35 @@ public class SiteAiServiceImpl implements SiteAiService {
         String user = SiteAiPrompt.articleUser(p.getArticleTopics(), p.getArticleAvoid(),
                 recentTitles(), myRecentArticles(), memoriesText(p), myTodayActivities());
         long start = System.currentTimeMillis();
-        String raw = chat(p.getArticleProviderId(), p.getArticleModel(), system, user, 0.9);
-        JSONObject obj = parseJson(raw);
-        if (obj == null || !obj.containsKey("title") || !obj.containsKey("content")) {
-            return record(p, "article", null, null, null, null, raw, "failed", "模型没有返回约定格式", null,
+        JsonCall call = chatJson(p.getArticleProviderId(), p.getArticleModel(), system, user, 0.9,
+                "{\"title\": \"文章标题\", \"summary\": \"一句话摘要\", \"content\": \"<p>正文（HTML）</p>\"}",
+                "title", "content");
+        String raw = call.raw;
+        if (call.json == null) {
+            return record(p, "article", null, null, null, null, raw, "failed",
+                    "模型两次都没有返回约定格式（需要 title/content）", null,
                     (int) (System.currentTimeMillis() - start));
         }
-        String title = trim(obj.getStr("title"), 190);
-        String summary = trim(obj.getStr("summary"), 400);
-        String content = normalizeArticleBody(obj.getStr("content"));
+        String title = trim(SiteAiPrompt.jsonField(call.json, "title"), 190);
+        String summary = trim(SiteAiPrompt.jsonField(call.json, "summary"), 400);
+        String content = normalizeArticleBody(SiteAiPrompt.jsonField(call.json, "content"));
         // 敏感词：命中就让她重写一次，仍命中就不发布
         String hit = sensitiveHit(title + summary + content);
         if (hit != null) {
-            raw = chat(p.getArticleProviderId(), p.getArticleModel(), system,
-                    user + "\n\n（上一次的措辞里出现了不适合公开发布的词：" + hit + "，请换一种说法重写，其余要求不变）", 0.9);
-            obj = parseJson(raw);
-            if (obj == null || !obj.containsKey("content")) {
+            call = chatJson(p.getArticleProviderId(), p.getArticleModel(), system,
+                    user + "\n\n（上一次的措辞里出现了不适合公开发布的词：" + hit
+                            + "，请换一种说法重写，其余要求不变，仍然只输出一个 JSON 对象）", 0.9,
+                    "{\"title\": \"文章标题\", \"summary\": \"一句话摘要\", \"content\": \"<p>正文（HTML）</p>\"}",
+                    "title", "content");
+            raw = call.raw;
+            if (call.json == null) {
                 return record(p, "article", null, null, null, null, raw, "blocked",
                         "重写后仍不符合格式", null, (int) (System.currentTimeMillis() - start));
             }
-            title = trim(obj.getStr("title"), 190);
-            summary = trim(obj.getStr("summary"), 400);
-            content = MarkdownLite.toHtmlWithFallback(trim(obj.getStr("content"), 20000));
+            title = trim(SiteAiPrompt.jsonField(call.json, "title"), 190);
+            summary = trim(SiteAiPrompt.jsonField(call.json, "summary"), 400);
+            // 这里也走 normalizeArticleBody：它会在返回 HTML 时过白名单净化（以前这条重写分支漏了净化）
+            content = normalizeArticleBody(SiteAiPrompt.jsonField(call.json, "content"));
             String second = sensitiveHit(title + summary + content);
             if (second != null) {
                 return record(p, "article", null, null, title, content, raw, "blocked",
@@ -944,17 +955,27 @@ public class SiteAiServiceImpl implements SiteAiService {
         String system = SiteAiPrompt.system(displayName(p), p.getPersonalityJson(), p.getPromptExtra());
         String user = SiteAiPrompt.commentUser(target.getTitle(), target.getSummary(), memoriesText(p));
         long start = System.currentTimeMillis();
-        String raw = chat(p.getCommentProviderId(), p.getCommentModel(), system, user, 0.85);
-        String content = HtmlSanitizer.stripTags(trim(plain(raw), 400));
+        JsonCall call = chatJson(p.getCommentProviderId(), p.getCommentModel(), system, user, 0.85,
+                "{\"comment\": \"你的评论\"}", "comment");
+        String raw = call.raw;
+        if (call.json == null) {
+            return record(p, "comment", "article", target.getId(), target.getTitle(), null, raw, "failed",
+                    "模型两次都没有返回约定格式（需要 comment 字段）", null,
+                    (int) (System.currentTimeMillis() - start));
+        }
+        String content = HtmlSanitizer.stripTags(trim(SiteAiPrompt.jsonField(call.json, "comment"), 400));
         if (content.isEmpty()) {
             return record(p, "comment", null, target.getId(), target.getTitle(), null, raw, "failed",
                     "模型返回空内容", null, (int) (System.currentTimeMillis() - start));
         }
         String hit = sensitiveHit(content);
         if (hit != null) {
-            raw = chat(p.getCommentProviderId(), p.getCommentModel(), system,
-                    user + "\n\n（上一次的措辞里出现了不适合公开发布的词：" + hit + "，请换一种说法重写）", 0.85);
-            content = HtmlSanitizer.stripTags(trim(plain(raw), 400));
+            call = chatJson(p.getCommentProviderId(), p.getCommentModel(), system,
+                    user + "\n\n（上一次的措辞里出现了不适合公开发布的词：" + hit
+                            + "，请换一种说法重写，其余要求不变）", 0.85,
+                    "{\"comment\": \"你的评论\"}", "comment");
+            raw = call.raw;
+            content = call.json == null ? "" : HtmlSanitizer.stripTags(trim(SiteAiPrompt.jsonField(call.json, "comment"), 400));
             String second = sensitiveHit(content);
             if (content.isEmpty() || second != null) {
                 return record(p, "comment", "article", target.getId(), target.getTitle(), content, raw, "blocked",
@@ -1016,10 +1037,14 @@ public class SiteAiServiceImpl implements SiteAiService {
         String system = SiteAiPrompt.system(displayName(p), p.getPersonalityJson(), p.getPromptExtra());
         String user = SiteAiPrompt.statusUser(null, todayDigest());
         long start = System.currentTimeMillis();
-        String raw = chat(p.getStatusProviderId(), p.getStatusModel(), system, user, 0.9);
-        String content = HtmlSanitizer.stripTags(trim(plain(raw), 300));
+        JsonCall call = chatJson(p.getStatusProviderId(), p.getStatusModel(), system, user, 0.9,
+                "{\"status\": \"这一句状态\"}", "status");
+        String raw = call.raw;
+        String content = call.json == null ? ""
+                : HtmlSanitizer.stripTags(trim(SiteAiPrompt.jsonField(call.json, "status"), 300));
         if (content.isEmpty()) {
-            return record(p, "status", null, null, null, null, raw, "failed", "模型返回空内容", null,
+            return record(p, "status", null, null, null, null, raw, "failed",
+                    call.json == null ? "模型两次都没有返回约定格式（需要 status 字段）" : "模型返回空内容", null,
                     (int) (System.currentTimeMillis() - start));
         }
         return record(p, "status", null, null, null, content, raw, "success", null, p.getStatusModel(),
@@ -1100,8 +1125,16 @@ public class SiteAiServiceImpl implements SiteAiService {
         String system = SiteAiPrompt.system(displayName(p), p.getPersonalityJson(), p.getPromptExtra());
         String user = SiteAiPrompt.replyUser(source, comment.getContent());
         long start = System.currentTimeMillis();
-        String raw = chat(p.getReplyProviderId(), p.getReplyModel(), system, user, 0.85);
-        String content = HtmlSanitizer.stripTags(trim(plain(raw), 400));
+        JsonCall call = chatJson(p.getReplyProviderId(), p.getReplyModel(), system, user, 0.85,
+                "{\"reply\": \"你的回复\"}", "reply");
+        String raw = call.raw;
+        if (call.json == null) {
+            record(p, "reply", "comment", commentId, null, null, raw, "failed",
+                    "模型两次都没有返回约定格式（需要 reply 字段），本次未发布", null,
+                    (int) (System.currentTimeMillis() - start));
+            return;
+        }
+        String content = HtmlSanitizer.stripTags(trim(SiteAiPrompt.jsonField(call.json, "reply"), 400));
         if (content.isEmpty() || sensitiveHit(content) != null) {
             record(p, "reply", "comment", commentId, null, content, raw, "blocked",
                     "回复内容为空或命中敏感词，未发布", null, (int) (System.currentTimeMillis() - start));
@@ -1140,8 +1173,10 @@ public class SiteAiServiceImpl implements SiteAiService {
                 .eq(SiteAiMemory::getMemoryDate, today).last("limit 1"));
         String system = SiteAiPrompt.system(displayName(p), p.getPersonalityJson(), p.getPromptExtra());
         String user = SiteAiPrompt.memoryUser(digest);
-        String raw = chat(p.getStatusProviderId(), p.getStatusModel(), system, user, 0.85);
-        String summary = trim(plain(raw), 2000);
+        JsonCall call = chatJson(p.getStatusProviderId(), p.getStatusModel(), system, user, 0.85,
+                "{\"summary\": \"这段记忆（120~220 字）\"}", "summary");
+        String raw = call.raw;
+        String summary = call.json == null ? "" : trim(SiteAiPrompt.jsonField(call.json, "summary"), 2000);
         if (summary.isEmpty()) {
             return 0;
         }
@@ -1366,6 +1401,91 @@ public class SiteAiServiceImpl implements SiteAiService {
         return aiProviderService.chat(provider, useModel, system, user, temperature);
     }
 
+    /** 一次"要 JSON 字段"的调用结果 */
+    private static final class JsonCall {
+        /** 解析好的 JSON（两次都没解析出来时为 null） */
+        JSONObject json;
+        /** 原始回复；走过二次自检时会把第二次的原文也带上，便于在活动日志里回溯 */
+        String raw;
+        /** 是否触发过二次自检 */
+        boolean retried;
+    }
+
+    /**
+     * 要求模型按约定字段返回 JSON；不合格就带上"哪里不合格 + 上一次的输出"再要一次（二次自检）。
+     *
+     * 输出格式是三段式思考（<think> → <draft> → <final>），只有 <final> 里的 JSON 会被采用，
+     * 思考与草稿永远不会流到前台；解析统一交给 SandboxReplyParser（它会处理"模型忘了写 <final>"、
+     * 草稿里混了示例 JSON 等实测过的坑）。
+     *
+     * 两道防线：
+     *   1. 严格 JSON 解析 → 失败时用宽松提取（模型把换行写成字面量 \n、少个逗号也能救回来）；
+     *   2. 仍然缺字段 → 二次调用，让模型看着自己的错误输出重写一次。
+     * 返回的 json 为 null 表示两次都没给出合格格式，调用方按失败处理（不要把原文发出去）。
+     */
+    private JsonCall chatJson(Long providerId, String model, String system, String user,
+                              double temperature, String exampleJson, String... requiredFields) {
+        String stagedUser = user + SiteAiPrompt.stageSection(exampleJson, requiredFields);
+        JsonCall call = new JsonCall();
+        call.raw = chat(providerId, model, system, stagedUser, temperature);
+        call.json = parseJsonLoose(call.raw, requiredFields);
+        String bad = checkFields(call.json, requiredFields);
+        if (bad == null) {
+            return call;
+        }
+        // 二次自检：把错误原因和上一次的输出一起给它，让它自己改
+        String fixUser = stagedUser
+                + "\n\n【上一次的输出不合格】\n" + truncateForFeedback(call.raw)
+                + "\n不合格原因：" + bad
+                + "\n请重新按三段式输出一遍（<think> → <draft> → <final>），"
+                + "并在 <final> 里给出**一个 JSON 对象**，必须包含这些字段：" + String.join("、", requiredFields)
+                + "（都是非空字符串），形如 " + exampleJson + "；不要多余字段。";
+        log.info("IRIS 输出不合格（{}），已二次调用让它自检重写", bad);
+        String raw2 = chat(providerId, model, system, fixUser, temperature);
+        call.retried = true;
+        call.raw = call.raw + "\n\n--- 二次自检重写 ---\n" + raw2;
+        JSONObject again = parseJsonLoose(raw2, requiredFields);
+        String bad2 = checkFields(again, requiredFields);
+        if (bad2 == null) {
+            call.json = again;
+            return call;
+        }
+        log.warn("IRIS 二次自检后仍不合格（{}），本次不发布", bad2);
+        call.json = null;
+        return call;
+    }
+
+    /** 先取 <final> 段 → 严格解析 → 宽松提取 */
+    private JSONObject parseJsonLoose(String raw, String... fields) {
+        JSONObject obj = parseJson(raw);
+        if (checkFields(obj, fields) == null) {
+            return obj;
+        }
+        // 三段式回复里草稿段也可能有 JSON 示例，所以宽松提取只在「终稿段」里找
+        String finalBlock = SandboxReplyParser.extractFinalBlock(raw);
+        JSONObject loose = SiteAiPrompt.looseJson(finalBlock == null ? raw : finalBlock, fields);
+        return loose != null ? loose : obj;
+    }
+
+    /** 检查必需字段；返回不合格原因（合格返回 null） */
+    private String checkFields(JSONObject obj, String... requiredFields) {
+        if (obj == null) {
+            return "没有解析到 JSON 对象";
+        }
+        for (String field : requiredFields) {
+            if (SiteAiPrompt.jsonField(obj, field) == null) {
+                return "缺少字段 " + field + "（或它不是非空字符串）";
+            }
+        }
+        return null;
+    }
+
+    /** 二次自检时把上一次的输出带回去，太长就截断（文章可能上万字） */
+    private String truncateForFeedback(String raw) {
+        String text = raw == null ? "（空）" : raw.trim();
+        return text.length() <= 1200 ? text : text.substring(0, 1200) + "\n…（上一次输出过长，已截断）";
+    }
+
     /**
      * 敏感词命中时返回命中的片段（便于在活动日志里看清到底拦了什么），没命中返回 null。
      * 是否启用由「敏感词过滤」开关决定：关掉后完全交给 AI 服务商自身的判断。
@@ -1396,16 +1516,23 @@ public class SiteAiServiceImpl implements SiteAiService {
         return len;
     }
 
-    /** 去掉代码块标记后取最外层 JSON */
+    /**
+     * 取回复里的最终 JSON：优先三段式的 <final> 段（{@link SandboxReplyParser} 会处理
+     * "模型忘了写 <final>"、"草稿段里也有示例 JSON"这些情况），再退回"整段里最外层的 JSON"。
+     */
     private JSONObject parseJson(String raw) {
-        String text = plain(raw);
-        int start = text.indexOf('{');
-        int end = text.lastIndexOf('}');
-        if (start < 0 || end <= start) {
-            return null;
+        String json = SandboxReplyParser.extractFinalJson(raw);
+        if (json == null) {
+            String text = plain(raw);
+            int start = text.indexOf('{');
+            int end = text.lastIndexOf('}');
+            if (start < 0 || end <= start) {
+                return null;
+            }
+            json = text.substring(start, end + 1);
         }
         try {
-            return JSONUtil.parseObj(text.substring(start, end + 1));
+            return JSONUtil.parseObj(json);
         } catch (Exception e) {
             return null;
         }

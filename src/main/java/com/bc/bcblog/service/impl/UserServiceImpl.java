@@ -232,10 +232,13 @@ public class UserServiceImpl implements UserService {
             vo.setArticleTitle(titleMap.get(c.getArticleId()));
             vo.setUserId(c.getUserId());
             vo.setNickname(c.getNickname());
-            vo.setAvatar(c.getAvatar());
+            // 头像取当前值：评论里存的是发表时的快照，换过头像之后这里要跟着变
+            vo.setAvatar(user.getAvatar() == null || user.getAvatar().trim().isEmpty()
+                    ? c.getAvatar() : user.getAvatar());
             vo.setLevel(c.getLevel());
             vo.setLevelName(c.getLevelName());
             vo.setContent(c.getContent());
+            vo.setAiGenerated(c.getAiGenerated());
             vo.setCreateTime(c.getCreateTime());
             return vo;
         }).collect(Collectors.toList());

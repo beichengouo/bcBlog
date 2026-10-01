@@ -239,3 +239,14 @@ mvn test "-Dtest=PortalIsolationProbe"
 - 删除世界后，集市商品 / 赠送记录 / 礼物 / 态度日志 / 地区锁 / 角色**必须一起清空**。
 
 跑完会自动把探针世界删掉（删不干净就在 finally 里兜底清一遍）。
+## IrisPromptDump — 看看现在发给 IRIS 的提示词长什么样（**不调用模型**）
+
+```powershell
+mvn test "-Dtest=IrisPromptDump"
+```
+
+打印三段：系统提示词（人设 + 说话方式 + 三段式与 JSON 要求）、
+「回复读者」的完整 user 提示词、以及「写文章」提示词的末尾片段。
+
+用来核对：三段式标记（<think> / <draft> / <final>）有没有写进提示词、
+<final> 里要求的 JSON 字段名与示例对不对。想改文案就直接看这个，不用真花钱调接口。

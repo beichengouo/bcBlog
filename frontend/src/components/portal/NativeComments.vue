@@ -27,7 +27,8 @@
         <div v-else class="comment-avatar placeholder">{{ (c.nickname || 'U').slice(0, 1) }}</div>
         <div class="comment-body">
           <div class="comment-head">
-            <span class="comment-nickname">{{ c.nickname }}</span>`n            <span v-if="c.aiGenerated === 1" class="ai-badge">AI</span>
+            <span class="comment-nickname">{{ c.nickname }}</span>
+            <span v-if="c.aiGenerated === 1" class="ai-badge">AI</span>
             <span v-if="c.level" class="level-badge">Lv.{{ c.level }} {{ c.levelName }}</span>
             <span class="comment-time">{{ c.createTime }}</span>
             <button
