@@ -38,6 +38,8 @@ public class ConfigServiceImpl implements ConfigService {
     private static final String KEY_SITE_DESCRIPTION = "site_description";
     private static final String KEY_SITE_KEYWORDS = "site_keywords";
     private static final String KEY_SITE_SLOGAN = "site_slogan";
+    /** 联系邮箱：展示在用户协议 / 隐私政策页，也是安全评估要求的对外联系方式 */
+    private static final String KEY_SITE_CONTACT_EMAIL = "site_contact_email";
     private static final String KEY_WEATHER_CITY = "weather_city";
     private static final String KEY_HITOKOTO_CATEGORIES = "hitokoto_categories";
     private static final String KEY_LIVE2D_ENABLED = "live2d_enabled";
@@ -83,6 +85,7 @@ public class ConfigServiceImpl implements ConfigService {
         vo.setSiteDescription(map.get(KEY_SITE_DESCRIPTION));
         vo.setSiteKeywords(map.get(KEY_SITE_KEYWORDS));
         vo.setSiteSlogan(map.get(KEY_SITE_SLOGAN));
+        vo.setSiteContactEmail(map.getOrDefault(KEY_SITE_CONTACT_EMAIL, ""));
         vo.setWeatherCity(map.getOrDefault(KEY_WEATHER_CITY, "北京"));
         vo.setHitokotoCategories(map.getOrDefault(KEY_HITOKOTO_CATEGORIES, "d,i,k"));
         vo.setLive2dEnabled("0".equals(map.get(KEY_LIVE2D_ENABLED)) ? 0 : 1);
@@ -116,6 +119,10 @@ public class ConfigServiceImpl implements ConfigService {
         upsert(KEY_SITE_DESCRIPTION, vo.getSiteDescription());
         upsert(KEY_SITE_KEYWORDS, vo.getSiteKeywords());
         upsert(KEY_SITE_SLOGAN, vo.getSiteSlogan());
+        // 联系邮箱：用户协议 / 隐私政策页展示用（安全评估要求的对外联系方式）
+        if (vo.getSiteContactEmail() != null) {
+            upsert(KEY_SITE_CONTACT_EMAIL, vo.getSiteContactEmail().trim());
+        }
         // 天气城市和一言分类已经拆到“第三方接口”页维护，这里仅在传入非空时才更新，避免被“系统设置”保存时清空
         if (vo.getWeatherCity() != null) {
             upsert(KEY_WEATHER_CITY, vo.getWeatherCity());
@@ -257,9 +264,21 @@ public class ConfigServiceImpl implements ConfigService {
         return !"0".equals(loadMap().get(KEY_LIVE2D_ENABLED));
     }
 
+    /**
+     * 读密钥类配置：库里存的是密文，必须解密后再交给业务使用。
+     *
+     * 教训：ACG 封面 / IP 定位这些"专用 getter"以前直接返回 loadMap() 里的原始值，
+     * 于是第三方接口收到的是 enc:v1:... 密文，鉴权必然失败（实测就是这个原因）。
+     * 注意 SecretCipher.decrypt 对历史明文是原样返回的，所以老数据不受影响。
+     */
+    private String secretValue(String key) {
+        String value = loadMap().get(key);
+        return value == null || value.isEmpty() ? value : secretCipher.decrypt(value);
+    }
+
     @Override
     public String getIpLocationAk() {
-        return loadMap().get(KEY_IP_LOCATION_AK);
+        return secretValue(KEY_IP_LOCATION_AK);
     }
 
     @Override
@@ -282,7 +301,7 @@ public class ConfigServiceImpl implements ConfigService {
 
     @Override
     public String getGaodeIpKey() {
-        return loadMap().get(KEY_GAODE_IP_KEY);
+        return secretValue(KEY_GAODE_IP_KEY);
     }
 
     @Override
@@ -313,7 +332,7 @@ public class ConfigServiceImpl implements ConfigService {
 
     @Override
     public String getAcgCoverToken() {
-        return loadMap().get(KEY_ACG_COVER_TOKEN);
+        return secretValue(KEY_ACG_COVER_TOKEN);
     }
 
     @Override

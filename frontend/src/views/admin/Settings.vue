@@ -32,6 +32,10 @@
       <el-form-item label="首页标语">
         <el-input v-model="form.siteSlogan" placeholder="首页标题下方轮播语，如：愿每一次点击都有温度" maxlength="100" />
       </el-form-item>
+      <el-form-item label="联系邮箱">
+        <el-input v-model="form.siteContactEmail" placeholder="如：admin@example.com" maxlength="100" />
+        <span class="field-tip">展示在前台「用户协议 / 隐私政策」页的联系方式里，也是备案安全评估要求的对外联系方式</span>
+      </el-form-item>
       <el-form-item label="首页文章轮播">
         <el-switch v-model="form.homeCarouselEnabled" :active-value="1" :inactive-value="0" active-text="显示" />
       </el-form-item>
@@ -177,6 +181,7 @@ const form = reactive({
   siteDescription: '',
   siteKeywords: '',
   siteSlogan: '',
+  siteContactEmail: '',
   homeCarouselEnabled: 1,
   homeCarouselCount: 5,
   commentSystem: 'gitalk',
@@ -205,6 +210,7 @@ async function load() {
   form.siteDescription = data.siteDescription || ''
   form.siteKeywords = data.siteKeywords || ''
   form.siteSlogan = data.siteSlogan || ''
+  form.siteContactEmail = data.siteContactEmail || ''
   form.homeCarouselEnabled = data.homeCarouselEnabled === 0 ? 0 : 1
   form.homeCarouselCount = data.homeCarouselCount || 5
   form.commentSystem = data.commentSystem || 'gitalk'

@@ -159,6 +159,8 @@
         >{{ siteIcp }}</a>
           <router-link class="footer-link" to="/portal/photos">流光忆庭</router-link>
           <router-link class="footer-link" to="/portal/resources">智库</router-link>
+          <router-link class="footer-link" to="/portal/terms">用户协议</router-link>
+          <router-link class="footer-link" to="/portal/privacy">隐私政策</router-link>
           <span>Powered by bcBlog</span>
         </div>
       </div>

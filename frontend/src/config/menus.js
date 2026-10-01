@@ -11,6 +11,7 @@ export const adminMenus = [
       { key: 'categories', path: '/admin/categories', title: '分类管理', icon: 'Menu' },
       { key: 'tags', path: '/admin/tags', title: '标签管理', icon: 'CollectionTag' },
       { key: 'comments', path: '/admin/comments', title: '评论管理', icon: 'ChatDotRound' },
+      { key: 'reports', path: '/admin/reports', title: '举报管理', icon: 'WarningFilled' },
       // Gitalk 要用 GitHub Token，属于系统级密钥，只有超级管理员能碰
       { key: 'gitalk', path: '/admin/gitalk', title: 'Gitalk 评论', icon: 'ChatLineSquare', superOnly: true }
     ]

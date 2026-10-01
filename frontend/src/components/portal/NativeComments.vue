@@ -30,6 +30,12 @@
             <span class="comment-nickname">{{ c.nickname }}</span>
             <span v-if="c.level" class="level-badge">Lv.{{ c.level }} {{ c.levelName }}</span>
             <span class="comment-time">{{ c.createTime }}</span>
+            <button
+              v-if="memberStore.isLogin && c.userId !== memberStore.userInfo?.id"
+              type="button"
+              class="report-link"
+              @click="openReport(c)"
+            >举报</button>
           </div>
           <div class="comment-content" v-html="renderEmojiContent(c.content)"></div>
         </div>
@@ -46,14 +52,41 @@
       class="pager"
       @current-change="load"
     />
+
+    <!-- 违法有害信息举报：举报内容同时快照给后台，评论被删也能追溯 -->
+    <el-dialog v-model="reportVisible" title="举报这条评论" width="min(92vw, 480px)" append-to-body class="report-dialog">
+      <el-form label-width="72px">
+        <el-form-item label="举报原因">
+          <el-select v-model="reportForm.reason" placeholder="请选择" style="width: 100%">
+            <el-option v-for="r in REPORT_REASONS" :key="r" :label="r" :value="r" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="补充说明">
+          <el-input
+            v-model="reportForm.detail"
+            type="textarea"
+            :rows="3"
+            maxlength="300"
+            show-word-limit
+            placeholder="选填：说明具体问题，便于我们快速核实"
+          />
+        </el-form-item>
+      </el-form>
+      <div class="report-tip">我们会在 24 小时内核实处理；恶意举报可能导致账号被限制。</div>
+      <template #footer>
+        <el-button @click="reportVisible = false">取消</el-button>
+        <el-button type="primary" :loading="reporting" @click="onSubmitReport">提交举报</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted, watch } from 'vue'
+import { ref, reactive, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { listComments, saveComment } from '@/api/comment'
+import { submitReport } from '@/api/report'
 import { useMemberStore } from '@/store/member'
 import EmojiPicker from '@/components/portal/EmojiPicker.vue'
 import { emojiToken, renderEmojiContent } from '@/utils/content'
@@ -66,6 +99,38 @@ const router = useRouter()
 const memberStore = useMemberStore()
 
 const comments = ref([])
+/** 举报：原因固定六项，与后端校验保持一致 */
+const REPORT_REASONS = ['违法有害信息', '广告垃圾', '人身攻击', '色情低俗', '侵权内容', '其他']
+const reportVisible = ref(false)
+const reporting = ref(false)
+const reportForm = reactive({ targetId: null, reason: '', detail: '' })
+
+function openReport(comment) {
+  reportForm.targetId = comment.id
+  reportForm.reason = ''
+  reportForm.detail = ''
+  reportVisible.value = true
+}
+
+async function onSubmitReport() {
+  if (!reportForm.reason) {
+    ElMessage.warning('请选择举报原因')
+    return
+  }
+  reporting.value = true
+  try {
+    await submitReport({
+      targetType: 'comment',
+      targetId: reportForm.targetId,
+      reason: reportForm.reason,
+      detail: reportForm.detail
+    })
+    ElMessage.success('举报已提交，我们会在 24 小时内处理')
+    reportVisible.value = false
+  } finally {
+    reporting.value = false
+  }
+}
 const total = ref(0)
 const page = ref(1)
 const size = ref(10)
@@ -114,7 +179,27 @@ watch(() => props.articleId, () => {
 onMounted(load)
 </script>
 
-<style scoped>
+<style scoped>/* 举报弹窗被 append-to-body 提到了 body 下，这里做一点小样式兜底 */
+:global(.report-dialog .el-dialog__body) {
+  padding-top: 12px;
+}.report-link {
+  margin-left: auto;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 0;
+}
+.report-link:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+.report-tip {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
 .native-comments {
   margin-top: 30px;
   padding-top: 20px;

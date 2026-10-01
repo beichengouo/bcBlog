@@ -565,6 +565,29 @@ CALL bcblog_add_col('sys_user', 'last_sign_date', 'date DEFAULT NULL COMMENT ''�
 -- 注意：UNIQUE 索引要求数据里没有重复值，若服务器上存在重复数据会执行失败，请先清理
 CALL bcblog_add_idx('sys_user', 'uk_email', '  UNIQUE KEY `uk_email` (`email`)');
 
+-- 3.4 违法有害信息举报表（见 upgrade_070）
+CREATE TABLE IF NOT EXISTS `sys_report` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `target_type` varchar(20) NOT NULL DEFAULT 'comment' COMMENT '被举报对象类型：comment / article / user',
+  `target_id` bigint NOT NULL COMMENT '被举报对象ID',
+  `article_id` bigint DEFAULT NULL COMMENT '所属文章ID',
+  `article_title` varchar(200) DEFAULT NULL COMMENT '文章标题快照',
+  `content_snapshot` varchar(1000) DEFAULT NULL COMMENT '被举报内容快照',
+  `reason` varchar(40) NOT NULL COMMENT '举报原因',
+  `detail` varchar(500) DEFAULT NULL COMMENT '补充说明',
+  `reporter_user_id` bigint DEFAULT NULL COMMENT '举报人用户ID',
+  `reporter_name` varchar(100) DEFAULT NULL COMMENT '举报人昵称快照',
+  `status` varchar(20) NOT NULL DEFAULT 'pending' COMMENT 'pending / handled / ignored',
+  `handle_note` varchar(300) DEFAULT NULL COMMENT '处理结论',
+  `handler_id` bigint DEFAULT NULL COMMENT '处理人ID',
+  `handler_name` varchar(100) DEFAULT NULL COMMENT '处理人快照',
+  `handle_time` datetime DEFAULT NULL COMMENT '处理时间',
+  `create_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '举报时间',
+  PRIMARY KEY (`id`),
+  KEY `idx_status` (`status`),
+  KEY `idx_target` (`target_type`,`target_id`),
+  KEY `idx_create_time` (`create_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='违法有害信息举报记录';
 -- 3.5 每个世界一套独立的沙盒参数（方案 C，见 upgrade_069）
 --     没跑过 069 也没关系，这里会补上；跑过了则会自动跳过（过程里先查了 information_schema）
 CALL bcblog_add_col('sandbox_world', 'settings_json',

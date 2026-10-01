@@ -148,11 +148,21 @@
 
     <!-- 最新动态：世界最近发生的 3 件事，各自一个容器、按三行纵向排列 -->
     <section class="latest-block">
-      <div class="latest-block-head">
+      <button
+        type="button"
+        class="latest-block-head"
+        :aria-expanded="latestOpen"
+        @click="latestOpen = !latestOpen"
+      >
         <span class="latest-label">最新动态</span>
-        <span class="muted">世界里最近发生的几件事</span>
-      </div>
-      <div class="latest-grid">
+        <span class="muted latest-hint">
+          {{ latestOpen ? '世界里最近发生的几件事' : '点击展开（' + latestActs.length + ' 条）' }}
+        </span>
+        <svg class="latest-arrow" :class="{ open: latestOpen }" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="m6 9 6 6 6-6" />
+        </svg>
+      </button>
+      <div v-show="latestOpen" class="latest-grid">
         <article v-for="act in latestActs" :key="'latest-' + act.id" class="card latest-card">
           <span class="latest-time">{{ act.createTime }}</span>
           <span class="latest-text" :title="act.summary || act.actions">
@@ -1002,7 +1012,8 @@ const timelinePage = ref(1)
 const timelineTotal = ref(0)
 /** 行动记录每页条数：5 条一页在手机与桌面都刚好 */
 const pageSize = 5
-/** 「最新动态」用的"全世界最新几条行动"（默认 3 条，不随列表筛选变化） */
+  /** 「最新动态」默认折叠，点标题展开 */
+  const latestOpen = ref(false)
 const latestActs = ref([])
 /** 角色档案面板，用于「查看 TA 的行动 / 全部记录」滚动定位 */
 const profileRef = ref(null)
@@ -2713,6 +2724,32 @@ onBeforeUnmount(() => {
 .acts-total { font-size: 12px; }
 .acts-pager { margin-top: 16px; justify-content: center; }
 .panel-hint { padding: 6px 0 2px; }
+/* 最新动态：整块标题可点击折叠，默认收起 */
+.latest-block-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  color: inherit;
+}
+.latest-block-head:hover .latest-label {
+  color: var(--accent);
+}
+.latest-hint {
+  flex: 1;
+}
+.latest-arrow {
+  flex-shrink: 0;
+  transition: transform 0.2s ease;
+}
+.latest-arrow.open {
+  transform: rotate(180deg);
+}
 /* 地图与角色档案之间的最新动态：最近 3 条，各自一个容器，纵向排三行 */
 .latest-block { margin-bottom: 22px; }
 .latest-block-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }

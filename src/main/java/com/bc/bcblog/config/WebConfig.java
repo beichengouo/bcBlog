@@ -58,6 +58,8 @@ public class WebConfig implements WebMvcConfigurer {
         MENU_PATHS.put("categories", new String[]{"/api/admin/category/**"});
         MENU_PATHS.put("tags", new String[]{"/api/admin/tag/**"});
         MENU_PATHS.put("comments", new String[]{"/api/admin/comment/**"});
+        // 举报管理：受菜单授权管辖（未授权的管理员看不到也调不到）
+        MENU_PATHS.put("reports", new String[]{"/api/admin/report/**"});
         MENU_PATHS.put("gitalk", new String[]{"/api/admin/gitalk/**"});
         MENU_PATHS.put("photos", new String[]{"/api/admin/photo/**"});
         MENU_PATHS.put("resources", new String[]{"/api/admin/resource/**"});

@@ -13,6 +13,8 @@ public class SiteConfigVO {
     private String siteDescription;
     private String siteKeywords;
     private String siteSlogan;
+    /** 联系邮箱：展示在用户协议 / 隐私政策页，供用户投诉举报与行使个人信息权利 */
+    private String siteContactEmail;
     private String weatherCity;
     private String hitokotoCategories;
     private Integer live2dEnabled;

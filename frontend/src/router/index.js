@@ -17,7 +17,9 @@ const routes = [
       { path: 'sandbox', component: () => import('@/views/portal/Sandbox.vue') },
       { path: 'login', component: () => import('@/views/portal/UserAuth.vue') },
       { path: 'user', component: () => import('@/views/portal/UserCenter.vue') },
-      { path: 'announcements', component: () => import('@/views/portal/Announcements.vue') }
+      { path: 'announcements', component: () => import('@/views/portal/Announcements.vue') },
+      { path: 'privacy', component: () => import('@/views/portal/PrivacyPolicy.vue') },
+      { path: 'terms', component: () => import('@/views/portal/TermsOfService.vue') }
     ]
   },
   { path: '/login', component: () => import('@/views/Login.vue') },
@@ -33,6 +35,7 @@ const routes = [
       { path: 'categories', component: () => import('@/views/admin/CategoryManage.vue'), meta: { title: '分类管理', menu: 'categories' } },
       { path: 'tags', component: () => import('@/views/admin/TagManage.vue'), meta: { title: '标签管理', menu: 'tags' } },
       { path: 'comments', component: () => import('@/views/admin/CommentManage.vue'), meta: { title: '评论管理', menu: 'comments' } },
+      { path: 'reports', component: () => import('@/views/admin/ReportManage.vue'), meta: { title: '举报管理', menu: 'reports' } },
       { path: 'gitalk', component: () => import('@/views/admin/GitalkManage.vue'), meta: { title: 'Gitalk 评论', menu: 'gitalk' } },
       { path: 'deepseek', component: () => import('@/views/admin/DeepseekBalance.vue'), meta: { title: 'DeepSeek 接口', menu: 'deepseek' } },
       { path: 'music', component: () => import('@/views/admin/MusicPlaylist.vue'), meta: { title: '网易云音乐', menu: 'music' } },
