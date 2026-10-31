@@ -1,3 +1,4 @@
+import { trackBootRequest } from './bootAssets'
 import axios from 'axios'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
@@ -31,6 +32,7 @@ function isAdminRequest(path) {
 
 request.interceptors.request.use((config) => {
   const path = resolvePath(config)
+  config.__finishBoot = trackBootRequest(path)
   const adminToken = localStorage.getItem('token') || ''
   const memberToken = localStorage.getItem('memberToken') || ''
   let token = ''
@@ -51,6 +53,7 @@ request.interceptors.request.use((config) => {
 request.interceptors.response.use(
   (response) => {
     const res = response.data
+    response.config.__finishBoot?.(res.code === 200, res.data)
     if (res.code === 200) {
       return res.data
     }
@@ -75,6 +78,7 @@ request.interceptors.response.use(
     return Promise.reject(new Error(res.msg || '请求失败'))
   },
   (error) => {
+    error.config?.__finishBoot?.(false)
     if (axios.isCancel(error)) return Promise.reject(error)
     ElMessage.error(error.message || '网络异常')
     return Promise.reject(error)

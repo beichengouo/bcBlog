@@ -1,3 +1,4 @@
+import { waitForBootAssets } from './utils/bootAssets'
 import { createApp, nextTick } from 'vue'
 import { createPinia } from 'pinia'
 import ElementPlus from 'element-plus'
@@ -22,4 +23,9 @@ for (const [key, component] of Object.entries(ElementPlusIconsVue)) {
 
 app.mount('#app')
 
-router.isReady().then(async () => { await nextTick(); window.__irisBoot?.ready() }).catch(() => window.__irisBoot?.fail())
+router.isReady().then(async () => {
+  await nextTick()
+  const result = await waitForBootAssets({ onProgress: progress => window.__irisBoot?.progress(progress) })
+  if (result.failed || result.timedOut) window.__irisBoot?.partial()
+  else window.__irisBoot?.ready()
+}).catch(() => window.__irisBoot?.fail())

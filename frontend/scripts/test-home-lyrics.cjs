@@ -3,7 +3,7 @@ const root=path.resolve(__dirname,'..'),Vue=require('vue'),Pinia=require('pinia'
 Pinia.setActivePinia(Pinia.createPinia());
 const pending=new Map();const fetch=(url)=>new Promise(resolve=>pending.set(url,resolve));
 const storeCode=fs.readFileSync(path.join(root,'src/store/music.js'),'utf8').replace(/import[^\n]+\n/g,'').replace('export const useMusicStore','const useMusicStore');
-const useMusicStore=new Function('defineStore','fetch',storeCode+'; return useMusicStore')(Pinia.defineStore,fetch),music=useMusicStore();
+const useMusicStore=new Function('defineStore','fetch','trackBootTask','preloadImage',storeCode+'; return useMusicStore')(Pinia.defineStore,fetch,()=>null,()=>{}),music=useMusicStore();
 const {descriptor}=parse(fs.readFileSync(path.join(root,'src/components/portal/HomeMusicPlayer.vue'),'utf8'));assert.deepEqual(compileTemplate({source:descriptor.template.content,filename:'HomeMusicPlayer.vue',id:'qa'}).errors,[]);
 const code=compileScript(descriptor,{id:'qa'}).content.replace(/import[^\n]+\n/g,'').replace('export default','return');
 let disconnected=false;const observer=class{observe(){}unobserve(){}disconnect(){disconnected=true}};

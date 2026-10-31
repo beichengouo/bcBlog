@@ -16,3 +16,6 @@ html[data-theme="dark"] .iris-loading { --load-bg:#10162c; --load-ink:#f0eaff; -
 @keyframes iris-twinkle { from { opacity:.45; transform:scale(.8); } to { opacity:1; transform:scale(1.12); } }
 @keyframes iris-progress { 0% { transform:translateX(-110%); } 100% { transform:translateX(340%); } }
 @media(prefers-reduced-motion:reduce) { .iris-mascot,.iris-mascot::before,.iris-star,.iris-progress::after { animation:none; }.iris-progress::after { width:65%; }.iris-boot { transition:none; } }
+
+.iris-progress.is-determinate::after { animation:none; width:var(--boot-progress,0%); transform:none; transition:width .2s ease; }
+@media(prefers-reduced-motion:reduce) { .iris-progress.is-determinate::after { transition:none; } }

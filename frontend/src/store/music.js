@@ -1,3 +1,4 @@
+import { trackBootTask, preloadImage } from '@/utils/bootAssets'
 import { defineStore } from 'pinia'
 import { getActivePlaylist, getFallbackSongs } from '@/api/music'
 
@@ -64,7 +65,9 @@ export const useMusicStore = defineStore('music', {
       this.initialized = true
       audio = new Audio()
       this.bindAudio()
-      await this.loadPlaylist()
+      const finishBoot = trackBootTask()
+      try { await this.loadPlaylist(); preloadImage(this.current.pic) }
+      finally { finishBoot?.() }
       await this.tryAutoplay()
     },
 

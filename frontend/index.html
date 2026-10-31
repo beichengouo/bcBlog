@@ -22,7 +22,8 @@
       <div class="iris-boot-card">
         <div class="iris-mascot" aria-hidden="true"><div class="iris-avatar-shell"><span class="iris-avatar-fallback">✦</span><img src="/uploads/logo/avatar.png" alt="" onerror="this.hidden=true" /></div><span class="iris-star one">✧</span><span class="iris-star two">✦</span><span class="iris-star three">♥</span></div>
         <h1>IRIS 正在准备小站</h1><p id="iris-boot-message">正在收集散落的星光～</p>
-        <div class="iris-progress" role="progressbar" aria-label="正在加载网站"></div><p class="iris-caption">让故事与音乐，再靠近一点。</p>
+        <div id="iris-boot-progress" class="iris-progress" role="progressbar" aria-label="正在加载网站资源"></div><p class="iris-caption">让故事与音乐，再靠近一点。</p>
+        <button id="iris-boot-continue" class="iris-boot-retry" hidden onclick="window.__irisBoot.ready()">先进入小站</button>
         <button id="iris-boot-retry" class="iris-boot-retry" hidden onclick="window.location.reload()">重新加载</button>
         <noscript><p>请启用 JavaScript 后浏览小站。</p></noscript>
       </div>
@@ -34,6 +35,16 @@
         const timeout = window.setTimeout(showFailure, 20000)
         window.__irisBoot = {
           ready() { clearTimeout(timeout); shell.classList.add('is-ready'); shell.setAttribute('aria-hidden', 'true'); setTimeout(() => shell.remove(), 230) },
+          progress({ total, loaded, requestsPending }) {
+            const bar = document.getElementById('iris-boot-progress')
+            const percent = total ? Math.floor(loaded / total * 100) : 0
+            const determinate = total > 0 && requestsPending === 0
+            bar.classList.toggle('is-determinate', determinate)
+            if (determinate) { bar.style.setProperty('--boot-progress', percent + '%'); bar.setAttribute('aria-valuemin', '0'); bar.setAttribute('aria-valuemax', '100'); bar.setAttribute('aria-valuenow', String(percent)) }
+            else bar.removeAttribute('aria-valuenow')
+            document.getElementById('iris-boot-message').textContent = determinate ? `资源加载 ${percent}% · ${loaded} / ${total} 已就绪` : `正在读取首页内容${total ? ' · 已准备 ' + loaded + ' / ' + total + ' 个资源' : '与背景…'}`
+          },
+          partial() { clearTimeout(timeout); document.getElementById('iris-boot-message').textContent = '部分内容暂未加载完成，可以重试或先进入小站。'; document.getElementById('iris-boot-retry').hidden = false; document.getElementById('iris-boot-continue').hidden = false },
           fail() { clearTimeout(timeout); showFailure() }
         }
       })()
