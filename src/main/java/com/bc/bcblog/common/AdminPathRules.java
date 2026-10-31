@@ -60,6 +60,8 @@ public final class AdminPathRules {
      * （写它们的页面已经改为调用各自作用域的接口，例如 /sandbox/shop/settings）。
      */
     public static final String[] SUPER_ONLY_WRITE_PATHS = {
+            "/api/admin/config",
+            "/api/admin/config/**",
             "/api/admin/sandbox/settings",
             "/api/admin/sandbox/locations",
             "/api/admin/sandbox/locations/**"

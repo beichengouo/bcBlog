@@ -3,13 +3,14 @@
     <router-link class="game-feature-link" to="/portal/games/pixelrogue">
       <img src="/games/pixelrogue/hero.webp" alt="轮舞于星辉尽头的主菜单美术" loading="lazy" width="1920" height="1080" />
       <div class="game-feature-copy"><span class="game-feature-kicker">独立游戏 / 开发手记</span><h2 id="game-feature-heading">轮舞于星辉尽头</h2><p>在星光将尽之处，与你再启一段旅程。</p><span class="game-feature-action">走进游戏世界 <span aria-hidden="true">↗</span></span></div>
-      <span class="game-feature-edition">{{ pixelrogue.version }}<small>源码开发版</small></span>
+      <span class="game-feature-edition"><template v-if="!loading && !failed && Object.keys(packages).length"><small v-for="item in packages" :key="item.platform">{{ item.platform === 'pc' ? 'Windows' : 'Android' }} · {{ item.version }}</small></template><small v-else>{{ loading ? '正在读取版本' : failed ? '版本暂不可用' : '安装包暂未发布' }}</small></span>
     </router-link>
   </section>
 </template>
 
 <script setup>
-import { pixelrogue } from '@/config/pixelrogue'
+import { useGameReleases } from '@/composables/useGameReleases'
+const { packages, loading, failed } = useGameReleases()
 </script>
 
 <style scoped>

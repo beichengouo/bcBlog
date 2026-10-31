@@ -4,7 +4,8 @@
     <p v-if="loading" role="status" class="download-message">正在读取发行信息…</p>
     <div v-else-if="failed" class="download-message" role="alert">发行信息暂时无法加载。<button type="button" @click="load">重试 ↻</button></div>
     <div v-else class="download-grid">
-      <article v-for="platform in platforms" :key="platform.id" class="download-card">
+      <article v-for="platform in platforms" :key="platform.id" class="download-card" :class="{ 'is-available': packages[platform.id] }">
+        <div class="download-emblem" aria-hidden="true">{{ platform.id === 'pc' ? '⊞' : '◇' }}</div>
         <div class="download-platform"><span>{{ platform.name }}</span><small>{{ packages[platform.id] ? packages[platform.id].version : '敬请期待' }}</small></div>
         <template v-if="packages[platform.id]">
           <p class="download-meta">{{ formatPackageSize(packages[platform.id].size) }} · {{ (packages[platform.id].uploadedAt || '').slice(0, 10) }}</p>
@@ -18,21 +19,12 @@
   </div>
 </template>
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
-import { portalGamePackages } from '@/api/gamePackages'
 import { formatPackageSize, packageDownloadUrl } from '@/utils/gamePackages'
 import ReleaseNotes from '@/components/ReleaseNotes.vue'
 const platforms = [{ id: 'pc', name: 'Windows PC版' }, { id: 'android', name: 'Android 安卓版' }]
-const packages = ref({}), loading = ref(true), failed = ref(false)
-let disposed = false
-async function load() {
-  loading.value = true; failed.value = false
-  try { const data = await portalGamePackages(); if (!disposed) packages.value = Object.fromEntries(data.filter((item) => item.published && packageDownloadUrl(item.platform)).map((item) => [item.platform, item])) }
-  catch { if (!disposed) failed.value = true }
-  finally { if (!disposed) loading.value = false }
-}
-onMounted(load)
-onUnmounted(() => { disposed = true })
+defineProps({ packages: { type: Object, default: () => ({}) }, loading: Boolean, failed: Boolean })
+const emit = defineEmits(['retry'])
+function load() { emit('retry') }
 </script>
 <style scoped>
 .game-downloads { grid-column: 1/-1; padding-top: 36px; border-top: 1px solid #ceb99426; }
@@ -41,6 +33,14 @@ onUnmounted(() => { disposed = true })
 .download-heading > span { color: var(--game-muted); font-size: 10px; }
 .download-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 24px; }
 .download-card { min-width: 0; padding: 26px; border: 1px solid #ceb99440; background: #ffffff03; }
+.download-card { position: relative; overflow: hidden; border-radius: 18px; background: radial-gradient(ellipse at 100% 0%, #7084bb1a, transparent 65%), #101827; transition: border-color .3s, transform .3s; }
+.download-card.is-available { border-color: #ceb99477; }
+.download-card:hover { transform: translateY(-4px); border-color: #ceb994aa; }
+.download-emblem { font-size: 38px; color: var(--game-gold); line-height: 1; margin-bottom: 24px; }
+.download-platform { flex-wrap: wrap; }
+.download-platform small { overflow-wrap: anywhere; max-width: 100%; }
+.download-button { border-radius: 8px; background: linear-gradient(110deg, #ceb99420, #ceb99408); }
+@media (prefers-reduced-motion: reduce) { .download-card, .download-button { transition: none; transform: none; } }
 .download-platform { display: flex; justify-content: space-between; gap: 20px; color: #eadbbf; }
 .download-platform small { color: var(--game-muted); font-size: 11px; }
 .download-meta { font-size: 11px; color: var(--game-gold); margin: 18px 0; }

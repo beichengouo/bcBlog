@@ -29,7 +29,7 @@ export const adminMenus = [
     title: '站点管理',
     icon: 'Setting',
     children: [
-      { key: 'settings', path: '/admin/settings', title: '系统设置', icon: 'Setting' },
+      { key: 'settings', path: '/admin/settings', title: '系统设置', icon: 'Setting', superOnly: true },
       { key: 'announcement', path: '/admin/announcement', title: '站点公告', icon: 'Bell' },
       { key: 'emoji', path: '/admin/emoji', title: '表情包管理', icon: 'Star' },
       { key: 'photos', path: '/admin/photos', title: '流光忆庭', icon: 'PictureFilled' },

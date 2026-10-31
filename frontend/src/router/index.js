@@ -2,6 +2,9 @@ import { createRouter, createWebHistory } from 'vue-router'
 import { useUserStore } from '@/store/user'
 import { applySiteMeta, getSiteName } from '@/utils/siteMeta'
 import { ensureSecurityVerified } from '@/utils/securityGate'
+import { adminMenus } from '@/config/menus'
+
+const superOnlyMenus = new Set(adminMenus.flatMap(group => group.children || [group]).filter(menu => menu.superOnly).map(menu => menu.key))
 
 const routes = [
   { path: '/', redirect: '/portal' },
@@ -125,7 +128,7 @@ router.beforeEach(async (to, from) => {
       return '/portal'
     }
     // 仅超级管理员可访问的管理员管理页
-    if (to.meta.superOnly && info.role !== 'SUPER') {
+    if ((to.meta.superOnly || superOnlyMenus.has(to.meta.menu)) && info.role !== 'SUPER') {
       return '/admin/dashboard'
     }
     // 普通管理员只能访问被授权的菜单（仪表盘始终可用）

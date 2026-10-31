@@ -3,7 +3,9 @@
     <section id="game-intro" class="game-hero">
       <GameHeroMotion />
       <div class="game-hero-shade"></div>
-      <div class="game-hero-content"><p class="game-eyebrow">INDEPENDENT ACTION ROGUELITE <span>开发中 · {{ pixelrogue.version }}</span></p><h1>轮舞于<br /><em>星辉尽头</em></h1><p class="game-english">{{ pixelrogue.englishTitle }}</p><p class="game-lead">星光会熄灭，同行的故事不会。<br />踏入未知的房间，缔结属于你的命运。</p><div class="game-actions"><a href="#game-characters" class="game-button">邂逅同行者 <span aria-hidden="true">↓</span></a><a :href="pixelrogue.repository" target="_blank" rel="noopener noreferrer" class="game-text-link">查看游戏项目 ↗</a></div></div>
+      <div class="game-celestial" aria-hidden="true"><div class="celestial-ring"></div><div class="celestial-ring inner"></div><span>✦</span><small>RONDO / STARLIGHT</small></div>
+      <div class="game-hero-content"><p class="game-eyebrow">INDEPENDENT ACTION ROGUELITE <span>独立开发 · 持续更新</span></p><h1>轮舞于<br /><em>星辉尽头</em></h1><p class="game-english">{{ pixelrogue.englishTitle }}</p><p class="game-lead">星光会熄灭，同行的故事不会。<br />踏入未知的房间，缔结属于你的命运。</p><div class="game-actions"><a href="#game-release" class="game-button">获取游戏 <span aria-hidden="true">↓</span></a><a :href="pixelrogue.repository" target="_blank" rel="noopener noreferrer" class="game-text-link">查看游戏项目 ↗</a></div></div>
+      <div class="game-live-editions" aria-live="polite"><span class="edition-caption">AVAILABLE EDITIONS</span><template v-if="!loading && !failed && Object.keys(packages).length"><a v-for="item in packages" :key="item.platform" href="#game-release"><i aria-hidden="true"></i>{{ item.platform === 'pc' ? 'Windows' : 'Android' }}<strong>{{ item.version }}</strong></a></template><span v-else>{{ loading ? '正在读取发行版本…' : failed ? '发行信息暂不可用' : '安装包暂未发布 · 敬请期待' }}</span></div>
       <span class="game-hero-index" aria-hidden="true">01 — THE JOURNEY BEGINS</span>
     </section>
 
@@ -29,9 +31,9 @@
     </section>
 
     <section id="game-release" class="game-section game-release">
-      <div class="game-release-mark" aria-hidden="true">{{ pixelrogue.version }}</div>
-      <div class="game-release-copy game-reveal"><span class="game-eyebrow">DEVELOPMENT JOURNAL / 源码开发版</span><h2>同行焕新，星途再启。</h2><p>三位伙伴与六套战斗外观、十张正逆位命运牌、六位首领，以及营地中的新故事。旅途仍在完善，欢迎来看看它正在长成的样子。</p><div class="game-release-status"><span></span>源码已公开 · 平台发行信息见下方</div><div class="game-actions"><a class="game-button" :href="pixelrogue.repository" target="_blank" rel="noopener noreferrer">前往项目仓库 <span aria-hidden="true">↗</span></a><a class="game-text-link" :href="pixelrogue.releases" target="_blank" rel="noopener noreferrer">关注后续发行 ↗</a></div><small>Windows / Android 安装包由站长独立发布，各平台版本以下方下载信息为准。</small></div>
-      <GameDownloads />
+      <div class="game-release-art game-reveal"><img src="/games/pixelrogue/city.webp" alt="失名星城发行主题美术" loading="lazy" /><span>YOUR NEXT JOURNEY<small>星途，由此启程</small></span></div>
+      <div class="game-release-copy game-reveal"><span class="game-eyebrow">THE NEXT CHAPTER / 游戏发行</span><h2>同行焕新，星途再启。</h2><p>三位伙伴与六套战斗外观、十张正逆位命运牌、六位首领，以及营地中的新故事。旅途仍在完善，欢迎来看看它正在长成的样子。</p><div class="game-release-status"><span></span>源码已公开 · 平台发行信息见下方</div><div class="game-actions"><a class="game-button" :href="pixelrogue.repository" target="_blank" rel="noopener noreferrer">前往项目仓库 <span aria-hidden="true">↗</span></a><a class="game-text-link" :href="pixelrogue.releases" target="_blank" rel="noopener noreferrer">关注后续发行 ↗</a></div><small>Windows / Android 安装包由站长独立发布，各平台版本以下方下载信息为准。</small></div>
+      <GameDownloads :packages="packages" :loading="loading" :failed="failed" @retry="load" />
     </section>
     <div class="game-colophon"><span>Rondo at Starlight’s End</span><router-link to="/portal">回到小站 ↗</router-link></div>
   </div>
@@ -39,6 +41,8 @@
 
 <script setup>
 import { ref, computed } from 'vue'
+import { useGameReleases } from '@/composables/useGameReleases'
+const { packages, loading, failed, load } = useGameReleases()
 import { pixelrogue } from '@/config/pixelrogue'
 import GameHeroMotion from '@/components/portal/GameHeroMotion.vue'
 import GameDownloads from '@/components/portal/GameDownloads.vue'

@@ -129,3 +129,43 @@
   .game-release-mark { font-size: 76px; }
   .game-colophon { padding: 28px 24px; font-size: 9px; }
 }
+
+/* Celestial art direction uses the game's original motion and illustrations. */
+.game-hero { min-height: max(760px, calc(100svh - var(--header-height))); padding-bottom: 150px; }
+.game-hero-shade { background: linear-gradient(0deg, #0b101b, #0b101b99 30%, #0b101b10 80%), linear-gradient(90deg, #090f1be6, #090f1b44 65%, transparent); }
+.game-celestial { position: absolute; right: 7%; top: 20%; width: min(36vw, 510px); aspect-ratio: 1; display: grid; place-items: center; pointer-events: none; opacity: .65; z-index: -1; }
+.celestial-ring { position: absolute; inset: 0; border: 1px solid #e5d0a84d; border-radius: 50%; box-shadow: 0 0 80px #8fafff0d, inset 0 0 80px #8fafff0d; }
+.celestial-ring::before, .celestial-ring::after { content: ''; position: absolute; inset: 14%; border: 1px solid #e5d0a830; transform: rotate(45deg); }
+.celestial-ring::after { transform: rotate(15deg); }
+.celestial-ring.inner { inset: 10%; border-style: dashed; animation: game-orbit 100s linear infinite; }
+.game-celestial > span { font-size: clamp(70px, 12vw, 180px); color: #ebdbb7; text-shadow: 0 0 70px #d9d2ff66; }
+.game-celestial small { position: absolute; bottom: 22%; letter-spacing: 5px; font-size: 8px; color: #ebdbb7; }
+.game-live-editions { position: absolute; bottom: 38px; left: max(7vw, calc((100vw - 1280px)/2)); right: 12%; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; border-top: 1px solid #e5d0a833; padding-top: 22px; color: #c0c9d7; font-size: 11px; }
+.edition-caption { font-size: 8px; letter-spacing: 2px; margin-right: 12px; color: var(--game-gold); }
+.game-live-editions a { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 9px 14px; border: 1px solid #ceb99444; border-radius: 30px; background: #111c2c99; max-width: 100%; }
+.game-live-editions strong { color: #ede0c9; overflow-wrap: anywhere; }
+.game-live-editions i { width: 5px; height: 5px; background: #b3d5c4; border-radius: 50%; }
+.game-world-grid figure { border-radius: 16px; }
+.game-world-grid figcaption { background: linear-gradient(130deg, #1b2637, #101724); }
+.game-character-stage { border: 1px solid #ceb99426; border-radius: 24px; padding: 30px; background: radial-gradient(ellipse at 27% 65%, #697eaa25, transparent 65%), linear-gradient(135deg, #17203088, transparent); }
+.game-character-switch button { border-radius: 8px; }
+.game-play-grid article { padding: 30px 24px; border: 1px solid #ceb99426; border-radius: 14px; background: linear-gradient(140deg, #17233599, #0b101b); }
+.game-play-grid { gap: 20px; }
+.game-journey { border-radius: 12px; background: #17203044; }
+.game-release { grid-template-columns: .85fr 1fr; gap: 48px; }
+.game-release-art { position: relative; align-self: stretch; min-height: 380px; border: 1px solid #ceb99444; border-radius: 180px 180px 16px 16px; overflow: hidden; }
+.game-release-art::after { content: ''; position: absolute; inset: 0; background: linear-gradient(transparent 35%, #0b101bdd); pointer-events: none; }
+.game-release-art img { width: 100%; height: 100%; position: absolute; inset: 0; object-fit: cover; object-position: 55% center; }
+.game-release-art > span { position: absolute; z-index: 1; bottom: 30px; left: 0; right: 0; text-align: center; color: #e9d8b8; font-size: 9px; letter-spacing: 4px; }
+.game-release-art small { display: block; font-family: SimSun, serif; font-size: 26px; margin-top: 12px; }
+.game-site a:focus-visible, .game-site button:focus-visible { outline: 2px solid var(--game-gold); outline-offset: 5px; }
+@media(max-width:800px) {
+  .game-hero { min-height: 800px; padding-bottom: 180px; }
+  .game-celestial { width: 230px; top: 8%; right: -65px; opacity: .25; }
+  .game-live-editions { left: 28px; right: 28px; bottom: 28px; gap: 10px; }
+  .edition-caption { width: 100%; }
+  .game-character-stage { padding: 18px 12px; }
+  .game-release { grid-template-columns: minmax(0, 1fr); gap: 30px; }
+  .game-release-art { min-height: 300px; border-radius: 120px 120px 14px 14px; max-width: 420px; width: 100%; margin: auto; }
+}
+@media(prefers-reduced-motion:reduce) { .celestial-ring.inner { animation: none; } .game-character-art img { animation: none; } }

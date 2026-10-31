@@ -17,7 +17,9 @@ import java.util.List;
 public class PortalGamePackageController {
     private final GamePackageService service;
     @GetMapping
-    public Result<List<GamePackageVO>> list() { return Result.ok(service.list(true)); }
+    public ResponseEntity<Result<List<GamePackageVO>>> list() {
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(Result.ok(service.list(true)));
+    }
     @GetMapping("/{platform}/download")
     public ResponseEntity<Resource> download(@PathVariable String platform) {
         GamePackageService.StoredPackage record = service.downloadable(platform);

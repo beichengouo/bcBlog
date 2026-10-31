@@ -40,6 +40,7 @@ public class AiProviderServiceImpl implements AiProviderService {
     @Override
     public List<AiProvider> list() {
         Long uid = currentAdminId();
+        if (uid == null) throw new BusinessException(403, "未登录，无法读取服务商");
         boolean superAdmin = isSuper(uid);
         LambdaQueryWrapper<AiProvider> wrapper = new LambdaQueryWrapper<AiProvider>()
                 .orderByDesc(AiProvider::getIsDefault)
@@ -91,8 +92,8 @@ public class AiProviderServiceImpl implements AiProviderService {
         }
         if (provider.getId() == null) {
             Long own = providerMapper.selectCount(new LambdaQueryWrapper<AiProvider>()
-                    .eq(superAdmin, AiProvider::getOwnerId, uid)
-                    .isNull(!superAdmin, AiProvider::getOwnerId));
+                    .eq(!superAdmin, AiProvider::getOwnerId, uid)
+                    .isNull(superAdmin, AiProvider::getOwnerId));
             provider.setIsDefault(own == null || own == 0 ? 1 : 0);
             providerMapper.insert(provider);
         } else {
@@ -111,6 +112,8 @@ public class AiProviderServiceImpl implements AiProviderService {
         }
         providerMapper.deleteById(id);
         if (providerMapper.selectCount(new LambdaQueryWrapper<AiProvider>()
+                .eq(target.getOwnerId() != null, AiProvider::getOwnerId, target.getOwnerId())
+                .isNull(target.getOwnerId() == null, AiProvider::getOwnerId)
                 .eq(AiProvider::getIsDefault, 1)) == 0) {
             AiProvider first = providerMapper.selectOne(new LambdaQueryWrapper<AiProvider>()
                     .eq(target.getOwnerId() != null, AiProvider::getOwnerId, target.getOwnerId())
@@ -514,6 +517,10 @@ public class AiProviderServiceImpl implements AiProviderService {
         AiProvider p = id == null ? null : providerMapper.selectById(id);
         if (p == null) {
             throw new BusinessException("请先选择 AI 服务商");
+        }
+        Long uid = currentAdminId();
+        if (!visibleTo(p, uid, isSuper(uid))) {
+            throw new BusinessException(403, "无权访问该服务商");
         }
         return p;
     }

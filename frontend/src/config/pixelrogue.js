@@ -2,7 +2,6 @@
 export const pixelrogue = {
   title: '轮舞于星辉尽头',
   englishTitle: 'Rondo at Starlight’s End',
-  version: 'V0.55',
   repository: 'https://github.com/beichengouo/PixelRogue',
   releases: 'https://github.com/beichengouo/PixelRogue/releases',
   heroes: [
