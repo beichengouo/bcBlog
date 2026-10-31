@@ -8,7 +8,7 @@
         <h1 class="hero-title">{{ siteName }}</h1>
         <figure class="hero-sub daily-quote" :aria-busy="quoteLoading">
           <blockquote>{{ quoteLoading ? '正在拾取今天的一句话…' : dailyQuote.text }}</blockquote>
-          <figcaption v-if="!quoteLoading"><span>{{ dailyQuote.stale ? '最近一言' : '今日一言' }}</span> — {{ dailyQuote.source }}</figcaption>
+          <figcaption v-if="!quoteLoading">— {{ dailyQuote.source }}</figcaption>
         </figure>
         <p class="hero-description">把灵感写成文字，把日常收藏成光。<br />在这里，慢慢记录，也慢慢遇见。</p>
         <div class="hero-actions">
@@ -42,7 +42,15 @@
     <section v-if="showShowcase" id="showcase" class="showcase">
       <div class="showcase-inner">
         <div class="showcase-carousel">
-          <LatestPostsCarousel :count="carouselCount" />
+          <div class="showcase-cover"><LatestPostsCarousel :count="carouselCount" /></div>
+          <section class="showcase-discover glass" aria-label="小站探索">
+            <header><span>读完这篇，再逛一会儿</span><small>DISCOVER MORE</small></header>
+            <div class="discover-links">
+              <router-link to="/portal/iris"><span class="discover-symbol" aria-hidden="true">✧</span><strong>认识 IRIS <span>↗</span></strong><p>认识住在小站里的伊莉丝</p></router-link>
+              <router-link to="/portal/games/pixelrogue/codex"><span class="discover-symbol" aria-hidden="true">♧</span><strong>星途图鉴 <span>↗</span></strong><p>翻阅装备、遗物与命运牌</p></router-link>
+              <router-link to="/portal/announcements"><span class="discover-symbol" aria-hidden="true">✉</span><strong>小站近况 <span>↗</span></strong><p>看看最近的更新与公告</p></router-link>
+            </div>
+          </section>
         </div>
         <div class="showcase-player">
           <HomeMusicPlayer />
@@ -370,6 +378,7 @@ onUnmounted(() => {
   gap: clamp(36px, 7vw, 110px);
   align-items: center;
 }
+.hero-copy { padding: clamp(22px, 3vw, 36px); border-radius: 24px; background: var(--card); border: 1px solid var(--glass-border); backdrop-filter: blur(16px); }
 .hero-kicker {
   display: flex;
   align-items: center;
@@ -399,10 +408,9 @@ onUnmounted(() => {
   font-size: 17px;
   color: var(--text);
 }
-.daily-quote { margin-left: 0; margin-right: 0; max-width: 580px; }
-.daily-quote blockquote { margin: 0; font-size: 17px; line-height: 1.9; color: var(--text); overflow-wrap: anywhere; }
-.daily-quote figcaption { margin-top: 13px; font-size: 11px; line-height: 1.8; color: var(--text-muted); }
-.daily-quote figcaption > span { font-size: 9px; letter-spacing: 1px; color: var(--accent); }
+.daily-quote { margin-left: 0; margin-right: 0; max-width: 580px; padding: 20px 24px; border: 1px solid var(--glass-border); border-left: 3px solid var(--accent); border-radius: 0 16px 16px 0; background: var(--card-solid); box-shadow: var(--shadow); }
+.daily-quote blockquote { margin: 0; font-size: clamp(17px, 1.6vw, 21px); font-weight: 500; line-height: 1.9; color: var(--text-strong); overflow-wrap: anywhere; }
+.daily-quote figcaption { margin-top: 13px; font-size: 13px; line-height: 1.8; color: var(--text); }
 .hero-description { margin: 22px 0 30px; font-size: 15px; line-height: 2; color: var(--text-muted); }
 .hero-actions { display: flex; align-items: center; gap: 24px; flex-wrap: wrap; }
 .hero-secondary { font-size: 13px; color: var(--text); }
@@ -441,8 +449,9 @@ onUnmounted(() => {
   border: 0;
   border-radius: 12px;
   padding: 15px 22px;
-  background: var(--text-strong);
-  color: var(--card-solid);
+  background: linear-gradient(var(--accent-soft), var(--accent-soft)), var(--card-solid);
+  color: var(--accent);
+  border: 1px solid var(--accent);
   font-size: 13px;
   cursor: pointer;
   transition: transform .2s, box-shadow .2s;
@@ -462,14 +471,27 @@ onUnmounted(() => {
 }
 .showcase-inner {
   display: grid;
-  grid-template-columns: 7fr 5fr;
+  grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
   gap: 20px;
-  align-items: stretch;
+  align-items: start;
 }
 .showcase-carousel,
 .showcase-player {
   min-width: 0;
 }
+.showcase-carousel { display: grid; gap: 20px; }
+.showcase-cover { height: clamp(300px, 32vw, 400px); min-width: 0; overflow: hidden; border-radius: var(--radius); }
+.showcase-discover { padding: 22px; border-radius: var(--radius); }
+.showcase-discover header { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 18px; color: var(--text-strong); font-size: 14px; }
+.showcase-discover header small { color: var(--text-muted); font-size: 9px; letter-spacing: 2px; }
+.discover-links { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.discover-links a { padding: 16px 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--card-solid); transition: transform .2s, border-color .2s; }
+.discover-links a:hover { transform: translateY(-3px); border-color: var(--accent); }
+.discover-symbol { display: block; font-size: 24px; color: var(--accent); margin-bottom: 10px; }
+.discover-links strong { display: flex; justify-content: space-between; gap: 6px; font-size: 13px; color: var(--text-strong); }.discover-links strong span { color: var(--accent); }
+.discover-links p { margin: 10px 0 0; color: var(--text-muted); font-size: 11px; line-height: 1.8; }
+@media(max-width:560px) { .discover-links { grid-template-columns: 1fr; }.discover-links a { display: grid; grid-template-columns: 30px 1fr; gap: 4px 12px; }.discover-symbol { grid-row: span 2; margin: 0; }.discover-links p { margin: 0; }.showcase-discover header small { display: none; }.daily-quote { padding: 16px 18px; } }
+@media(prefers-reduced-motion:reduce) { .discover-links a { transition: none; } }
 /* 最近评论：单容器下拉展开 */
 .recent-comments {
   max-width: 1320px;

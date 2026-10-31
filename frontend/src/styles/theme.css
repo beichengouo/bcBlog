@@ -6,11 +6,11 @@
   --bg-grad-2: #eef2ff;
   --card: rgba(255, 255, 255, 0.82);
   --card-solid: #ffffff;
-  --glass-bg: rgba(255, 255, 255, 0.55);
+  --glass-bg: rgba(255, 255, 255, 0.92);
   --glass-border: rgba(255, 255, 255, 0.75);
   --text: #46384a;
   --text-strong: #2d2331;
-  --text-muted: #78697c;
+  --text-muted: #625268;
   --accent: #bd3d6c;
   --accent-2: #8360b6;
   --accent-soft: rgba(255, 111, 159, 0.14);
@@ -31,11 +31,11 @@ html[data-theme='dark'] {
   --bg-grad-2: #14102e;
   --card: rgba(22, 28, 62, 0.86);
   --card-solid: #161d42;
-  --glass-bg: rgba(16, 21, 48, 0.58);
+  --glass-bg: rgba(16, 21, 48, 0.9);
   --glass-border: rgba(255, 255, 255, 0.12);
   --text: #e8eaf8;
   --text-strong: #ffffff;
-  --text-muted: #a9afd0;
+  --text-muted: #bcc3df;
   --accent: #8fa3ff;
   --accent-2: #d38bff;
   --accent-soft: rgba(143, 163, 255, 0.16);

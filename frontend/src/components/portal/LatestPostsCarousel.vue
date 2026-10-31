@@ -141,6 +141,10 @@ onUnmounted(() => { requestId++; clearInterval(timer) })
   color: rgba(255, 255, 255, 0.85);
 }
 .slide-title {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
   margin: 0 0 8px;
   font-size: 20px;
   color: #fff;

@@ -37,6 +37,7 @@
               <svg v-if="themeStore.isDark" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4" /><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.4 1.4m11.2 11.2L19 19M5 19l1.4-1.4M17.6 6.4 19 5" /></svg>
               <svg v-else viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" /></svg>
             </button>
+            <button v-if="themeStore.preference !== 'auto'" type="button" class="theme-toggle theme-auto" @click="themeStore.setMode('auto')" title="按北京时间自动切换主题">自动</button>
             <button type="button" class="theme-toggle ambient-toggle" :class="{ on: showParticles }" :aria-pressed="showParticles" @click="toggleParticles" :aria-label="showParticles ? '关闭粒子特效' : '开启粒子特效'" :title="showParticles ? '关闭粒子特效' : '开启粒子特效'">
               <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true"><path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5z" /></svg>
             </button>
@@ -215,7 +216,8 @@ const nowText = ref('')
 let footerTimer = 0
 let baseUptime = 0
 let uptimeFetchedAt = 0
-let particleTimer = 0
+let themeTimer = 0
+function syncTimedTheme() { themeStore.syncTime() }
 
 watch(siteLogo, () => { logoFailed.value = false })
 
@@ -257,7 +259,6 @@ function onScroll() {
 }
 
 function toggleParticles() {
-  clearTimeout(particleTimer)
   showParticles.value = !showParticles.value
 }
 
@@ -304,7 +305,10 @@ function updateFooterStatus() {
 
 /** 公告显示/关闭时同步顶部偏移，避免遮挡正文。 */
 onMounted(async () => {
-  themeStore.apply()
+  themeStore.syncTime()
+  themeTimer = window.setInterval(syncTimedTheme, 30000)
+  window.addEventListener('focus', syncTimedTheme)
+  document.addEventListener('visibilitychange', syncTimedTheme)
   // 头部高度量一次（手机端是两行，写死的 64px 会让天气卡片压住头部），并跟随窗口变化重算
   syncHeaderHeight()
   window.addEventListener('resize', syncHeaderHeight, { passive: true })
@@ -334,17 +338,16 @@ onMounted(async () => {
   }
   updateFooterStatus()
   footerTimer = window.setInterval(updateFooterStatus, 1000)
-  // 默认页面加载 5 秒后樱花特效慢慢淡出
-  particleTimer = window.setTimeout(() => {
-    showParticles.value = false
-  }, 5000)
+
 })
 
 onUnmounted(() => {
   window.removeEventListener('resize', syncHeaderHeight)
   if (headerObserver) { headerObserver.disconnect(); headerObserver = null }
   window.removeEventListener('scroll', onScroll)
-  clearTimeout(particleTimer)
+  clearInterval(themeTimer)
+  window.removeEventListener('focus', syncTimedTheme)
+  document.removeEventListener('visibilitychange', syncTimedTheme)
   clearInterval(footerTimer)
   document.documentElement.classList.remove('dark')
   document.documentElement.removeAttribute('data-theme')

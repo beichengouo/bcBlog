@@ -1,0 +1,10 @@
+const fs=require('fs'),path=require('path'),assert=require('node:assert/strict'),vm=require('node:vm'),{defineStore,createPinia,setActivePinia}=require('pinia');
+const root=path.resolve(__dirname,'..');
+const source=fs.readFileSync(path.join(root,'src/utils/themeTime.js'),'utf8');const beijingTheme=new Function(source.replace('export function','function')+';return beijingTheme')();
+for(const [utc,expected] of [['2026-10-30T22:59:59Z','dark'],['2026-10-30T23:00:00Z','light'],['2026-10-31T10:59:59Z','light'],['2026-10-31T11:00:00Z','dark'],['2026-10-31T16:00:00Z','dark']])assert.equal(beijingTheme(new Date(utc)),expected,utc);
+let current='light',saved=null,applied;const storage={getItem:()=>saved,setItem:(k,v)=>{saved=v}},document={documentElement:{setAttribute:(k,v)=>{applied=v},classList:{toggle(){}}}};
+const code=fs.readFileSync(path.join(root,'src/store/theme.js'),'utf8').replace(/import[^\n]+\n/g,'').replace('export const useThemeStore','const useThemeStore');const useThemeStore=new Function('defineStore','beijingTheme','localStorage','document',code+';return useThemeStore')(defineStore,()=>current,storage,document);
+setActivePinia(createPinia());const theme=useThemeStore();assert.equal(theme.preference,'auto');theme.syncTime();assert.equal(applied,'light');current='dark';theme.syncTime();assert.equal(applied,'dark');theme.setMode('light');theme.syncTime();assert.equal(applied,'light');theme.setMode('auto');assert.equal(applied,'dark');assert.equal(saved,'auto');
+const boot=fs.readFileSync(path.join(root,'index.html'),'utf8').match(/<script>([\s\S]*?)<\/script>/)[1];
+for(const hour of [0,10,11,22,23]){const doc={documentElement:{dataset:{},classList:{toggle(){}}}};vm.runInNewContext(boot,{localStorage:{getItem(){throw Error('blocked')}},Date:class{getUTCHours(){return hour}},document:doc});assert.equal(doc.documentElement.dataset.theme,beijingTheme(new Date(`2026-10-31T${String(hour).padStart(2,'0')}:00:00Z`)))}
+console.log('PASS: Beijing day/night boundaries, midnight, manual override, auto restore, boot with blocked storage');

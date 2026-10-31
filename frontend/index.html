@@ -5,7 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <script>
       try {
-        const mode = localStorage.getItem('bcblog-theme') === 'light' ? 'light' : 'dark'
+        let saved
+        try { saved = localStorage.getItem('bcblog-theme-preference') } catch (_) {}
+        const hour = (new Date().getUTCHours() + 8) % 24
+        const mode = saved === 'light' || saved === 'dark' ? saved : (hour >= 7 && hour < 19 ? 'light' : 'dark')
         document.documentElement.dataset.theme = mode
         document.documentElement.classList.toggle('dark', mode === 'dark')
       } catch (_) {}
