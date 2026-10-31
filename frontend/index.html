@@ -13,10 +13,31 @@
         document.documentElement.classList.toggle('dark', mode === 'dark')
       } catch (_) {}
     </script>
+    <link rel="stylesheet" href="/iris-loading.css" />
     <title>bcBlog</title>
     <link rel="icon" href="/uploads/logo/avatar.png" />
   </head>
   <body>
+    <div id="iris-boot" class="iris-loading iris-boot" role="status" aria-live="polite">
+      <div class="iris-boot-card">
+        <div class="iris-mascot" aria-hidden="true"><div class="iris-avatar-shell"><span class="iris-avatar-fallback">✦</span><img src="/uploads/logo/avatar.png" alt="" onerror="this.hidden=true" /></div><span class="iris-star one">✧</span><span class="iris-star two">✦</span><span class="iris-star three">♥</span></div>
+        <h1>IRIS 正在准备小站</h1><p id="iris-boot-message">正在收集散落的星光～</p>
+        <div class="iris-progress" role="progressbar" aria-label="正在加载网站"></div><p class="iris-caption">让故事与音乐，再靠近一点。</p>
+        <button id="iris-boot-retry" class="iris-boot-retry" hidden onclick="window.location.reload()">重新加载</button>
+        <noscript><p>请启用 JavaScript 后浏览小站。</p></noscript>
+      </div>
+    </div>
+    <script>
+      (() => {
+        const shell = document.getElementById('iris-boot')
+        const showFailure = () => { document.getElementById('iris-boot-message').textContent = '星光暂时迷路了，请检查网络或重试。'; document.getElementById('iris-boot-retry').hidden = false }
+        const timeout = window.setTimeout(showFailure, 20000)
+        window.__irisBoot = {
+          ready() { clearTimeout(timeout); shell.classList.add('is-ready'); shell.setAttribute('aria-hidden', 'true'); setTimeout(() => shell.remove(), 230) },
+          fail() { clearTimeout(timeout); showFailure() }
+        }
+      })()
+    </script>
     <div id="app"></div>
     <script type="module" src="/src/main.js"></script>
   </body>

@@ -1,0 +1,18 @@
+/* Shared lightweight shell, available before the application bundle loads. */
+.iris-loading { --load-bg:#fff7fc; --load-ink:#4e365e; --load-muted:#776080; --load-line:#e8d9ed; --load-glow:#a283eb; }
+html[data-theme="dark"] .iris-loading { --load-bg:#10162c; --load-ink:#f0eaff; --load-muted:#b8accf; --load-line:#34304d; --load-glow:#b4a0ff; }
+.iris-boot { position:fixed; inset:0; z-index:1900; display:grid; place-items:center; background:radial-gradient(ellipse at 50% 40%,#af8def22,transparent 55%),var(--load-bg); color:var(--load-ink); font-family:'Microsoft YaHei',sans-serif; transition:opacity .22s ease; }
+.iris-boot.is-ready { opacity:0; pointer-events:none; }.iris-boot-card { text-align:center; width:min(340px,82vw); }
+.iris-mascot { position:relative; width:132px; height:132px; margin:0 auto 28px; display:grid; place-items:center; animation:iris-float 2.8s ease-in-out infinite; }
+.iris-mascot::before { content:''; position:absolute; inset:-9px; border:1px dashed #ac8ede77; border-radius:50%; animation:iris-orbit 22s linear infinite; }
+.iris-avatar-shell { position:relative; width:104px; height:104px; overflow:hidden; border:4px solid #d9c8ef; border-radius:36px; background:linear-gradient(135deg,#e4d7ff,#ffd5e5); box-shadow:0 10px 40px #b692e433; transform:rotate(-6deg); }
+.iris-avatar-shell img { width:100%; height:100%; object-fit:cover; }.iris-avatar-fallback { display:grid; place-items:center; position:absolute; inset:0; color:#7652a4; font-size:38px; }.iris-avatar-shell img { position:relative; z-index:1; }
+.iris-star { position:absolute; font-size:22px; color:#b698ea; text-shadow:0 0 18px #b698ea66; animation:iris-twinkle 1.8s ease-in-out infinite alternate; }.iris-star.one { top:-8px; right:-8px; }.iris-star.two { bottom:9px; left:-17px; font-size:15px; animation-delay:.6s; }.iris-star.three { bottom:-8px; right:2px; color:#e4a8c5; font-size:13px; animation-delay:1.1s; }
+.iris-boot h1 { font-size:21px; font-weight:600; letter-spacing:3px; margin:0 0 12px; }.iris-boot p { color:var(--load-muted); font-size:13px; line-height:1.9; margin:10px 0; }.iris-boot .iris-caption { margin-top:17px; font-size:11px; letter-spacing:1px; }
+.iris-progress { position:relative; overflow:hidden; height:7px; border-radius:99px; background:var(--load-line); margin-top:24px; }.iris-progress::after { content:''; position:absolute; inset:0; width:42%; border-radius:inherit; background:linear-gradient(90deg,#9b8de9,#e6acd1); box-shadow:0 0 12px #b293e9; animation:iris-progress 1.5s ease-in-out infinite; }
+.iris-boot-retry { margin-top:12px; border:1px solid #ad8cd17a; border-radius:12px; background:#b697e51a; color:var(--load-ink); padding:10px 20px; cursor:pointer; }.iris-boot-retry:focus-visible { outline:2px solid var(--load-glow); outline-offset:4px; }
+@keyframes iris-float { 0%,100% { transform:translateY(0); } 50% { transform:translateY(-9px); } }
+@keyframes iris-orbit { to { transform:rotate(360deg); } }
+@keyframes iris-twinkle { from { opacity:.45; transform:scale(.8); } to { opacity:1; transform:scale(1.12); } }
+@keyframes iris-progress { 0% { transform:translateX(-110%); } 100% { transform:translateX(340%); } }
+@media(prefers-reduced-motion:reduce) { .iris-mascot,.iris-mascot::before,.iris-star,.iris-progress::after { animation:none; }.iris-progress::after { width:65%; }.iris-boot { transition:none; } }

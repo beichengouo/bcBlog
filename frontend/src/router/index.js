@@ -1,3 +1,4 @@
+import { startNavigation, finishNavigation, failNavigation } from '@/utils/navigationLoading'
 import { createRouter, createWebHistory } from 'vue-router'
 import { useUserStore } from '@/store/user'
 import { applySiteMeta, getSiteName } from '@/utils/siteMeta'
@@ -108,6 +109,10 @@ const router = createRouter({
     if (to.path !== from.path) return { top: 0 }
   }
 })
+
+router.beforeEach((to) => { startNavigation(to) })
+router.afterEach((to, from, failure) => { finishNavigation(to, !!failure) })
+router.onError((error, to) => { failNavigation(to) })
 
 router.beforeEach(async (to, from) => {
   const userStore = useUserStore()
