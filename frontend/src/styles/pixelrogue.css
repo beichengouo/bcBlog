@@ -169,3 +169,11 @@
   .game-release-art { min-height: 300px; border-radius: 120px 120px 14px 14px; max-width: 420px; width: 100%; margin: auto; }
 }
 @media(prefers-reduced-motion:reduce) { .celestial-ring.inner { animation: none; } .game-character-art img { animation: none; } }
+
+/* Explicit responsive height prevents HTML height attributes from cropping the scene. */
+.game-world-grid > figure > img { width: 100%; height: auto; aspect-ratio: 2816 / 1792; object-fit: contain; }
+.game-world-grid > figure:hover > img { scale: 1; }
+.game-codex-invitation { max-width: 1200px; margin: 0 auto 60px; padding: 48px 32px; text-align: center; border-block: 1px solid #ceb99433; background: radial-gradient(ellipse at center,#26334b77,transparent 75%); }
+.game-codex-invitation > span { color: var(--game-gold); font-size: 10px; letter-spacing: 3px; }
+.game-codex-invitation h2 { font-family: SimSun,serif; font-size: clamp(24px,3vw,36px); font-weight: 400; letter-spacing: 2px; }
+.game-codex-invitation p { color: var(--game-muted); font-size: 12px; line-height: 2; margin-bottom: 24px; }

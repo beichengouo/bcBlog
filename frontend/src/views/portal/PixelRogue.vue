@@ -13,17 +13,15 @@
 
     <section id="game-world" class="game-section game-world">
       <div class="game-section-heading game-reveal"><span>01 / WORLD</span><h2>世界尚有回响，<br />旅途未到终章。</h2><p>俯视角动作肉鸽，穿行于两章冒险的四阶段房间图。<br />从苏醒林地出发，走入失名星城，在战斗与选择间寻找归途。</p></div>
-      <div class="game-world-grid"><figure class="game-reveal" v-for="chapter in chapters" :key="chapter.title"><img :src="chapter.image" :alt="chapter.title + '场景美术'" loading="lazy" width="1440" height="810" /><figcaption><div><small>{{ chapter.english }}</small><h3>{{ chapter.title }}</h3></div><span>{{ chapter.description }}</span></figcaption></figure></div><p class="game-art-note">场景美术展示 · 非实机截图</p>
+      <div class="game-world-grid"><figure class="game-reveal" v-for="chapter in chapters" :key="chapter.title"><GameCityScene v-if="chapter.english === 'THE NAMELESS STAR CITY'" /><img v-else :src="chapter.image" :alt="chapter.title + '场景美术'" loading="lazy" width="1440" height="810" /><figcaption><div><small>{{ chapter.english }}</small><h3>{{ chapter.title }}</h3></div><span>{{ chapter.description }}</span></figcaption></figure></div><p class="game-art-note">场景美术展示 · 非实机截图</p>
     </section>
 
-    <section id="game-characters" class="game-section game-characters" :style="{ '--hero-accent': activeHero.color }">
+    <section id="game-characters" class="game-section game-characters" >
       <div class="game-section-heading game-reveal"><span>02 / COMPANIONS</span><h2>与你同行，<br />而非为你存在。</h2><p>三位可操作角色，三种战斗节奏。<br />她们有各自的意愿、记忆与选择；契约，是旅程的起点。</p></div>
-      <div class="game-character-stage game-reveal">
-        <div class="game-character-art"><img :key="activeHero.id" :src="activeHero.image" :alt="activeHero.name + '角色立绘'" loading="lazy" width="720" height="1080" /></div>
-        <div class="game-character-copy"><div :key="activeHero.id" class="game-character-story"><span class="game-character-role">{{ activeHero.role }}</span><h3>{{ activeHero.name }}</h3><p class="game-character-motif">{{ activeHero.motif }}</p><p>{{ activeHero.description }}</p><div class="game-character-focus">{{ activeHero.focus }}</div></div><div class="game-character-switch" role="group" aria-label="选择介绍的角色"><button v-for="(hero, index) in pixelrogue.heroes" :key="hero.id" type="button" :aria-pressed="activeHero.id === hero.id" :class="{ selected: activeHero.id === hero.id }" @click="activeHeroId = hero.id"><span>0{{ index + 1 }}</span>{{ hero.name }}</button></div></div>
-      </div>
+      <GameCompanions />
     </section>
 
+    <div class="game-codex-invitation"><span>ARCHIVE / 星途图鉴</span><h2>将每一次发现，记入旅途。</h2><p>查阅装备、遗物与命运牌，寻找属于你的构筑。</p><router-link to="/portal/games/pixelrogue/codex" class="game-button">打开游戏图鉴 ↗</router-link></div>
     <section id="game-play" class="game-section game-play">
       <div class="game-section-heading game-reveal"><span>03 / GAMEPLAY</span><h2>每一次出发，<br />都写下不同的答案。</h2></div>
       <div class="game-play-grid"><article class="game-reveal" v-for="(feature, index) in features" :key="feature.title"><span class="game-feature-number">0{{ index + 1 }}</span><div><h3>{{ feature.title }}</h3><p>{{ feature.description }}</p></div></article></div>
@@ -40,7 +38,9 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref } from 'vue'
+import GameCityScene from '@/components/portal/GameCityScene.vue'
+import GameCompanions from '@/components/portal/GameCompanions.vue'
 import { useGameReleases } from '@/composables/useGameReleases'
 const { packages, loading, failed, load } = useGameReleases()
 import { pixelrogue } from '@/config/pixelrogue'
@@ -50,8 +50,6 @@ import { useGamePageMotion } from '@/composables/useGamePageMotion'
 const pageRef = ref(null)
 const { activeSection, progress } = useGamePageMotion(pageRef)
 const sections = [{ id: 'game-intro', label: '序章' }, { id: 'game-world', label: '世界' }, { id: 'game-characters', label: '同行者' }, { id: 'game-play', label: '玩法' }, { id: 'game-release', label: '版本与项目' }]
-const activeHeroId = ref(pixelrogue.heroes[0].id)
-const activeHero = computed(() => pixelrogue.heroes.find((hero) => hero.id === activeHeroId.value) || pixelrogue.heroes[0])
 const chapters = [
   { title: '苏醒林地', english: 'THE AWAKENING WOODS', image: '/games/pixelrogue/forest.webp', description: '林地、湿地与遗迹，等待第一段足迹。' },
   { title: '失名星城', english: 'THE NAMELESS STAR CITY', image: '/games/pixelrogue/city.webp', description: '走入星城，在遗落的名字间继续前行。' }

@@ -1,0 +1,2130 @@
+{
+  "source": "PixelRogue 游戏目录资料快照",
+  "updatedAt": "2026-10-31",
+  "items": [
+    {
+      "id": "summoner_bell",
+      "name": "召唤师的铃铛",
+      "kind": "buff",
+      "category": "relic",
+      "rarity": 2,
+      "description": "雇佣的怪物与佣兵：生命 +25%、攻击 +20%",
+      "flavor": "铃舌由两片相互追逐的银叶铸成，清响落下时，独行者的脚步便有了回声。它从不命令谁献出生命，只提醒契约两端的人：有些道路，原本可以一起走完。即使漫长岁月抹去了最初的铭文，守护的意义也仍会在新的相逢中被辨认。",
+      "image": "/games/pixelrogue/codex/summoner_bell-7aad884dfaa3.webp"
+    },
+    {
+      "id": "contract_ring",
+      "name": "契约指环",
+      "kind": "accessory",
+      "category": "equipment",
+      "rarity": 2,
+      "description": "雇佣的怪物与佣兵：攻击 +15%、移动速度 +20%",
+      "flavor": "指环内侧没有主人的姓名，只有一圈尚未合拢的誓文。立约者把最后一笔留给同行之人，因为忠诚不该是一道封死的门，而应是危难之际仍愿作出的选择。回廊保存着它走过的路，也为尚未抵达的明天留着一盏安静的灯。",
+      "image": "/games/pixelrogue/codex/contract_ring-a392885203dd.webp"
+    },
+    {
+      "id": "iron_sword",
+      "name": "铁剑",
+      "kind": "buff",
+      "category": "relic",
+      "rarity": 0,
+      "description": "攻击力 +6",
+      "flavor": "缺口经过重新锻打，皮绳仍牢牢缠着剑柄。这是旅人踏上长路时最朴素的勇气。",
+      "image": "/games/pixelrogue/codex/iron_sword-84e213fc9e75.webp"
+    },
+    {
+      "id": "whetstone",
+      "name": "磨刀石",
+      "kind": "buff",
+      "category": "relic",
+      "rarity": 1,
+      "description": "攻击力 +6",
+      "flavor": "细密银砂封在不起眼的石面里，刃口擦过便有晨星般的碎光落下。守夜的人相信，值得托付性命的锋芒，不出自一次辉煌，而来自每次出发前不曾省略的准备。",
+      "image": "/games/pixelrogue/codex/whetstone-842dd0f51972.webp"
+    },
+    {
+      "id": "feather_boots",
+      "name": "轻羽靴",
+      "kind": "buff",
+      "category": "relic",
+      "rarity": 0,
+      "description": "移动速度 +19",
+      "flavor": "灰白羽绒藏在靴口，旧皮底轻贴地面。穿上它的人，学会让脚步先于恐惧启程。",
+      "image": "/games/pixelrogue/codex/feather_boots-e62bab09a3e6.webp"
+    },
+    {
+      "id": "spring_shoes",
+      "name": "弹簧鞋",
+      "kind": "buff",
+      "category": "relic",
+      "rarity": 0,
+      "description": "已退役的旧旅途遗物，不再产出。",
+      "flavor": "古老工坊留下的奇巧旧物，铜簧已经沉寂，仍保存着旅人曾经跃过险境的记忆。",
+      "image": "/games/pixelrogue/codex/spring_shoes-60ebfcec7a0a.webp"
+    },
+    {
+      "id": "guardian_mail",
+      "name": "护心甲",
+      "kind": "buff",
+      "category": "relic",
+      "rarity": 0,
+      "description": "生命上限 +25",
+      "flavor": "锤痕一层叠着一层，正中护片却平整如初。无名铁匠把最可靠的祝福留在心前。",
+      "image": "/games/pixelrogue/codex/guardian_mail-b0c2f343203b.webp"
+    },
+    {
+      "id": "giant_belt",
+      "name": "巨人腰带",
+      "kind": "buff",
+      "category": "relic",
+      "rarity": 1,
+      "description": "生命上限 +45；移动速度 -13",
+      "flavor": "厚革上刻着比人类文字更古老的山纹，铜扣被漫长岁月磨得温润。传承它的人未必拥有巨人的身形，却都懂得在风暴来到时，先替身后的人站稳。",
+      "image": "/games/pixelrogue/codex/giant_belt-d2b9cf14b7ef.webp"
+    },
+    {
+      "id": "blood_charm",
+      "name": "血纹护符",
+      "kind": "buff",
+      "category": "relic",
+      "rarity": 1,
+      "description": "普攻命中回复 +1点生命",
+      "flavor": "暗红纹路蜿蜒穿过木牌，像树根寻回失落的泉水。它记得创伤，却不以创伤为荣耀；真正值得铭刻的，是受伤之后依然没有放下武器的那只手。",
+      "image": "/games/pixelrogue/codex/blood_charm-74dcb8d13743.webp"
+    },
+    {
+      "id": "thorn_cloak",
+      "name": "荆棘斗篷",
+      "kind": "buff",
+      "category": "relic",
+      "rarity": 1,
+      "description": "反伤 +10",
+      "flavor": "细棘沿着斗篷内衬生长，外侧反而柔软得像暮色。林地守望者把它披给归途上的伙伴，借此告诉黑暗：温柔从来不意味着毫无锋芒。",
+      "image": "/games/pixelrogue/codex/thorn_cloak-8e8a9da555ac.webp"
+    },
+    {
+      "id": "assassin_mark",
+      "name": "刺客印记",
+      "kind": "buff",
+      "category": "relic",
+      "rarity": 2,
+      "description": "暴击率 +15%，暴击伤害 +50%",
+      "flavor": "银针划出的窄月几乎没有重量，唯有握在掌心时，才会显出冷冽的轮廓。它不赞美无谓的杀戮，而纪念那些在最短的一瞬里截断灾厄、让旁人得以看见下一个黎明的无名之人。群星不会替旅人承担选择，却会照见那些在黑暗中仍未改变的心。",
+      "image": "/games/pixelrogue/codex/assassin_mark-0e62aced36d9.webp"
+    },
+    {
+      "id": "lucky_coin",
+      "name": "幸运币",
+      "kind": "buff",
+      "category": "relic",
+      "rarity": 0,
+      "description": "首次清理每个战斗房间时额外获得2金币；重复入房不重复获得。",
+      "flavor": "钱币两面都磨去了君王的面容，唯有掌心留下的温度，仍被旅人称作好运。",
+      "image": "/games/pixelrogue/codex/lucky_coin-53b316c590b2.webp"
+    },
+    {
+      "id": "gale_boots",
+      "name": "疾风之靴",
+      "kind": "buff",
+      "category": "relic",
+      "rarity": 0,
+      "description": "闪避冷却 -1.1秒",
+      "flavor": "靴侧的青色缝线已经褪色，鞋尖却始终朝向前路，像一封尚未寄出的远行书。",
+      "image": "/games/pixelrogue/codex/gale_boots-6f0577c8d07b.webp"
+    },
+    {
+      "id": "double_jump_charm",
+      "name": "二段跳符",
+      "kind": "buff",
+      "category": "relic",
+      "rarity": 2,
+      "description": "已退役的旧旅途遗物，不再产出。",
+      "flavor": "断裂的风纹仍封存在这枚退役符片中，它属于另一段旅途。如今它安静躺在旧行囊底，见证曾有人不肯接受第一次坠落，也见证冒险终会学会用新的方式越过旧日的深渊。回廊保存着它走过的路，也为尚未抵达的明天留着一盏安静的灯。",
+      "image": "/games/pixelrogue/codex/double_jump_charm-e3f7d8596813.webp"
+    },
+    {
+      "id": "berserk_blood",
+      "name": "狂暴之血",
+      "kind": "buff",
+      "category": "relic",
+      "rarity": 1,
+      "description": "生命上限 -15；攻击力 +8.5",
+      "flavor": "赤色结晶里凝着一簇难以平息的火，连沉默都显得炽热。它并非献给莽撞者的颂歌，而是献给所有在退无可退之时，仍敢以自身回应命运的人。",
+      "image": "/games/pixelrogue/codex/berserk_blood-909fbf68994b.webp"
+    },
+    {
+      "id": "phoenix_heart",
+      "name": "不死鸟之心",
+      "kind": "buff",
+      "category": "relic",
+      "rarity": 3,
+      "description": "最大生命 +30，普攻命中回复 1 点生命（同名来源不重复叠加）",
+      "flavor": "焰羽已经化作余灰，心石里却仍有一线赤金缓缓搏动。旧日的守望者曾把它举向无星的长夜，不求免于焚烧，只求被自己护在身后的人能够平安离开。火光最终熄灭，誓言却没有随之散去。如今每一位接过它的旅人，都能听见那份沉静而炽烈的回答：苦难不值得被赞颂，穿过苦难后仍愿守护的心，才值得被铭记。群星不会替旅人承担选择，却会照见那些在黑暗中仍未改变的心。",
+      "image": "/games/pixelrogue/codex/phoenix_heart-33236b05acd8.webp"
+    },
+    {
+      "id": "executioner",
+      "name": "处刑者之刃",
+      "kind": "buff",
+      "category": "relic",
+      "rarity": 3,
+      "description": "攻击力 +40%，暴击率 +8%",
+      "flavor": "刃背没有王室的纹章，剑锷上也没有胜者的桂冠，只有一道被反复磨亮的旧刻痕。它曾被用来裁断无法停歇的守护命令，因而承受过许多畏惧与误解。持剑者没有为自己辩解，只把锋刃指向了真正囚禁众人的枷锁。世人记住了判决落下的瞬间，剑却记得那场判决之后，终于能够重新迈出的脚步。真正值得传承的力量，从不止于赢下一场战斗，更在于为何继续前行。",
+      "image": "/games/pixelrogue/codex/executioner-ac592f67e67e.webp"
+    },
+    {
+      "id": "wand_arcane",
+      "name": "秘法魔杖",
+      "kind": "weapon",
+      "category": "equipment",
+      "rarity": 1,
+      "description": "攻击力 +4；攻击速度 +0.16",
+      "flavor": "杖心嵌着一枚略显浑浊的蓝晶，细碎星纹由握柄一路延伸到顶端。许多伟大的法术，都曾从这样一根朴素木杖开始；第一束微光，也有照亮长夜的资格。",
+      "image": "/games/pixelrogue/codex/wand_arcane-b561fd205a26.webp"
+    },
+    {
+      "id": "staff_fire",
+      "name": "火焰法杖",
+      "kind": "weapon",
+      "category": "equipment",
+      "rarity": 2,
+      "description": "攻击 +25%，暴击率 +3% · 烈焰彗星弹",
+      "flavor": "赤晶与焦木之间封着一圈安静的火，既不躁动，也不肯熄灭。它曾是守夜者引路的灯，后来才成为抵御侵袭的武器。火焰所照见的不是征服，而是黑暗退去后仍然完整的归途。群星不会替旅人承担选择，却会照见那些在黑暗中仍未改变的心。",
+      "image": "/games/pixelrogue/codex/staff_fire-4298673930af.webp"
+    },
+    {
+      "id": "bow_wood",
+      "name": "猎手长弓",
+      "kind": "weapon",
+      "category": "equipment",
+      "rarity": 1,
+      "description": "暴击率 +4%；攻击力 +4",
+      "flavor": "弓身留着细致的手工刨痕，弦扣被林间露水洗成柔和的银色。它不会替猎手决定何时松弦，只把每一次稳健的呼吸，忠实地化作穿过枝叶的箭。",
+      "image": "/games/pixelrogue/codex/bow_wood-b7000ef2e606.webp"
+    },
+    {
+      "id": "dagger_iron",
+      "name": "铁匕首",
+      "kind": "weapon",
+      "category": "equipment",
+      "rarity": 2,
+      "description": "攻击 +16%，攻击速度 +12% · 银蓝刃光",
+      "flavor": "短刃藏在沉默的鞘中，握柄纹路已被指掌磨平。它没有长兵器的声势，却能在最逼仄的险境里为旅人守住最后一点余地。真正精确的锋芒，总懂得等待值得出手的时刻。旧日的记载可以残缺，后来者却仍拥有亲手写下下一页的权利。",
+      "image": "/games/pixelrogue/codex/dagger_iron-d6239c916db7.webp"
+    },
+    {
+      "id": "warhammer_gold",
+      "name": "秘金战锤",
+      "kind": "weapon",
+      "category": "equipment",
+      "rarity": 3,
+      "description": "攻击 +42%，生命上限 +25，暴击伤害 +20%，攻击速度 −8% · 秘金碎岩锤光",
+      "flavor": "秘金并不比星光更轻，这柄战锤却把沉重铸成了庄严。锤面刻着相互咬合的岩纹，仿佛大地把自己的脊骨交给了凡人。每一道裂痕都来自一次不得不接下的冲击，每一片金屑都曾照亮濒临崩塌的防线。它不要求持有者成为无坚不摧的英雄，只要求那只举起战锤的手，在该守住的地方不再后退。那份誓约没有被写在高塔之上，而被留在仍然愿意向前的凡人手中。愿持有它的人记得来路的重量，也记得自己始终可以选择怎样抵达远方。",
+      "image": "/games/pixelrogue/codex/warhammer_gold-c35b13fb96fa.webp"
+    },
+    {
+      "id": "plate_mail",
+      "name": "铁壁胸甲",
+      "kind": "armor",
+      "category": "equipment",
+      "rarity": 1,
+      "description": "生命上限 +50；移动速度 -6",
+      "flavor": "深色铁片层层叠合，肩带上还留着手工缝补的痕迹。它没有华贵的纹章，却曾无数次把利刃挡在最重要的位置之外；平凡的坚固，也足以成为一段传奇的开端。",
+      "image": "/games/pixelrogue/codex/plate_mail-343913bd69c3.webp"
+    },
+    {
+      "id": "reactive_plating",
+      "name": "反应装甲",
+      "kind": "armor",
+      "category": "equipment",
+      "rarity": 2,
+      "description": "受击反伤 +16，最大生命 +20",
+      "flavor": "胸甲夹层里的棱晶映着冷紫光，旧伤痕被重新纳入整齐的甲纹。锻造者没有试图抹去它经历过的冲击，而是让每一道伤痕都成为下一次抵御的凭据。守住自己，也是在为反击保留答案。愿持有它的人记得来路的重量，也记得自己始终可以选择怎样抵达远方。",
+      "image": "/games/pixelrogue/codex/reactive_plating-661d8e7ee9fc.webp"
+    },
+    {
+      "id": "mage_robe",
+      "name": "游星法袍",
+      "kind": "armor",
+      "category": "equipment",
+      "rarity": 1,
+      "description": "生命上限 +25；移动速度 +13；魔法回复 +0.2/秒",
+      "flavor": "深蓝布面缀着稀疏银线，展开时仿佛一张仍未绘完的星图。流浪的施法者把家乡的夜空缝在衣角，走得再远，也不会忘记最初为何追逐光明。",
+      "image": "/games/pixelrogue/codex/mage_robe-77c3dfe3c0f1.webp"
+    },
+    {
+      "id": "crystal_pendant",
+      "name": "秘银吊坠",
+      "kind": "accessory",
+      "category": "equipment",
+      "rarity": 1,
+      "description": "暴击率 +12%",
+      "flavor": "一缕秘银托起澄澈的蓝晶，像掌心中尚未落下的星。它曾挂在无名学徒的胸前，陪伴过许多个没有成果的夜晚，也见证第一道被认真完成的咒文。",
+      "image": "/games/pixelrogue/codex/crystal_pendant-f0a3261ef091.webp"
+    },
+    {
+      "id": "life_ampoule",
+      "name": "生命药囊",
+      "kind": "accessory",
+      "category": "equipment",
+      "rarity": 2,
+      "description": "普攻命中回复 1 点生命（同名来源不重复叠加）",
+      "flavor": "红色药液在温润的囊瓶里微微晃动，金属扣环始终保留着草木的清气。采药者从不把它称为奇迹，因为每一份及时递出的援手，都来自有人在平安之时认真准备过。回廊保存着它走过的路，也为尚未抵达的明天留着一盏安静的灯。",
+      "image": "/games/pixelrogue/codex/life_ampoule-96e4c0b851b2.webp"
+    },
+    {
+      "id": "cursed_skull",
+      "name": "诅咒骷髅",
+      "kind": "accessory",
+      "category": "equipment",
+      "rarity": 2,
+      "description": "攻击力 +30%，最大生命 -10",
+      "flavor": "骨面上残存的暗纹早已失去完整语句，眼窝却仍映出幽微的紫光。人们畏惧它承载的旧诅咒，也有人从那片沉默中读出了另一种警告：不要把无法理解的悲伤，轻易变成束缚后来者的律法。愿持有它的人记得来路的重量，也记得自己始终可以选择怎样抵达远方。",
+      "image": "/games/pixelrogue/codex/cursed_skull-7e0bfdeef65b.webp"
+    },
+    {
+      "id": "lucky_charm",
+      "name": "幸运护符",
+      "kind": "accessory",
+      "category": "equipment",
+      "rarity": 1,
+      "description": "首次清理每个战斗房间时额外获得3金币；重复入房不重复获得。",
+      "flavor": "磨圆的护符像一枚小小的路标，细链上系着来自不同旅途的旧结。它没有替谁选定结局，只提醒持有者：那些看似偶然的相逢，也值得被郑重珍藏。",
+      "image": "/games/pixelrogue/codex/lucky_charm-c46bfda6c234.webp"
+    },
+    {
+      "id": "crit_ring",
+      "name": "暴击指环",
+      "kind": "accessory",
+      "category": "equipment",
+      "rarity": 2,
+      "description": "暴击率 +15%，暴击伤害 +40%",
+      "flavor": "戒面是一枚不肯反射全貌的锐晶，唯有转到恰好的角度，才会亮起锋利的白芒。老练的旅人用它纪念一次准确的判断，而不是一次侥幸；机会从来短暂，准备却可以漫长。回廊保存着它走过的路，也为尚未抵达的明天留着一盏安静的灯。",
+      "image": "/games/pixelrogue/codex/crit_ring-b0096bc4ca3f.webp"
+    },
+    {
+      "id": "gem_crown",
+      "name": "宝石王冠",
+      "kind": "accessory",
+      "category": "equipment",
+      "rarity": 3,
+      "description": "攻击力 +20%，最大生命 +20，暴击率 +6%，魔法回复速度 +10%",
+      "flavor": "诸色宝石围成一轮尚未沉落的星环，王冠内侧却没有刻下任何王者的名字。它曾被供奉在空无一人的高座上，象征无人能够拒绝的荣耀；后来，一个旅人把它带回了仍有笑声的灯下。华美因此有了新的意义：不再使众人向某个人俯首，而是提醒佩戴者，真正的尊荣，应当容得下每一颗不愿屈服的心。群星不会替旅人承担选择，却会照见那些在黑暗中仍未改变的心。",
+      "image": "/games/pixelrogue/codex/gem_crown-4a2cc3ebb62d.webp"
+    },
+    {
+      "id": "traveler_leather",
+      "name": "旅人皮甲",
+      "kind": "armor",
+      "category": "equipment",
+      "rarity": 0,
+      "description": "生命上限 +20；移动速度 +8",
+      "flavor": "软革与旧布拼成轻便护衣，针脚并不齐整，却认真包住了每一处容易受伤的地方。",
+      "image": "/games/pixelrogue/codex/traveler_leather-276de25d1314.webp"
+    },
+    {
+      "id": "watcher_cloth",
+      "name": "守夜布衣",
+      "kind": "armor",
+      "category": "equipment",
+      "rarity": 0,
+      "description": "生命上限 +30",
+      "flavor": "衣领染着淡淡灯烟，袖口经过仔细补缀。漫长守望里留下的暖意，比纹章更可靠。",
+      "image": "/games/pixelrogue/codex/watcher_cloth-d23c6cd789b7.webp"
+    },
+    {
+      "id": "thorn_vest",
+      "name": "荆棘背心",
+      "kind": "armor",
+      "category": "equipment",
+      "rarity": 1,
+      "description": "生命上限 +15；反伤 +10",
+      "flavor": "硬韧藤丝织入内衬，细小棘纹藏在不起眼的接缝里。林地不总以鲜花回应来者，有时它递出的善意，是让善良的人也拥有保护自己的锋芒。",
+      "image": "/games/pixelrogue/codex/thorn_vest-1ce01d7e5d9b.webp"
+    },
+    {
+      "id": "feather_coat",
+      "name": "轻羽外套",
+      "kind": "armor",
+      "category": "equipment",
+      "rarity": 1,
+      "description": "生命上限 +25；移动速度 +14",
+      "flavor": "细羽缝在外套里层，动作间只露出一线轻柔银白。它曾陪伴信使穿过无数阴雨，衣角虽旧，带往远方的消息却从未因风暴而失约。",
+      "image": "/games/pixelrogue/codex/feather_coat-0cd0972e5adf.webp"
+    },
+    {
+      "id": "wind_cloak",
+      "name": "风行斗篷",
+      "kind": "armor",
+      "category": "equipment",
+      "rarity": 2,
+      "description": "最大生命 +35，移动速度 +10%，冲刺冷却 -15%",
+      "flavor": "青灰披风的下摆留着水雾与长草的气息，暗纹仿佛一阵尚未散去的风。它属于始终知道自己为何启程的行者：路可以迂回，方向可以暂缓，前行的意志却不必因此交给他人。它所承载的光并不属于某个被选中的名字，而属于每一次自由而郑重的决定。",
+      "image": "/games/pixelrogue/codex/wind_cloak-e750267d6f7e.webp"
+    },
+    {
+      "id": "starlight_plate",
+      "name": "星辉战甲",
+      "kind": "armor",
+      "category": "equipment",
+      "rarity": 3,
+      "description": "最大生命 +50，反伤 +8，攻击力 +15%，移动速度 -5%，魔法回复速度 +15%",
+      "flavor": "碎星被熔入银蓝甲片，光纹像一道道守在夜色之前的关隘。它没有经历过凯旋的检阅，却始终保存着战线最深处的温度。曾有旅人以这身沉重的铠甲接住崩落的石梁，待最后一个同伴穿过出口，才终于允许自己跪下喘息。后人赞颂那一夜的星辉，甲胄所记住的，却只是一个谁也不肯落下的承诺。群星不会替旅人承担选择，却会照见那些在黑暗中仍未改变的心。真正值得传承的力量，从不止于赢下一场战斗，更在于为何继续前行。",
+      "image": "/games/pixelrogue/codex/starlight_plate-69b3b45105e7.webp"
+    },
+    {
+      "id": "eagle_badge",
+      "name": "鹰眼徽章",
+      "kind": "accessory",
+      "category": "equipment",
+      "rarity": 0,
+      "description": "暴击率 +8%",
+      "flavor": "铜鹰的翅尖已被磨圆，眼中的细小亮点仍朝向远处，替谨慎的旅人守住视线。",
+      "image": "/games/pixelrogue/codex/eagle_badge-5e070d999f6d.webp"
+    },
+    {
+      "id": "journey_bell",
+      "name": "旅途铜铃",
+      "kind": "accessory",
+      "category": "equipment",
+      "rarity": 0,
+      "description": "移动速度 +10",
+      "flavor": "铃身刻着一截弯曲的小路，轻轻摇响时，仿佛有人在灯火另一端回应你的名字。",
+      "image": "/games/pixelrogue/codex/journey_bell-96139796e6f3.webp"
+    },
+    {
+      "id": "merchant_purse",
+      "name": "行商钱袋",
+      "kind": "accessory",
+      "category": "equipment",
+      "rarity": 1,
+      "description": "首次清理每个战斗房间时额外获得2金币；重复入房不重复获得。生命上限 +10。",
+      "flavor": "袋口的双重绳结保留着旧商路的习惯，内衬缝着一枚不起眼的铜星。它装过货币，也装过一次及时的相助；旅途的富足，从来不只取决于袋中的声响。",
+      "image": "/games/pixelrogue/codex/merchant_purse-4fbd82fc01f1.webp"
+    },
+    {
+      "id": "guardian_brooch",
+      "name": "守护胸针",
+      "kind": "accessory",
+      "category": "equipment",
+      "rarity": 1,
+      "description": "生命上限 +20；反伤 +6",
+      "flavor": "银枝把一片温润护石托在衣领前，细小裂纹像旧日潮痕。有人把它留给即将出发的友人，没有说出挽留的话，只认真替对方扣好了最后一道别针。",
+      "image": "/games/pixelrogue/codex/guardian_brooch-088015fad075.webp"
+    },
+    {
+      "id": "wind_ring",
+      "name": "疾风指环",
+      "kind": "accessory",
+      "category": "equipment",
+      "rarity": 2,
+      "description": "冲刺冷却 -20%，移动速度 +5%",
+      "flavor": "戒面上的风纹始终朝着同一个方向，内圈却被细心磨得十分圆润。它不催促任何人仓促离开，而纪念那些明知前路艰难，仍愿凭自己的意志向前迈出一步的人。它所承载的光并不属于某个被选中的名字，而属于每一次自由而郑重的决定。",
+      "image": "/games/pixelrogue/codex/wind_ring-a30b99c6c7d6.webp"
+    },
+    {
+      "id": "morningstar_pendant",
+      "name": "晨星坠饰",
+      "kind": "accessory",
+      "category": "equipment",
+      "rarity": 3,
+      "description": "暴击伤害 +25%，暴击率 +10%，攻击力 +15%，魔法回复速度 +10%",
+      "flavor": "黎明之前最后一束星光，被古老秘银稳稳托在胸前。坠饰的光辉并不耀眼，却曾陪伴迷途者走过最漫长的一段夜路。人们后来为它编出许多宏伟的来历，它始终没有回应。也许真正值得流传的，不过是一次不被遗忘的指引：当群星逐一隐去，愿你仍能记得，天光正在看不见的地方缓缓到来。愿持有它的人记得来路的重量，也记得自己始终可以选择怎样抵达远方。",
+      "image": "/games/pixelrogue/codex/morningstar_pendant-00cf4c0de0d9.webp"
+    },
+    {
+      "id": "relic_moon_compass",
+      "name": "月弧罗盘",
+      "kind": "buff",
+      "category": "relic",
+      "rarity": 0,
+      "description": "暴击率 +4%",
+      "flavor": "指针绕着一弯银月轻轻颤动，刻痕虽浅，仍为踏入陌路的人保存着出发时的方向。",
+      "image": "/games/pixelrogue/codex/relics_v1-47ea1ec1155a.webp"
+    },
+    {
+      "id": "relic_leaf_brooch",
+      "name": "翠叶胸章",
+      "kind": "buff",
+      "category": "relic",
+      "rarity": 0,
+      "description": "生命上限 +18；移动速度 +6",
+      "flavor": "一片铜叶被旧丝带认真系在胸前，叶脉里残留的绿意，是林地最安静的祝愿。",
+      "image": "/games/pixelrogue/codex/relics_v1-40d438dbb251.webp"
+    },
+    {
+      "id": "relic_rose_hourglass",
+      "name": "蔷薇沙漏",
+      "kind": "buff",
+      "category": "relic",
+      "rarity": 1,
+      "description": "闪避冷却 -0.45秒",
+      "flavor": "淡红细砂穿过收窄的琉璃，像花瓣在暮色中缓缓归根。它从不替人追回失去的时间，却让每一次重新准备，都多了一份不被慌乱夺走的从容。",
+      "image": "/games/pixelrogue/codex/relics_v1-f111db299800.webp"
+    },
+    {
+      "id": "relic_star_lantern",
+      "name": "星灯遗物",
+      "kind": "buff",
+      "category": "relic",
+      "rarity": 1,
+      "description": "生命上限 +12；攻击力 +4",
+      "flavor": "残缺灯罩护着一簇安静的星火，提环早已被无数掌心磨亮。它没有记录同行者的功业，只在每个停下歇息的夜里，替他们保留一处可以放心靠近的光。",
+      "image": "/games/pixelrogue/codex/relics_v1-306529f80bd6.webp"
+    },
+    {
+      "id": "relic_swallow_quill",
+      "name": "青燕羽笔",
+      "kind": "buff",
+      "category": "relic",
+      "rarity": 1,
+      "description": "移动速度 +10",
+      "flavor": "羽尖染着淡淡青墨，笔杆仍留着指节长久握持的温度。它写过许多没有抵达终点的旅行日记，却从未把中途停下，误写成一场没有意义的远行。",
+      "image": "/games/pixelrogue/codex/relics_v1-2a39f15c8302.webp"
+    },
+    {
+      "id": "relic_arcane_stone",
+      "name": "秘纹符石",
+      "kind": "buff",
+      "category": "relic",
+      "rarity": 2,
+      "description": "攻击 +20%，暴击率 +5%",
+      "flavor": "碎裂石面上的纹路并不完整，连学者也无法逐字复原。有人试着把缺损处填满，却只让光辉变得沉重；后来，旅人学会保留那片空白，让尚未写下的明天也有自己的位置。群星不会替旅人承担选择，却会照见那些在黑暗中仍未改变的心。",
+      "image": "/games/pixelrogue/codex/relics_v1-81481762496d.webp"
+    },
+    {
+      "id": "relic_guardian_feather",
+      "name": "守望双羽",
+      "kind": "buff",
+      "category": "relic",
+      "rarity": 2,
+      "description": "生命上限 +40，反伤 +8",
+      "flavor": "两片银羽交错系在同一根细绳上，一片稍长，一片微微卷曲。它们不属于同一只飞鸟，却在长途之后拥有了相同的归向。守望并不是让所有人停留，而是使远行的人知道，身后仍有回应。即使漫长岁月抹去了最初的铭文，守护的意义也仍会在新的相逢中被辨认。",
+      "image": "/games/pixelrogue/codex/relics_v1-fc4a75350beb.webp"
+    },
+    {
+      "id": "relic_dawn_bell",
+      "name": "曙光之铃",
+      "kind": "buff",
+      "category": "relic",
+      "rarity": 3,
+      "description": "攻击 +24%，暴击率 +8%",
+      "flavor": "铃口仿佛收着一线将要升起的天光，细密金纹绕过所有曾经裂开的地方。守灯人把它悬在最容易被风吹灭的门前，年复一年，没有为自己记录姓名。直到某个漫长寒夜结束，归来者才发现，那声音始终不是要求他们留下，而是在告诉每一个独行的灵魂：即使来路已被黑暗吞没，也还有一座门愿意为你开启。群星不会替旅人承担选择，却会照见那些在黑暗中仍未改变的心。",
+      "image": "/games/pixelrogue/codex/relics_v1-ee9d9db78502.webp"
+    },
+    {
+      "id": "camp_mooncoat",
+      "name": "月辉行衣",
+      "kind": "armor",
+      "category": "equipment",
+      "rarity": 2,
+      "description": "生命上限 +28，攻击 +12%，移动速度 +5%；仅营地随机商店兑换",
+      "flavor": "月色沿衣褶铺开，把磨损的织纹照得格外清楚。它曾属于星辉回廊一位常年远行的守望者，对方把最珍重的行衣留在仓库，却带走了最朴素的旧斗篷；她相信，被托付的善意总能走得更远。它所承载的光并不属于某个被选中的名字，而属于每一次自由而郑重的决定。",
+      "image": "/games/pixelrogue/codex/camp_mooncoat-cb5aa341a45d.webp"
+    },
+    {
+      "id": "camp_thornplate",
+      "name": "翠棘守甲",
+      "kind": "armor",
+      "category": "equipment",
+      "rarity": 2,
+      "description": "生命上限 +28，反伤 +20；仅营地随机商店兑换",
+      "flavor": "翠色甲片之间生着细韧棘纹，既像屏障，也像尚未展开的枝芽。锻造者没有把森林的锋芒磨去，而让它们沿着守护的方向整齐排列。面对黑暗，温柔与坚决从不需要彼此舍弃。群星不会替旅人承担选择，却会照见那些在黑暗中仍未改变的心。",
+      "image": "/games/pixelrogue/codex/camp_thornplate-c051b860b43e.webp"
+    },
+    {
+      "id": "camp_stararmor",
+      "name": "星冕战甲",
+      "kind": "armor",
+      "category": "equipment",
+      "rarity": 3,
+      "description": "生命上限 +60，反伤 +14，攻击 +15%，移动速度 −5%，魔法回复速度 +15%；仅营地随机商店兑换",
+      "flavor": "甲胄上的星冕并不高悬头顶，而被铸在紧贴心口的位置。它提醒每一任穿戴者，荣耀首先是一份应当承担的重量，然后才是可以被看见的光。回廊的旧档案没有留下这副战甲最初的主人，只记下许多人曾穿着它离开，又带着更多旅伴归来。也许一件传世之物最好的铭文，正是那些因此得以延续的名字。愿持有它的人记得来路的重量，也记得自己始终可以选择怎样抵达远方。",
+      "image": "/games/pixelrogue/codex/camp_stararmor-ad1d75bf01d8.webp"
+    },
+    {
+      "id": "camp_windring",
+      "name": "苍风契戒",
+      "kind": "accessory",
+      "category": "equipment",
+      "rarity": 2,
+      "description": "冲刺冷却 −24%，移动速度 +6%；仅营地随机商店兑换",
+      "flavor": "青银戒环中封着两道彼此追逐的气流，像远行者与故乡之间不断往返的消息。它并不保证任何约定都能轻易实现，却让立约者记住：真正的契约，需要在一次次困难中重新选择。真正值得传承的力量，从不止于赢下一场战斗，更在于为何继续前行。",
+      "image": "/games/pixelrogue/codex/camp_windring-dd875f9c1bdc.webp"
+    },
+    {
+      "id": "camp_sunpendant",
+      "name": "旭星坠饰",
+      "kind": "accessory",
+      "category": "equipment",
+      "rarity": 3,
+      "description": "攻击 +18%，暴击伤害 +30%，暴击率 +10%，魔法回复速度 +20%；仅营地随机商店兑换",
+      "flavor": "金色星芒穿过温润晶面，落在胸前时像一盏不会夺目的灯。它原本没有名字，直到第一位平安归来的旅人把它称为旭星。从那以后，许多人带着自己的愿望接过它，又把它交给下一位启程者。坠饰从未留住某一段旅途，光辉却因此层层叠起，仿佛那些没有被黑暗改变的心，终于在同一处学会了相认。群星不会替旅人承担选择，却会照见那些在黑暗中仍未改变的心。",
+      "image": "/games/pixelrogue/codex/camp_sunpendant-81f9daab47c6.webp"
+    },
+    {
+      "id": "camp_queenbrooch",
+      "name": "女王星章",
+      "kind": "accessory",
+      "category": "equipment",
+      "rarity": 3,
+      "description": "生命上限 +24，攻击 +24%，暴击率 +6%，魔法回复速度 +10%；仅营地随机商店兑换",
+      "flavor": "星章的边缘缀着庄严金叶，中央却只刻了一扇敞开的门。它所纪念的统治者早已从石碑上失去姓名，唯有一条旧誓仍被留在回廊：权柄不该使人无处可去。世人曾为这枚徽章争夺继承的资格，后来，守望者把它交给了愿意承担归途的人。王冠可以失落，国土可以崩塌，使他人仍有选择的荣耀，却不应一并被遗忘。回廊保存着它走过的路，也为尚未抵达的明天留着一盏安静的灯。",
+      "image": "/games/pixelrogue/codex/camp_queenbrooch-c7b71e7b3fbd.webp"
+    },
+    {
+      "id": "staff_apprentice",
+      "name": "学徒木杖",
+      "kind": "weapon",
+      "category": "equipment",
+      "rarity": 0,
+      "description": "攻击力 +1.5",
+      "flavor": "杖身还带着温和的木纹，顶端的细小晶石，认真回应着施法者尚显生涩的呼唤。",
+      "image": "/games/pixelrogue/codex/staff_apprentice-16dd1b7c6151.webp"
+    },
+    {
+      "id": "staff_starorbit",
+      "name": "星轨王杖",
+      "kind": "weapon",
+      "category": "equipment",
+      "rarity": 3,
+      "description": "攻击 +35%，暴击率 +6%，魔法回复速度 +20% · 星轨彗光与星座绽放",
+      "flavor": "双环围绕蓝白彗核缓慢交错，杖身上的星路在岁月中愈加清晰。它曾被用来推算一座城市能够保存多久，却最终见证了所有推算之外的选择。举起它的人不再试图命令每一颗星沿同一轨道运行，而学会让不同的光拥有各自的前路。那片向外展开的星盘，因而既是力量，也是对自由最郑重的承认。即使漫长岁月抹去了最初的铭文，守护的意义也仍会在新的相逢中被辨认。",
+      "image": "/games/pixelrogue/codex/staff_starorbit-01f51482ce89.webp"
+    },
+    {
+      "id": "staff_ember_flower",
+      "name": "烬花法杖",
+      "kind": "weapon",
+      "category": "equipment",
+      "rarity": 3,
+      "description": "攻击 +30%、攻击速度 +8%、魔法回复速度 +12%。火种绽放：普攻附加燃烧：每秒造成攻击力12%的伤害，持续3秒；普攻击中燃烧目标时，以其为中心对72范围内每个敌人造成攻击力65%的爆发伤害，每个目标冷却2秒。",
+      "flavor": "焦黑花芯包裹着赤金火种，杖端花瓣在每次举起时重新舒展。旧林地曾以烈焰隔绝一场不可挽回的灾厄，却也因此久久不敢再让新芽靠近。后来，有人从灰烬中拾起尚存温度的枝条，把守护与焚毁之间的界限重新握在掌中。花不为灾难盛开，只为证明，即使经历过最深的焦土，生命仍可以选择怎样回应明天。它所承载的光并不属于某个被选中的名字，而属于每一次自由而郑重的决定。",
+      "image": "/games/pixelrogue/codex/staff_ember_flower-54757f310291.webp"
+    },
+    {
+      "id": "staff_star_weave",
+      "name": "星织法杖",
+      "kind": "weapon",
+      "category": "equipment",
+      "rarity": 3,
+      "description": "攻击 +30%、攻击速度 +8%、魔法回复速度 +12%。三芒星痕：4秒内对同一目标普攻命中3次，触发星痕，命中该目标周围144范围内至多3个最近的其他敌人，每个造成攻击力35%的伤害；触发冷却0.6秒。",
+      "flavor": "银蓝星线在杖首交错，彼此独立的光点由一段段短线连接成图。它来自失名星城尚未变得沉默的年代，那时，记录的意义仍是让远行者重新找到彼此。后来连线逐渐被误写成锁链，许多光因此失去了方向。如今新的持有者重新举起法杖，让联系回到最初的样子：能够彼此照见，也容许各自离开。旧日的记载可以残缺，后来者却仍拥有亲手写下下一页的权利。那份誓约没有被写在高塔之上，而被留在仍然愿意向前的凡人手中。",
+      "image": "/games/pixelrogue/codex/staff_star_weave-0c442e143f22.webp"
+    },
+    {
+      "id": "staff_wind_branch",
+      "name": "逐风枝杖",
+      "kind": "weapon",
+      "category": "equipment",
+      "rarity": 3,
+      "description": "攻击 +30%、攻击速度 +8%、魔法回复速度 +12%。风枝散射：冲刺后3秒内的下一次普攻改为扇形发射3枚风刃，每枚造成攻击力55%的伤害，且可穿透1个目标。",
+      "flavor": "翠枝弯成一轮轻薄的新月，两缕清风始终沿着枝梢相互追逐。它曾被挂在林间最狭窄的出口上，替迟疑的旅人保留一道可以穿过的缝隙。风没有替谁作出决定，也没有承诺前方没有危险，只在身后黑暗逐渐迫近时，轻轻推开了那片沉重的叶。愿每一次主动迈出的脚步，都能换来属于自己的辽阔。旧日的记载可以残缺，后来者却仍拥有亲手写下下一页的权利。群星不会替旅人承担选择，却会照见那些在黑暗中仍未改变的心。",
+      "image": "/games/pixelrogue/codex/staff_wind_branch-6f180e91eceb.webp"
+    },
+    {
+      "id": "armor_thorn_moon",
+      "name": "棘月守甲",
+      "kind": "armor",
+      "category": "equipment",
+      "rarity": 3,
+      "description": "最大生命 +50、攻击 +10%、魔法回复速度 +12%。月棘反击：护盾被伤害耗尽时，以自身为中心对108范围内敌人造成攻击力90%的反击伤害；冷却4秒。",
+      "flavor": "暗棘与银月共同铸成护甲的轮廓，柔和月纹包住了最锋利的部分。它记录过许多次防线被击穿的瞬间，却没有把那些失守写成耻辱。因为守护从来不是永不受伤，而是在最后一道屏障碎裂之后，仍肯为了身后之人再次起身。甲胄里响起的余鸣，正是那些未曾放弃的回答。愿持有它的人记得来路的重量，也记得自己始终可以选择怎样抵达远方。那份誓约没有被写在高塔之上，而被留在仍然愿意向前的凡人手中。",
+      "image": "/games/pixelrogue/codex/armor_thorn_moon-2f3433e903a1.webp"
+    },
+    {
+      "id": "staff_soul_command",
+      "name": "御魂法杖",
+      "kind": "weapon",
+      "category": "equipment",
+      "rarity": 3,
+      "description": "攻击 +30%、攻击速度 +8%、魔法回复速度 +12%。魂印号令：普攻击中敌人后为其施加4秒魂印，附近友方单位优先集火魂印目标；友方单位对魂印目标造成的直接伤害提高15%。",
+      "flavor": "紫金契印悬在杖端，细密誓文沿着握柄缓缓收束。它曾被误认为能够命令所有灵魂的权杖，直到第一位持有者主动抹去了誓文最末的所有权。此后，回应这柄法杖的声音都来自自由的选择。它指向的并非主宰者的高座，而是混乱战线里最需要彼此信任的位置；共同的目标，应当比永久的束缚更有力量。真正值得传承的力量，从不止于赢下一场战斗，更在于为何继续前行。",
+      "image": "/games/pixelrogue/codex/staff_soul_command-b0c45b4d335f.webp"
+    },
+    {
+      "id": "staff_dusk_lantern",
+      "name": "暮灯法杖",
+      "kind": "weapon",
+      "category": "equipment",
+      "rarity": 3,
+      "description": "攻击+30%、攻速+8%、MP回复+12%。普攻有效命中为最近一名主动契约物附加6秒暮灯印，冷却1秒；其被敌方伤害击杀时，对72范围敌人造成0.7倍攻击暮灯波，每秒最多三次。自然到期、切房或漂浮灵消失不触发。",
+      "flavor": "黑银杖首的镂空灯座托着紫色幽焰，细铃与晶坠随杖身轻轻摇响。希希芙曾以为只要灯仍亮着，所有同行者都能被留在身边。漫长旅途中，她终于听懂了沉默的另一面：有些相逢值得全力守护，也有些告别需要被温柔允许。如今暮灯既为战线中的伙伴照亮方向，也为走到尽头的契约留下一段没有枷锁的送别。即使漫长岁月抹去了最初的铭文，守护的意义也仍会在新的相逢中被辨认。",
+      "image": "/games/pixelrogue/codex/staff_dusk_lantern-124a0cc886d8.webp"
+    },
+    {
+      "id": "armor_scorch_bloom",
+      "name": "灼花护衣",
+      "kind": "armor",
+      "category": "equipment",
+      "rarity": 2,
+      "description": "最大生命 +30、魔法回复速度 +8%。灼花追击：技能直接命中燃烧目标时，对该目标额外造成攻击力25%的伤害；同一目标冷却1秒。",
+      "flavor": "焦金花纹沿着护衣胸口盛开，针脚间仍有细小红光静静流转。裁衣者没有为它绣上胜利的场景，而留下了一片经过烈焰仍能重新长出的花。勇气不是与毁灭亲近，而是知道自己为何使用火焰。那份誓约没有被写在高塔之上，而被留在仍然愿意向前的凡人手中。",
+      "image": "/games/pixelrogue/codex/armor_scorch_bloom-90c4d102dbef.webp"
+    },
+    {
+      "id": "accessory_refraction",
+      "name": "折光棱镜",
+      "kind": "accessory",
+      "category": "equipment",
+      "rarity": 2,
+      "description": "攻击 +10%、魔法回复速度 +8%。折光弹：每次普攻首次有效直接暴击获得1层折光；达到3层后，下次普攻追加一发侧向弹，造成攻击力45%的伤害。",
+      "flavor": "不同角度的光在镜心相遇，又被分成各自清晰的方向。它曾挂在观测台的窗边，帮助守望者寻找几乎被夜色掩去的星。精准并不总意味着更强烈的光，有时只是终于看清，那条早已存在的裂隙。回廊保存着它走过的路，也为尚未抵达的明天留着一盏安静的灯。",
+      "image": "/games/pixelrogue/codex/accessory_refraction-6b4f62622e89.webp"
+    },
+    {
+      "id": "armor_swallow_return",
+      "name": "归燕轻甲",
+      "kind": "armor",
+      "category": "equipment",
+      "rarity": 2,
+      "description": "最大生命 +30、魔法回复速度 +8%。归燕护幕：冲刺结束时获得相当于最大生命8%的护盾，持续2秒；冷却5秒。",
+      "flavor": "青燕的轮廓缝在甲衣里侧，外表只见轻盈而克制的银线。曾有信使把回巢的方向记在这里，穿过无数陌生的林道后仍不曾迷失。轻甲所守住的，不是迟迟不动的安稳，而是转身之后仍能向前的余地。即使漫长岁月抹去了最初的铭文，守护的意义也仍会在新的相逢中被辨认。",
+      "image": "/games/pixelrogue/codex/armor_swallow_return-fc6a77351c2b.webp"
+    },
+    {
+      "id": "accessory_oath_guard",
+      "name": "守誓徽记",
+      "kind": "accessory",
+      "category": "equipment",
+      "rarity": 2,
+      "description": "攻击 +10%、魔法回复速度 +8%。守誓之盾：技能直接命中敌人时获得相当于最大生命6%的护盾，持续4秒；冷却4秒。",
+      "flavor": "金属徽记被反复握过，中心护纹因此比边缘更加明亮。它不为从未遇见考验的誓言作证，只纪念那些已经见过代价，却仍然选择兑现承诺的人。真正坚固的守护，总在行动之后显现。即使漫长岁月抹去了最初的铭文，守护的意义也仍会在新的相逢中被辨认。",
+      "image": "/games/pixelrogue/codex/accessory_oath_guard-50ab8bbf85bd.webp"
+    },
+    {
+      "id": "accessory_contract_chorus",
+      "name": "契约合唱",
+      "kind": "accessory",
+      "category": "equipment",
+      "rarity": 2,
+      "description": "攻击 +10%、魔法回复速度 +8%。契约齐鸣：施放技能时，所有友方单位的攻击速度提高15%，持续3秒；再次触发刷新持续时间。",
+      "flavor": "数枚不同材质的小铃被系在同一段紫银链上，音色彼此不同，却能在风中找到相同节拍。它们没有试图覆盖对方的声音，只在最混乱的战线上一同响起。同行的意义，是让每个独立的回应都不再孤单。即使漫长岁月抹去了最初的铭文，守护的意义也仍会在新的相逢中被辨认。",
+      "image": "/games/pixelrogue/codex/accessory_contract_chorus-951d8cea7a56.webp"
+    },
+    {
+      "id": "armor_farewell",
+      "name": "别离护衣",
+      "kind": "armor",
+      "category": "equipment",
+      "rarity": 2,
+      "description": "最大生命 +30、魔法回复速度 +8%。别离余护：暮灯标记的目标被命中时获得相当于最大生命5%的护盾，持续4秒；冷却3秒。",
+      "flavor": "幽暗丝线把一圈暖色灯纹绣在衣襟，像暮色中仍然亮着的窗口。它不是留住谁的网，而是离开之前可以认真披上的最后一层温度。能够好好告别的人，也会更懂得珍惜尚在身旁的伙伴。回廊保存着它走过的路，也为尚未抵达的明天留着一盏安静的灯。",
+      "image": "/games/pixelrogue/codex/armor_farewell-16836a19c3a7.webp"
+    },
+    {
+      "id": "relic_ember_seed",
+      "name": "余烬种子",
+      "kind": "buff",
+      "category": "relic",
+      "rarity": 1,
+      "description": "续燃：燃烧目标死亡时，将其剩余燃烧效果传给72范围内最近的至多2个敌人；传播所得的燃烧不会再次传播。",
+      "flavor": "小小种壳藏着一线温热，赤色纹路像尚未抵达地面的根。灰烬并不只意味着结束，也可能是另一株生命最初的土壤；它等待的，是有人愿意替那点余温留一条前路。",
+      "image": "/games/pixelrogue/codex/relic_ember_seed-1381f9e1f33d.webp"
+    },
+    {
+      "id": "relic_star_mirror",
+      "name": "星痕镜片",
+      "kind": "buff",
+      "category": "relic",
+      "rarity": 1,
+      "description": "星痕回响：命中带有星痕的目标时回复1点魔法值；全局冷却1秒。",
+      "flavor": "破碎镜面只映出一角星空，边缘却被仔细磨得不再伤手。旅人把它留在衣袋中，提醒自己不必拥有完整的过去，也能从尚存的微光里找到继续前行的理由。",
+      "image": "/games/pixelrogue/codex/relic_star_mirror-b3959b8546ed.webp"
+    },
+    {
+      "id": "relic_wind_chime",
+      "name": "逐风铃",
+      "kind": "buff",
+      "category": "relic",
+      "rarity": 1,
+      "description": "追风扇：弹幕命中或枝散命中敌人时，当前闪避剩余冷却减少0.7秒；每次闪避最多触发一次。同名机制持有1／2／3件时，数值合计为基础的1／1.5／1.75倍；目标数、次数、持续时间与冷却不增加。附加伤害不暴击、不吸血，不递归触发装备。",
+      "flavor": "铃身轻得近乎一片薄叶，唯有疾行时才会发出清晰的回响。它从不催促疲惫的人赶路，只把每一次已然作出的决心，交还给仍在前进的脚步。",
+      "image": "/games/pixelrogue/codex/relic_wind_chime-6aabc163e055.webp"
+    },
+    {
+      "id": "relic_thorn_shard",
+      "name": "棘月碎片",
+      "kind": "buff",
+      "category": "relic",
+      "rarity": 1,
+      "description": "棘刺滞缓：棘月反击命中的敌人减速25%，持续2秒；首领减速效果减半。",
+      "flavor": "一弯银白甲片被暗棘紧紧包住，裂面仍映着温柔月色。屏障碎裂的瞬间不必只留下恐惧；有人接住了它，也记住了受保护的生命为何值得继续守望。",
+      "image": "/games/pixelrogue/codex/relic_thorn_shard-a22e8573640e.webp"
+    },
+    {
+      "id": "relic_companion_knot",
+      "name": "同行结",
+      "kind": "buff",
+      "category": "relic",
+      "rarity": 1,
+      "description": "角色四格内至少有2名友军时，每秒额外回复0.5MP。同名机制持有1／2／3件时，数值合计为基础的1／1.5／1.75倍；目标数、次数、持续时间与冷却不增加。附加伤害不暴击、不吸血，不递归触发装备。",
+      "flavor": "两条颜色不同的旧绳在这里打成牢靠的结，绳头却各自留出了余地。立约的人没有承诺永不分别，只约好在同行的时日里，认真回应身旁的脚步。",
+      "image": "/games/pixelrogue/codex/relic_companion_knot-fda6e1aa6a44.webp"
+    },
+    {
+      "id": "relic_echo_wick",
+      "name": "回声灯芯",
+      "kind": "buff",
+      "category": "relic",
+      "rarity": 1,
+      "description": "灯焰回魔：暮灯标记的目标被命中时回复3点魔法值；冷却2秒。",
+      "flavor": "灯芯早已烧短，纤维间却仍留着青白余光。它记得许多只响过一次的名字，也记得名字被温柔呼唤时，那片黑暗如何短暂地让出了位置。",
+      "image": "/games/pixelrogue/codex/relic_echo_wick-a8b346dc287d.webp"
+    },
+    {
+      "id": "relic_hunt_needle",
+      "name": "猎行针",
+      "kind": "buff",
+      "category": "relic",
+      "rarity": 1,
+      "description": "普攻命中减速目标，追加4点装备伤害；同一目标冷却1秒。同名机制持有1／2／3件时，数值合计为基础的1／1.5／1.75倍；目标数、次数、持续时间与冷却不增加。附加伤害不暴击、不吸血，不递归触发装备。",
+      "flavor": "银针细得像一线冬月，柄端系着不易察觉的青线。它纪念猎手耐心等待的时刻：枝叶可以摇动，风声可以嘈杂，真正重要的空隙终会出现。",
+      "image": "/games/pixelrogue/codex/relic_hunt_needle-2d4c8abe86fa.webp"
+    },
+    {
+      "id": "relic_tide_pearl",
+      "name": "潮汐珠",
+      "kind": "buff",
+      "category": "relic",
+      "rarity": 1,
+      "description": "潮汐回魔：施放技能后的4秒内，下一次有效普攻击中回复3点魔法值；冷却3秒。",
+      "flavor": "珠中有两道相互追逐的浅蓝水纹，掌心温暖时便缓缓交错。它不试图阻止潮落，只把潮起的方向保存下来，让每一次短暂的空缺都仍有被填满的可能。",
+      "image": "/games/pixelrogue/codex/relic_tide_pearl-04e42ffbbc82.webp"
+    },
+    {
+      "id": "relic_afterglow_note",
+      "name": "余辉手记",
+      "kind": "buff",
+      "category": "relic",
+      "rarity": 1,
+      "description": "首次进入每个尚未清理的普通房间时获得30点护盾，持续8秒；每房一次。同名机制持有1／2／3件时，数值合计为基础的1／1.5／1.75倍；目标数、次数、持续时间与冷却不增加。附加伤害不暴击、不吸血，不递归触发装备。",
+      "flavor": "纸页边缘染着灯烟，空白处挤满认真写下的提醒。那不是英雄的战报，而是一位普通旅人替后来者留下的准备；微小的经验，也能成为穿过陌路的庇护。",
+      "image": "/games/pixelrogue/codex/relic_afterglow_note-dd8aac6badab.webp"
+    },
+    {
+      "id": "relic_breaker_stone",
+      "name": "破甲石",
+      "kind": "buff",
+      "category": "relic",
+      "rarity": 2,
+      "description": "精英克星：技能直接命中精英敌人时，造成的伤害提高15%。",
+      "flavor": "石心的金色细线恰好穿过最坚硬的一层岩壳，像一道被漫长观察找到的答案。它提醒旅人，面对压倒性的威势不必只懂得正面争强；再宏伟的屏障，也有必须由判断去辨认的接缝。即使漫长岁月抹去了最初的铭文，守护的意义也仍会在新的相逢中被辨认。",
+      "image": "/games/pixelrogue/codex/relic_breaker_stone-2d3b63ad5456.webp"
+    },
+    {
+      "id": "relic_patrol_bell",
+      "name": "巡猎铃",
+      "kind": "buff",
+      "category": "relic",
+      "rarity": 2,
+      "description": "疾行施法：冲刺后的3秒内，下一次施放技能的伤害提高12%，施放时消耗。",
+      "flavor": "铜铃一侧刻着脚步，另一侧刻着张开的弓弦，细小风纹把两者连在一起。它属于懂得在移动与出手之间寻找秩序的巡行者。真正从容的战斗，从来不是站在原地等待命运靠近。那份誓约没有被写在高塔之上，而被留在仍然愿意向前的凡人手中。",
+      "image": "/games/pixelrogue/codex/relic_patrol_bell-b2722f526725.webp"
+    },
+    {
+      "id": "relic_watch_button",
+      "name": "守望纽扣",
+      "kind": "buff",
+      "category": "relic",
+      "rarity": 2,
+      "description": "守望之盾：施放技能时，为144范围内最近的至多3名没有护盾的友方单位各提供其自身最大生命8%的护盾，持续4秒。",
+      "flavor": "小小纽扣用温润铜线包住护石，看起来像旧外套上最不起眼的一处补缀。缝下它的人没有留下姓名，只在内侧写了一句话：如果你的灯仍有余光，请分给尚在黑暗里的伙伴。群星不会替旅人承担选择，却会照见那些在黑暗中仍未改变的心。",
+      "image": "/games/pixelrogue/codex/relic_watch_button-43f4bb143222.webp"
+    },
+    {
+      "id": "bow_vine_short",
+      "name": "藤纹短弓",
+      "kind": "weapon",
+      "category": "equipment",
+      "rarity": 0,
+      "description": "攻击力 +2",
+      "flavor": "浅木弓身保留着细细藤纹，弦上还系着初次练习留下的小结，朴素而可信赖。",
+      "image": "/games/pixelrogue/codex/bow_vine_short-7ddeb3109532.webp"
+    },
+    {
+      "id": "bow_lake_light",
+      "name": "湖光猎弓",
+      "kind": "weapon",
+      "category": "equipment",
+      "rarity": 2,
+      "description": "攻击 +22%、攻击速度 +6%、魔法回复速度 +6%。",
+      "flavor": "蓝色弓角像一弯落在水面的月，弦扣被露水磨得温润。它曾在无风的湖岸陪伴猎手练习，每一次松弦都以平静回应远处的动静。清晰的判断，往往出自不被恐惧扰乱的呼吸。旧日的记载可以残缺，后来者却仍拥有亲手写下下一页的权利。",
+      "image": "/games/pixelrogue/codex/bow_lake_light-9108b346e936.webp"
+    },
+    {
+      "id": "bow_spring_wind",
+      "name": "初春风弓",
+      "kind": "weapon",
+      "category": "equipment",
+      "rarity": 3,
+      "description": "攻击 +30%、攻击速度 +8%、魔法回复速度 +12%。主箭首次命中有15%概率产生0.15倍攻击的风刃，冷却0.8秒。\n春鸣循环：主普攻首个有效命中积累春鸣，最多四层、6秒。四层时基础闪避结束消耗，释放72范围、0.4倍攻击风环，并使4秒内接下来三次主普攻首次命中追加0.18倍攻击追击，向附近一敌扩散0.12倍攻击；用完回复3MP。循环冷却5秒，附加伤害不暴击、不吸血、不递归。",
+      "flavor": "新叶与白花绕着金色藤纹弓臂生长，细韧的深色弓弦在静止时也像一阵将起的风。伊露雅不再把故乡只当作必须找回的旧名，而把它理解为愿意珍惜的每一段相逢。于是，弓上的藤纹第一次长出了记录之外的新芽。它们不会替她重写已经失去的过去，却陪她在每一次转身与放箭之间，亲手守住仍然能够抵达的明天。那份誓约没有被写在高塔之上，而被留在仍然愿意向前的凡人手中。",
+      "image": "/games/pixelrogue/codex/bow_spring_wind-e33d7544c7a5.webp"
+    },
+    {
+      "id": "staff_cloud_radiance",
+      "name": "圣云流光杖",
+      "kind": "weapon",
+      "category": "equipment",
+      "rarity": 3,
+      "description": "攻击+30%、攻速+8%、MP回复+12%。普攻首个有效命中积攒一枚6秒圣云律印，最多三枚；三枚时下一个小技能消耗律印，伤害+20%，释放108范围、0.75倍攻击圣云光环，并获得8%生命护盾4秒；冷却3秒。大招不消耗律印。",
+      "flavor": "金色杖首以舒展的云焰托起澄蓝灵珠，修长杖身收拢光辉，没有垂链与流苏。希露媞雅曾以为守护就是替所有人保存同一个完美答案，后来才明白，希望也需要拥有不同的声音。她让祈愿在掌中各自成形，不再以光辉覆盖悲伤，而以清明辨认每一份真实的呼唤。那束温暖的圣光，因此终于学会陪人前行，而非要求人永远留下。那份誓约没有被写在高塔之上，而被留在仍然愿意向前的凡人手中。",
+      "image": "/games/pixelrogue/codex/staff_cloud_radiance-3169ca1a0690.webp"
+    },
+    {
+      "id": "armor_cloud_rites",
+      "name": "圣云礼衣",
+      "kind": "armor",
+      "category": "equipment",
+      "rarity": 3,
+      "description": "生命+60、攻击+10%、MP回复+18%。成功施放小技能获得最大生命12%的护盾，持续4秒、冷却6秒；护盾实际承伤回复2MP，冷却3秒。圣云护盾可辅助积累祈光，与永昼灵珠联动。",
+      "flavor": "纯白兜帽与长披帷垂落在深蓝内衬上，细金云纹沿衣缘与袖口舒展。它不属于高台上的宣告，而属于俯身倾听的祭司。希露媞雅把许多没有被说完的祈愿留在这些针脚里，提醒自己守护不是替人拒绝所有伤痛，而是在屏障被触及时，仍能清楚地回应身旁的人。圣光的温暖，由此拥有了可以被依靠的形状。回廊保存着它走过的路，也为尚未抵达的明天留着一盏安静的灯。",
+      "image": "/games/pixelrogue/codex/armor_cloud_rites-dcc66fc77bf7.webp"
+    },
+    {
+      "id": "accessory_eternal_ring",
+      "name": "永昼圣环",
+      "kind": "accessory",
+      "category": "equipment",
+      "rarity": 3,
+      "description": "攻击+14%、攻速+10%、MP回复+18%、暴击+4%。普攻首个有效命中暴击回复2MP，冷却1.5秒；6秒内护盾实际承伤累计三次，释放半径72像素、0.45倍攻击的圣辉并回复2MP，冷却3秒；同一时刻承伤每0.25秒至多计一次。",
+      "flavor": "金环托住一枚澄蓝宝石，简洁的领扣将白金兜帽的两襟合在喉前。宝石映着一份份不同的祈愿，既不彼此吞没，也不要求拥有同一个答案。希露媞雅把它扣在最接近呼吸的地方，愿每一次承担伤害的决定，都能为仍在路上的人留下一线光。所谓永昼，并不是宣告从此不再有黑夜，而是愿意在黑夜回来时再次点灯。它所守护的光并非某个被选中的名字，而是每一次自由而郑重的决定。",
+      "image": "/games/pixelrogue/codex/accessory_eternal_ring-d378d5813194.webp"
+    },
+    {
+      "id": "armor_dusk_mantle",
+      "name": "归途影衣",
+      "kind": "armor",
+      "category": "equipment",
+      "rarity": 3,
+      "description": "生命+60、攻击+12%、MP回复+18%。成功施放小技能，为最近三名友军提供其最大生命8%的护盾，持续4秒、冷却5秒；主动契约物被敌方击杀时，自身获得最大生命8%的护盾4秒，冷却4秒；自然到期和切房不触发。",
+      "flavor": "墨黑披帷衬着垂至小腿的酒红礼裙，银线幽灯纹与紫晶契铃沿衣缘垂落；赤足的脚踝系着细金链。希希芙曾把影子织得很密，想要保护每一个不肯放手的名字；后来，她终于愿意让衣角随风敞开。它如今为同行者遮挡逼近的锋芒，也在契约结束时留下温柔的余温。守护与告别不再相互敌对，因为真正被珍重的相逢，从来不需要以囚禁证明重量。那份誓约没有被写在高塔之上，而被留在仍然愿意向前的凡人手中。",
+      "image": "/games/pixelrogue/codex/armor_dusk_mantle-99f144cfefed.webp"
+    },
+    {
+      "id": "accessory_companion_bells",
+      "name": "同行契铃",
+      "kind": "accessory",
+      "category": "equipment",
+      "rarity": 3,
+      "description": "攻击+16%、攻速+12%、MP回复+12%。普攻首个有效命中使当前友军攻速+12%，持续3秒、冷却3秒；友军有效直击在4秒内累计三拍，产生半径54像素、0.35倍角色攻击的幽灯共鸣，冷却2秒；范围攻击及齐射每0.25秒至多计一拍。",
+      "flavor": "一对契铃系在酒红缎带与银链之间，各自保留着不同的音色。希希芙曾仔细聆听每一份契约的回应，才知道齐声并不意味着失去自己的旋律。铃声响起时，那些独立而自由的意志会在战线中短暂相认。它所赞颂的不是谁能召来更多追随者，而是谁愿意在最危险的瞬间，把伙伴的声音认真放在心上。旧日的记载可以残缺，后来者却仍拥有亲手写下下一页的权利。",
+      "image": "/games/pixelrogue/codex/accessory_companion_bells-47344bc77ef0.webp"
+    },
+    {
+      "id": "armor_lakeleaf_hunt",
+      "name": "湖叶游猎衣",
+      "kind": "armor",
+      "category": "equipment",
+      "rarity": 3,
+      "description": "生命+55、攻速+10%、MP回复+12%、移速+10%。闪避结束获得最大生命8%的护盾，持续2秒、冷却5秒；持盾时主普攻首个有效命中累计四次，产生半径54像素、0.45倍攻击的风环并回复2MP，冷却2秒，相邻命中间隔不超过5秒。",
+      "flavor": "白绿相叠的猎衣缀着金色叶脉与白花，棕色皮革束带收住随风展开的衣摆。伊露雅把远行后第一次采到的新叶缝在衣襟里，叶色渐淡，脚步却愈加坚定。她不再要求每一次回望都能看见故乡原来的模样，而学会在新的道路上保护自己，也保护愿意与她同行的人。那圈随身而起的风，既是猎手的判断，也是对未来从未松开的信任。旧日的记载可以残缺，后来者却仍拥有亲手写下下一页的权利。",
+      "image": "/games/pixelrogue/codex/armor_lakeleaf_hunt-18ec9d6661f9.webp"
+    },
+    {
+      "id": "accessory_moonwind_chime",
+      "name": "花叶誓坠",
+      "kind": "accessory",
+      "category": "equipment",
+      "rarity": 3,
+      "description": "攻击+16%、MP回复+18%、暴击+8%、基础闪避冷却-12%。普攻首个有效命中暴击，返还当前闪避剩余冷却15%，冷却1秒；闪避结束使4秒内下两次主普攻首个命中追加0.22倍攻击的月风，并各返还0.2秒闪避冷却，冷却5秒。",
+      "flavor": "白花与金叶在衣领相扣，轻巧的誓坠贴着猎衣，不以铃声催促前行的人。伊露雅愿意记住同行时说过的话，也为后来改变的心意留下余地。花会再开，叶会转向新的阳光；约定的意义，在于她仍能亲自选择下一段路。每一次离开原处，都不是背离，而是为了更清楚地记住眼前的光。即使漫长岁月抹去了最初的铭文，守护的意义也仍会在新的相逢中被辨认。",
+      "image": "/games/pixelrogue/codex/accessory_moonwind_chime-8f43de2f8308.webp"
+    },
+    {
+      "id": "staff_tide_prayer",
+      "name": "回澜祭杖",
+      "kind": "weapon",
+      "category": "equipment",
+      "rarity": 2,
+      "description": "持有护盾时，三次主普攻首个有效命中释放42范围、0.2倍攻击澜环并回复2MP，冷却2秒。",
+      "flavor": "浅蓝杖身留着水纹，银色杖环如同收束的潮线。持杖者曾在被遗忘的渡口守候，反复确认每一位旅人都已登岸。后来潮水带走了路碑，祭杖仍记得那份把散乱力量重新引回秩序的耐心。那份誓约没有被写在高塔之上，而被留在仍然愿意向前的凡人手中。",
+      "image": "/games/pixelrogue/codex/staff_tide_prayer-d52b77cb57f9.webp"
+    },
+    {
+      "id": "staff_shadow_stitch",
+      "name": "影缝枝杖",
+      "kind": "weapon",
+      "category": "equipment",
+      "rarity": 2,
+      "description": "主普攻首个有效命中时，若目标108范围有友军，追加0.18倍攻击影缝伤害，冷却1.5秒。",
+      "flavor": "一根深色枝条被细密幽光缝合，裂口处反而长出柔软的新芽。它并不否认曾经的断裂，而承认相互扶持也能成为完整的一种方式。灯影交错时，孤单的脚步便有了可以信赖的回应。旧日的记载可以残缺，后来者却仍拥有亲手写下下一页的权利。",
+      "image": "/games/pixelrogue/codex/staff_shadow_stitch-19c8e597101f.webp"
+    },
+    {
+      "id": "bow_willow",
+      "name": "柳弦短弓",
+      "kind": "weapon",
+      "category": "equipment",
+      "rarity": 2,
+      "description": "移动中主普攻首个有效命中回复2MP，冷却2秒。",
+      "flavor": "柳枝被仔细弯成弓臂，浅绿细线像一段尚未停歇的水流。它属于会沿着河岸反复练习的猎手，宁可花很长时间学会判断，也不肯让一次莽撞的松弦惊扰本可平安离开的生命。愿持有它的人记得来路的重量，也记得自己始终可以选择怎样抵达远方。",
+      "image": "/games/pixelrogue/codex/bow_willow-062341a8c439.webp"
+    },
+    {
+      "id": "armor_oath_trace",
+      "name": "誓痕护衣",
+      "kind": "armor",
+      "category": "equipment",
+      "rarity": 2,
+      "description": "自身护盾因实际承伤破裂时回复4MP，冷却5秒；自然到期不触发。",
+      "flavor": "褪色誓文贴着衣料一道道展开，最深的痕迹都留在容易承受冲击的位置。穿戴它的人没有把失守当作背弃，而从每一次破损中重新确认自己的选择。誓言的价值，在于再次起身时仍肯承担。回廊保存着它走过的路，也为尚未抵达的明天留着一盏安静的灯。",
+      "image": "/games/pixelrogue/codex/armor_oath_trace-d2514eed3a3d.webp"
+    },
+    {
+      "id": "accessory_silver_return",
+      "name": "归航银坠",
+      "kind": "accessory",
+      "category": "equipment",
+      "rarity": 2,
+      "description": "基础闪避结束回复3MP，冷却5秒。",
+      "flavor": "银坠里藏着一段弯曲的旧航线，终点并不位于任何王城。它曾陪伴漂泊者回到一座普通的灯下，也曾被交给另一位即将离开的旅人。归来不是结束远行，而是让下次出发仍有可被信任的方向。即使漫长岁月抹去了最初的铭文，守护的意义也仍会在新的相逢中被辨认。",
+      "image": "/games/pixelrogue/codex/accessory_silver_return-ca12ff9e6f2a.webp"
+    },
+    {
+      "id": "accessory_wind_listen",
+      "name": "听风护符",
+      "kind": "accessory",
+      "category": "equipment",
+      "rarity": 2,
+      "description": "主普攻首个有效命中距离自身超过144的目标，追加0.08倍攻击伤害，冷却1.25秒。",
+      "flavor": "细孔穿过青色护石，风经过时只留下一声极轻的回响。它不替猎手制造从未存在的机会，而教人听见嘈杂背后细小却真实的变化。看似漫长的距离，有时正是判断得以从容展开的地方。那份誓约没有被写在高塔之上，而被留在仍然愿意向前的凡人手中。",
+      "image": "/games/pixelrogue/codex/accessory_wind_listen-4bc5989d4bd8.webp"
+    },
+    {
+      "id": "relic_late_clock",
+      "name": "迟钟碎片",
+      "kind": "buff",
+      "category": "relic",
+      "rarity": 1,
+      "description": "主普攻首个有效命中，使剩余冷却最长的小技能缩短0.15秒，冷却1秒；不影响大招。",
+      "flavor": "铜片上只剩半个刻度，裂缝却被细心磨平。它提醒旅人，迟到的钟声仍然可以被听见；只要下一次行动仍由自己决定，失去的片刻就不必成为永远的停滞。",
+      "image": "/games/pixelrogue/codex/relic_late_clock-83e7aae6a7f2.webp"
+    },
+    {
+      "id": "relic_mist_dew",
+      "name": "雾露瓶",
+      "kind": "buff",
+      "category": "relic",
+      "rarity": 1,
+      "description": "生命低于50%时，小技能直击命中恢复3点生命，冷却3秒；无法恢复生命伤痕。同名机制持有1／2／3件时，数值合计为基础的1／1.5／1.75倍；目标数、次数、持续时间与冷却不增加。附加伤害不暴击、不吸血，不递归触发装备。",
+      "flavor": "窄瓶收着一滴安静的林间晨露，轻晃时仿佛又有清雾升起。采集它的人把最珍贵的露水留给后来者，愿那只疲惫的手，在重新举起武器前得到片刻温柔。",
+      "image": "/games/pixelrogue/codex/relic_mist_dew-0a9c77f7ecb6.webp"
+    },
+    {
+      "id": "relic_half_star",
+      "name": "半枚航星",
+      "kind": "buff",
+      "category": "relic",
+      "rarity": 1,
+      "description": "闪避结束后5秒内，下一次主普攻首次有效命中回复2MP并追加3.5点装备伤害，冷却3秒，不叠加。同名机制持有1／2／3件时，数值合计为基础的1／1.5／1.75倍；目标数、次数、持续时间与冷却不增加。附加伤害不暴击、不吸血，不递归触发装备。",
+      "flavor": "旧星徽从中间折断，只剩一侧仍有银光。持有它的旅人没有急着寻找另一半，而让这片残缺陪自己继续赶路；未曾完整，也并不意味着不能指引归途。",
+      "image": "/games/pixelrogue/codex/relic_half_star-61d4f7073bc2.webp"
+    },
+    {
+      "id": "relic_lamp_tassel",
+      "name": "绒灯穗",
+      "kind": "buff",
+      "category": "relic",
+      "rarity": 1,
+      "description": "自身144范围内的友军有效直击敌人时回复1MP，全局冷却1秒。",
+      "flavor": "柔软灯穗上系着几段颜色不同的旧线，像许多旅途留下的小小回声。它不愿让最安静的同行者被战线遗忘，便把每一份认真回应，都织进身旁那点不肯熄灭的暖光。",
+      "image": "/games/pixelrogue/codex/relic_lamp_tassel-56ee803676c8.webp"
+    },
+    {
+      "id": "relic_broken_verse",
+      "name": "断弦诗页",
+      "kind": "buff",
+      "category": "relic",
+      "rarity": 1,
+      "description": "主普攻首次有效命中暴击时获得9点护盾，持续2秒，冷却5秒；护盾取较强值。同名机制持有1／2／3件时，数值合计为基础的1／1.5／1.75倍；目标数、次数、持续时间与冷却不增加。附加伤害不暴击、不吸血，不递归触发装备。",
+      "flavor": "纸页上记着一段尚未写完的旋律，断弦被折进了空白处。后来读到它的人没有补上终章，而把新的相逢写在旁边；失去的声音，也可以为尚未响起的歌留出位置。",
+      "image": "/games/pixelrogue/codex/relic_broken_verse-377c816d384b.webp"
+    },
+    {
+      "id": "relic_leaf_page",
+      "name": "游叶书签",
+      "kind": "buff",
+      "category": "relic",
+      "rarity": 1,
+      "description": "6秒内成功施放三个不同小技能，强化4秒内下一次小技能直击，释放一格范围、6点装备伤害的叶刃，冷却4秒。同名机制持有1／2／3件时，数值合计为基础的1／1.5／1.75倍；目标数、次数、持续时间与冷却不增加。附加伤害不暴击、不吸血，不递归触发装备。",
+      "flavor": "一片被压平的长叶守在旧书中间，叶脉像三条相互交错的小路。它记得旅人曾经反复翻阅的疑问，也记得那些答案最终如何在不同的行动之间慢慢连接成形。",
+      "image": "/games/pixelrogue/codex/relic_leaf_page-193090b37300.webp"
+    },
+    {
+      "id": "armor_storm_conductor",
+      "name": "雷律战衣",
+      "kind": "armor",
+      "category": "equipment",
+      "rarity": 3,
+      "description": "最大生命+50、攻击+10%、MP回复速度+12%。每次普攻首次有效命中积累一拍；相邻命中间隔不超过4秒。第四拍在目标周围72像素引发攻击力55%的雷律波，冷却1.5秒。冷却期间不积拍。",
+      "flavor": "银蓝衣纹仿佛一段正在展开的雷霆乐章，沉重的力量被整齐收束在细密针脚之间。它曾被误认为只属于轰鸣与毁灭，直到持有者用准确的节拍护住了一条濒临崩溃的战线。雷光没有因此变得温顺，却第一次拥有了清晰的方向。每一次认真而持续的出手，都在为下一段足以照亮黑暗的回响积蓄重量。真正值得传承的力量，从不止于赢下一场战斗，更在于为何继续前行。",
+      "image": "/games/pixelrogue/codex/armor_storm_conductor-c498f61c4e7c.webp"
+    },
+    {
+      "id": "accessory_counterbeat",
+      "name": "逆拍银坠",
+      "kind": "accessory",
+      "category": "equipment",
+      "rarity": 2,
+      "description": "攻击+10%、MP回复速度+8%。成功施放小技能后，4秒内下一次普攻首次有效命中追加攻击力22%的装备伤害；重复施放刷新，不储存次数。",
+      "flavor": "银坠的两个摆臂从不同时抵达中央，却总能在交错时发出清亮共鸣。它纪念施法与松弦之间那段短暂空隙，也纪念旅人不肯被单一节奏束缚的意志。变化并非混乱，有时恰是重新掌握主动的开端。它所承载的光并不属于某个被选中的名字，而属于每一次自由而郑重的决定。",
+      "image": "/games/pixelrogue/codex/accessory_counterbeat-38904ceef526.webp"
+    },
+    {
+      "id": "armor_mana_reservoir",
+      "name": "深澜法袍",
+      "kind": "armor",
+      "category": "equipment",
+      "rarity": 3,
+      "description": "最大生命+50、攻击+10%、MP回复速度+12%。成功施放小技能后，若剩余MP不少于50%，获得1层澜晶，最多3层，持续8秒。普攻首次有效命中消耗1层，追加攻击力30%的装备伤害并回复2MP，触发间隔0.8秒。",
+      "flavor": "衣料深处仿佛收着一片没有喧哗的海，浅蓝织纹在每次呼吸间缓缓明灭。旧日施法者曾不断追逐更浩大的声势，直到魔力枯竭的长夜教会她珍惜每一滴仍可调度的微光。于是这件法袍不再赞颂无止境的倾泻，而把充盈与回转织成同一段秩序。真正深沉的力量，既懂得施展，也懂得为下一次守望留下余地。即使漫长岁月抹去了最初的铭文，守护的意义也仍会在新的相逢中被辨认。",
+      "image": "/games/pixelrogue/codex/armor_mana_reservoir-a0fa93739e78.webp"
+    },
+    {
+      "id": "accessory_last_flame",
+      "name": "余烛护符",
+      "kind": "accessory",
+      "category": "equipment",
+      "rarity": 2,
+      "description": "攻击+10%、MP回复速度+8%。成功施放小技能后，若剩余MP低于30%，获得最大生命8%的护盾，持续4秒，冷却8秒。",
+      "flavor": "一截细小蜡烛被包在旧铜框里，火舌映出温暖却并不安逸的颜色。它曾在最疲惫的时刻被交到旅人手中，没有宏大的承诺，只有一份清楚的心意：力量将尽时，也值得有人替你守住片刻。群星不会替旅人承担选择，却会照见那些在黑暗中仍未改变的心。",
+      "image": "/games/pixelrogue/codex/accessory_last_flame-a66c16828af9.webp"
+    },
+    {
+      "id": "armor_orbit_guard",
+      "name": "环星护衣",
+      "kind": "armor",
+      "category": "equipment",
+      "rarity": 2,
+      "description": "最大生命+30、MP回复速度+8%。角色144像素内的友军有效直击累计4拍，获得最大生命5%的护盾，持续4秒、冷却5秒。相邻拍间隔不超过4秒；同一时刻的范围攻击与齐射每0.2秒至多计一拍。",
+      "flavor": "数道细银环绕着衣襟交错展开，每一圈都留着不同的微光。它不把伙伴的贡献写成谁的附庸，而把那些彼此回应的出手织成一道共同的屏障。被守护的人，也正在以自己的方式参与守望。群星不会替旅人承担选择，却会照见那些在黑暗中仍未改变的心。",
+      "image": "/games/pixelrogue/codex/armor_orbit_guard-621ba2a167a2.webp"
+    },
+    {
+      "id": "accessory_cadence_prism",
+      "name": "交响棱心",
+      "kind": "accessory",
+      "category": "equipment",
+      "rarity": 3,
+      "description": "攻击+20%、攻击速度+8%、MP回复速度+12%。普攻首次有效命中与主动技能直击交替发生时积累协鸣。首次命中确定声部，每次换声部积累1层；同声部连续命中不增加或刷新。3层后在目标周围72像素爆发攻击力65%的交响波，冷却2秒。每次有效换声部将宽限刷新为4秒。",
+      "flavor": "晶体内部没有居于中央的唯一光源，数道颜色不同的光在交替中共同托起了明亮的核心。它曾来自试图保存全部声音的观测装置，却在记录崩毁之后保留了另一种启示：完整不必意味着所有人同时奏出同一个音符。挥杖、放箭与祈愿可以各自展开，正因为保有不同的节奏，才有机会汇成真正超越孤身之力的交响。愿持有它的人记得来路的重量，也记得自己始终可以选择怎样抵达远方。",
+      "image": "/games/pixelrogue/codex/accessory_cadence_prism-072e064c3ae1.webp"
+    },
+    {
+      "id": "relic_copper_metre",
+      "name": "铜律节拍器",
+      "kind": "buff",
+      "category": "relic",
+      "rarity": 1,
+      "description": "普攻首次有效命中累计4拍后回复2MP，并使该目标减速20%、持续2秒，首领减半；相邻拍间隔不超过4秒，触发冷却1秒。 同名遗物持有1／2／3件时，数值效果为100%/150%/175%；次数、层数、范围与冷却不变。",
+      "flavor": "细小铜摆在两道刻痕之间往返，像行军途中始终没有落下的脚步。它不会替谁奏出胜利的终章，只把一次次稳定的行动，累积成可以抵御慌乱的秩序。",
+      "image": "/games/pixelrogue/codex/relic_copper_metre-673afd62856d.webp"
+    },
+    {
+      "id": "relic_aftertone",
+      "name": "返音石",
+      "kind": "buff",
+      "category": "relic",
+      "rarity": 2,
+      "description": "主动技能直击减速目标时，追加攻击力14%的装备伤害，全局冷却1.5秒。 同名遗物持有1／2／3件时，数值效果为100%/150%/175%；次数、层数、范围与冷却不变。",
+      "flavor": "石纹像被保存下来的声波，一圈圈向安静的中心收束。它属于懂得等待回响的施法者，愿意先看清敌阵的迟滞，再把下一段咒文送进真正重要的空隙。力量因此有了被认真听见的机会。即使漫长岁月抹去了最初的铭文，守护的意义也仍会在新的相逢中被辨认。",
+      "image": "/games/pixelrogue/codex/relic_aftertone-bb2fa8572a79.webp"
+    },
+    {
+      "id": "relic_dew_battery",
+      "name": "露华蓄晶",
+      "kind": "buff",
+      "category": "relic",
+      "rarity": 1,
+      "description": "成功施放小技能后，若剩余MP不少于50%，4秒内下一次普攻首次有效命中回复3MP，冷却3秒。强化不储存。 同名遗物持有1／2／3件时，数值效果为100%/150%/175%；次数、层数、范围与冷却不变。",
+      "flavor": "淡青晶面上总留着露水般的微光，哪怕掌心已经不再充盈。旅人把它比作一只耐心的小杯，记下丰裕时得到的余泽，也在下一次需要出手时，替持有者留住一点从容。",
+      "image": "/games/pixelrogue/codex/relic_dew_battery-4a5c85a903d6.webp"
+    },
+    {
+      "id": "relic_dry_wick",
+      "name": "未熄灯芯",
+      "kind": "buff",
+      "category": "relic",
+      "rarity": 1,
+      "description": "MP低于30%时，主动技能有效直击回复3MP，全局冷却3秒。 同名遗物持有1／2／3件时，数值效果为100%/150%/175%；次数、层数、范围与冷却不变。",
+      "flavor": "焦黑纤维深处还藏着极细的一线暖光，仿佛一句没有说尽的鼓励。它不许诺漫长的夜会立刻结束，只提醒仍在战斗的人：微小的余力，也值得被认真接住。",
+      "image": "/games/pixelrogue/codex/relic_dry_wick-5e8ae6338e0c.webp"
+    },
+    {
+      "id": "relic_sentinel_thread",
+      "name": "守望纺线",
+      "kind": "buff",
+      "category": "relic",
+      "rarity": 2,
+      "description": "自身护盾因承伤耗尽后，4秒内下一次普攻首次有效命中追加攻击力18%的装备伤害，并为144像素内最近一名友军提供其最大生命8%的护盾、持续4秒。无友军时仍造成追加伤害，触发冷却4秒。 同名遗物持有1／2／3件时，数值效果为100%/150%/175%；次数、层数、范围与冷却不变。",
+      "flavor": "纺线的一端染着自己的血色，另一端却仍是温和的青白。它被留给那些在屏障破碎之后，仍愿先看一眼同伴的人。真正的守望并不会因为一场失守而终止，只会寻找另一种能够抵达彼此的方式。它所承载的光并不属于某个被选中的名字，而属于每一次自由而郑重的决定。",
+      "image": "/games/pixelrogue/codex/relic_sentinel_thread-759166ede15e.webp"
+    },
+    {
+      "id": "relic_wayfarer_score",
+      "name": "旅伴乐谱",
+      "kind": "buff",
+      "category": "relic",
+      "rarity": 1,
+      "description": "角色144像素内友军的有效直击累计4拍后回复2MP，冷却2秒；相邻拍间隔不超过4秒，同一时刻的范围攻击与齐射每0.2秒至多计一拍。 同名遗物持有1／2／3件时，数值效果为100%/150%/175%；次数、层数、范围与冷却不变。",
+      "flavor": "谱页上没有独奏者的姓名，空白声部被认真留在每一行末尾。旅人经过时可以写下一小段自己的旋律，离开时也不必把它抹去；相逢过的声音，总有再次被听见的资格。",
+      "image": "/games/pixelrogue/codex/relic_wayfarer_score-ae3e5e8a82c3.webp"
+    },
+    {
+      "id": "relic_ash_compass",
+      "name": "苍烬罗盘",
+      "kind": "buff",
+      "category": "relic",
+      "rarity": 2,
+      "description": "普攻首个有效命中燃烧目标，追加0.14倍攻击伤害并减速20%，持续2秒，冷却1.5秒。 同名遗物持有1／2／3件时，数值效果为100%/150%/175%；次数、目标数、范围与冷却不变。",
+      "flavor": "罗盘不再追逐北方，而指向尚存余温的焦土。焦黑铜环曾被遗落在林火之后，新的持有者却在那里看见了仍未熄灭的生命。它所寻找的不是更盛大的焚毁，而是灰烬之间足以改变局面的那道缝隙。真正值得传承的力量，从不止于赢下一场战斗，更在于为何继续前行。",
+      "image": "/games/pixelrogue/codex/relic_ash_compass-c3e7cf27e1f7.webp"
+    },
+    {
+      "id": "relic_frost_petal",
+      "name": "霜枝花瓣",
+      "kind": "buff",
+      "category": "relic",
+      "rarity": 1,
+      "description": "直接主动技能命中减速目标，将25%减速传递给其108像素内最近两名其他敌人，持续2秒，冷却3秒；传播不递归。 同名遗物持有1／2／3件时，数值效果为100%/150%/175%；次数、目标数、范围与冷却不变。",
+      "flavor": "冰蓝花瓣抱着一截细小银枝，边缘的寒意格外安静。它像林地留给急行者的一次停顿，提醒所有追逐：越是紧迫的时刻，越需要看清彼此之间仍然相连的距离。",
+      "image": "/games/pixelrogue/codex/relic_frost_petal-89de0b779736.webp"
+    },
+    {
+      "id": "relic_amber_pendulum",
+      "name": "琥珀摆锤",
+      "kind": "buff",
+      "category": "relic",
+      "rarity": 2,
+      "description": "普攻首个有效命中暴击，使4秒内下一次小技能伤害增加16%，施放消耗，冷却6秒。 同名遗物持有1／2／3件时，数值效果为100%/150%/175%；次数、目标数、范围与冷却不变。",
+      "flavor": "琥珀里封着一道尚未来得及散去的金芒，细银摆臂则始终保持着克制的弧度。它纪念一次准确出手之后的判断，而不把成功当作下一次莽撞的理由。短暂的优势，唯有被郑重接续，才有机会成为改变战局的力量。真正值得传承的力量，从不止于赢下一场战斗，更在于为何继续前行。",
+      "image": "/games/pixelrogue/codex/relic_amber_pendulum-8cea9e8ae275.webp"
+    },
+    {
+      "id": "relic_root_talisman",
+      "name": "归根护符",
+      "kind": "buff",
+      "category": "relic",
+      "rarity": 1,
+      "description": "护盾因承伤耗尽时，减少当前闪避剩余冷却0.4秒，并使108像素内最近三名敌人减速20%，持续2秒，冷却6秒。 同名遗物持有1／2／3件时，数值效果为100%/150%/175%；次数、目标数、范围与冷却不变。",
+      "flavor": "细根缠绕着一块已经裂开的护石，绿色新芽却从裂隙最深处伸出。它记得屏障曾经存在，也提醒旅人：失去庇护之后，仍然可以把脚步重新交还给自己。",
+      "image": "/games/pixelrogue/codex/relic_root_talisman-ee884122c084.webp"
+    },
+    {
+      "id": "relic_empty_lamp_note",
+      "name": "空灯信笺",
+      "kind": "buff",
+      "category": "relic",
+      "rarity": 1,
+      "description": "角色144像素内的敌人死亡时回复2MP，冷却2秒；训练目标不触发。 同名遗物持有1／2／3件时，数值效果为100%/150%/175%；次数、目标数、范围与冷却不变。",
+      "flavor": "没有署名的信被折成一盏小灯，封蜡里留着一缕青白余光。寄信人没有要求谁永远停留，只愿收到它的人，在战火稍歇时仍能想起，那些陪自己走过黑暗的名字。",
+      "image": "/games/pixelrogue/codex/relic_empty_lamp_note-07cf7e089fe9.webp"
+    },
+    {
+      "id": "relic_tide_seals",
+      "name": "潮汐双印",
+      "kind": "buff",
+      "category": "relic",
+      "rarity": 2,
+      "description": "直接主动技能在1秒内命中两名不同敌人，获得最大生命4%的护盾，持续3秒，冷却3秒；同一目标的多段命中只记一次。 同名遗物持有1／2／3件时，数值效果为100%/150%/175%；次数、目标数、范围与冷却不变。",
+      "flavor": "一枚石印刻着潮起，另一枚刻着潮落，青银水纹把两者温柔连接。它们曾被分开放在失去联系的岸边，直到旅人重新走通那段被遗忘的路。如今这对印记提醒施法者，能够触及不同的声音，才能守住更完整的回应。回廊保存着它走过的路，也为尚未抵达的明天留着一盏安静的灯。",
+      "image": "/games/pixelrogue/codex/relic_tide_seals-03ebf98ac34e.webp"
+    },
+    {
+      "id": "relic_quartz_moth",
+      "name": "晶翼夜蛾",
+      "kind": "buff",
+      "category": "relic",
+      "rarity": 1,
+      "description": "MP低于30%时，普攻首次有效命中追加7点装备伤害并回复1MP，冷却2秒。同名机制持有1／2／3件时，数值合计为基础的1／1.5／1.75倍；目标数、次数、持续时间与冷却不增加。附加伤害不暴击、不吸血，不递归触发装备。",
+      "flavor": "紫晶翅膀像两片被夜色打磨过的星屑，最微弱的光也足以让它振翅。它不等太阳升起才寻找方向，愿这份小小的勇气，也能陪伴那些力量将尽却仍未停步的人。",
+      "image": "/games/pixelrogue/codex/relic_quartz_moth-fb7e6b48d9e8.webp"
+    },
+    {
+      "id": "relic_moss_heart",
+      "name": "苔庭心石",
+      "kind": "buff",
+      "category": "relic",
+      "rarity": 2,
+      "description": "连续站定1.5秒且360像素内存在可见敌人时，获得最大生命4%的护盾，持续3秒，冷却8秒；移动会重置站定计时。 同名遗物持有1／2／3件时，数值效果为100%/150%/175%；次数、目标数、范围与冷却不变。",
+      "flavor": "细苔把石心裂隙缓缓填满，藤根却没有因此掩去旧日的伤痕。它曾在荒废庭院里度过许多无人经过的季节，终于学会让安静也拥有力量。站稳并不总意味着迟疑，有时是在为下一次不得不面对的风暴认真扎根。旧日的记载可以残缺，后来者却仍拥有亲手写下下一页的权利。",
+      "image": "/games/pixelrogue/codex/relic_moss_heart-df3170e01fb2.webp"
+    },
+    {
+      "id": "staff_waylight",
+      "name": "守灯木杖",
+      "kind": "weapon",
+      "category": "equipment",
+      "rarity": 0,
+      "description": "攻击力 +2；魔法回复 +0.1/秒",
+      "flavor": "灯珠虽小，仍能替晚归的人辨认脚边的路。",
+      "image": "/games/pixelrogue/codex/staff_waylight-75226b035da0.webp"
+    },
+    {
+      "id": "staff_threadroot",
+      "name": "结枝短杖",
+      "kind": "weapon",
+      "category": "equipment",
+      "rarity": 0,
+      "description": "攻击力 +2；攻击速度 +0.05",
+      "flavor": "细线绕过旧枝的裂隙，为每一次轻声呼唤留出回响。",
+      "image": "/games/pixelrogue/codex/staff_threadroot-946a4bb4183b.webp"
+    },
+    {
+      "id": "bow_reed",
+      "name": "芦苇短弓",
+      "kind": "weapon",
+      "category": "equipment",
+      "rarity": 0,
+      "description": "攻击力 +2；攻击速度 +0.05",
+      "flavor": "苇秆经冬风吹干，松弦时仍保留着水岸的轻响。",
+      "image": "/games/pixelrogue/codex/bow_reed-cc7cb05ba5d0.webp"
+    },
+    {
+      "id": "bow_hazel",
+      "name": "榛木行弓",
+      "kind": "weapon",
+      "category": "equipment",
+      "rarity": 0,
+      "description": "暴击率 +2%；攻击力 +2",
+      "flavor": "枝梢还留着一片叶，箭尖已经认准前方的路。",
+      "image": "/games/pixelrogue/codex/bow_hazel-60be376ff22c.webp"
+    },
+    {
+      "id": "armor_padded",
+      "name": "衬棉行衣",
+      "kind": "armor",
+      "category": "equipment",
+      "rarity": 0,
+      "description": "生命上限 +22；魔法回复 +0.1/秒",
+      "flavor": "粗布下缝着旧棉，温暖总比旅人想象得更结实。",
+      "image": "/games/pixelrogue/codex/armor_padded-d9ff38fcee27.webp"
+    },
+    {
+      "id": "armor_wickcloth",
+      "name": "灯芯布袍",
+      "kind": "armor",
+      "category": "equipment",
+      "rarity": 0,
+      "description": "生命上限 +18；魔法回复 +0.2/秒",
+      "flavor": "袖口藏着一截干燥灯芯，提醒持有者为自己留一点余力。",
+      "image": "/games/pixelrogue/codex/armor_wickcloth-16647bf4694e.webp"
+    },
+    {
+      "id": "armor_mossleather",
+      "name": "苔纹皮衣",
+      "kind": "armor",
+      "category": "equipment",
+      "rarity": 0,
+      "description": "生命上限 +18；攻击速度 +0.06",
+      "flavor": "苔纹染进皮面，衣角掠过草丛时几乎没有声音。",
+      "image": "/games/pixelrogue/codex/armor_mossleather-8fb352f965b0.webp"
+    },
+    {
+      "id": "armor_riveted",
+      "name": "铆片护衣",
+      "kind": "armor",
+      "category": "equipment",
+      "rarity": 0,
+      "description": "生命上限 +26；反伤 +2",
+      "flavor": "每一枚铆片都经过敲实，替尚不熟练的脚步守住胸前。",
+      "image": "/games/pixelrogue/codex/armor_riveted-f97941ea9c3f.webp"
+    },
+    {
+      "id": "accessory_copperleaf",
+      "name": "铜叶扣",
+      "kind": "accessory",
+      "category": "equipment",
+      "rarity": 0,
+      "description": "攻击力 +1.5；攻击速度 +0.05",
+      "flavor": "铜叶磨去了锋口，仍把出发时的风扣在衣襟。",
+      "image": "/games/pixelrogue/codex/accessory_copperleaf-6e90b2fa531c.webp"
+    },
+    {
+      "id": "accessory_smallvial",
+      "name": "清露坠瓶",
+      "kind": "accessory",
+      "category": "equipment",
+      "rarity": 0,
+      "description": "生命上限 +8；魔法回复 +0.2/秒",
+      "flavor": "一小滴清露封在瓶中，像未被长夜耗尽的耐心。",
+      "image": "/games/pixelrogue/codex/accessory_smallvial-636d49696f83.webp"
+    },
+    {
+      "id": "accessory_bonetie",
+      "name": "骨结环",
+      "kind": "accessory",
+      "category": "equipment",
+      "rarity": 0,
+      "description": "攻击力 +1；魔法回复 +0.1/秒",
+      "flavor": "断骨被细线认真系好，留下的只有约定，没有命令。",
+      "image": "/games/pixelrogue/codex/accessory_bonetie-fae51c6bbef7.webp"
+    },
+    {
+      "id": "accessory_waxstar",
+      "name": "蜡星徽",
+      "kind": "accessory",
+      "category": "equipment",
+      "rarity": 0,
+      "description": "暴击率 +2.5%；攻击力 +1",
+      "flavor": "蜡印已不辨姓名，星形的轮廓仍指向归途。",
+      "image": "/games/pixelrogue/codex/accessory_waxstar-7b9c18da7b46.webp"
+    },
+    {
+      "id": "staff_dawnbranch",
+      "name": "晨枝祷杖",
+      "kind": "weapon",
+      "category": "equipment",
+      "rarity": 1,
+      "description": "攻击力 +5.5；魔法回复 +0.2/秒",
+      "flavor": "晨辉曾在枯枝上停留一夜。后来人将那道光封入杖心，不求照亮整个世界，只愿每一句尚未说完的祈愿都能被听见。",
+      "image": "/games/pixelrogue/codex/staff_dawnbranch-1df0bf17d614.webp"
+    },
+    {
+      "id": "staff_littlebell",
+      "name": "幽铃短杖",
+      "kind": "weapon",
+      "category": "equipment",
+      "rarity": 1,
+      "description": "攻击力 +5；攻击速度 +0.11",
+      "flavor": "杖端小铃不用风吹便会轻响。那是同行者彼此辨认的暗号，既不催促离去的人，也不让愿意留下的人独自面对黑夜。",
+      "image": "/games/pixelrogue/codex/staff_littlebell-4a3ff37c2de9.webp"
+    },
+    {
+      "id": "bow_raincord",
+      "name": "听雨弦弓",
+      "kind": "weapon",
+      "category": "equipment",
+      "rarity": 1,
+      "description": "攻击力 +6；攻击速度 +0.09",
+      "flavor": "雨滴沿银弦滑落，恰好落在两次呼吸之间。老猎手以它练习耐心，后来者则学会把每一次稳妥出手都当成对旅伴的回答。",
+      "image": "/games/pixelrogue/codex/bow_raincord-555c315531f9.webp"
+    },
+    {
+      "id": "bow_moonbud",
+      "name": "月芽猎弓",
+      "kind": "weapon",
+      "category": "equipment",
+      "rarity": 1,
+      "description": "暴击率 +4%；攻击力 +6",
+      "flavor": "新芽长在弓背的旧伤上，月光替它描出细细的银边。它不承诺箭箭命中，只将持弓者认真看过的方向，藏进最后一次松弦。",
+      "image": "/games/pixelrogue/codex/bow_moonbud-3b77f9ab9433.webp"
+    },
+    {
+      "id": "armor_leafquilt",
+      "name": "叶缝猎衣",
+      "kind": "armor",
+      "category": "equipment",
+      "rarity": 1,
+      "description": "生命上限 +30；攻击速度 +0.09；移动速度 +5",
+      "flavor": "叶脉针脚顺着肩背延伸，柔软衬里却不妨碍拉弓。林地的裁缝相信，护住一个人，也该为她留出转身迎风的余地。",
+      "image": "/games/pixelrogue/codex/armor_leafquilt-3016e64871c3.webp"
+    },
+    {
+      "id": "armor_riverweave",
+      "name": "溪纹法衣",
+      "kind": "armor",
+      "category": "equipment",
+      "rarity": 1,
+      "description": "生命上限 +30；魔法回复 +0.4/秒",
+      "flavor": "溪水纹在衣摆层层展开，像一封始终流向下游的信。穿过漫长旱季的人，将尚存的清凉缝在这里，交给下一位远行者。",
+      "image": "/games/pixelrogue/codex/armor_riverweave-92f3a25f3182.webp"
+    },
+    {
+      "id": "armor_lamplining",
+      "name": "护灯衬甲",
+      "kind": "armor",
+      "category": "equipment",
+      "rarity": 1,
+      "description": "生命上限 +35；攻击力 +1.5；魔法回复 +0.2/秒",
+      "flavor": "胸前灯匣隔着银片微微发暖，外面的风却吹不进去。它纪念那些没有站上高塔、仍在街角替归来者守灯的普通人。",
+      "image": "/games/pixelrogue/codex/armor_lamplining-1c25f491c73e.webp"
+    },
+    {
+      "id": "armor_bonebraid",
+      "name": "骨编护袍",
+      "kind": "armor",
+      "category": "equipment",
+      "rarity": 1,
+      "description": "生命上限 +32；攻击力 +2；魔法回复 +0.2/秒",
+      "flavor": "细小骨饰并非战利品，而是被允许留下的记忆。织袍者把每一处结都系得宽松，让身旁的声音永远保有告别的自由。",
+      "image": "/games/pixelrogue/codex/armor_bonebraid-fbf5a42088f9.webp"
+    },
+    {
+      "id": "accessory_shimmerpin",
+      "name": "微光别针",
+      "kind": "accessory",
+      "category": "equipment",
+      "rarity": 1,
+      "description": "暴击率 +3%；攻击力 +3.5；魔法回复 +0.1/秒",
+      "flavor": "小小棱珠折出一束安静的白光，照见针脚间被珍藏的旧纹。它曾替无名旅人别住破损披风，如今仍愿将勇气留在心口。",
+      "image": "/games/pixelrogue/codex/accessory_shimmerpin-658f8426c7b0.webp"
+    },
+    {
+      "id": "accessory_thornloop",
+      "name": "棘结指环",
+      "kind": "accessory",
+      "category": "equipment",
+      "rarity": 1,
+      "description": "反伤 +5；攻击力 +3.5",
+      "flavor": "银环里的荆棘只朝向外侧，内圈被磨得温润。守庭的人以它提醒后来者，拒绝伤害同样可以是一种不肯退让的温柔。",
+      "image": "/games/pixelrogue/codex/accessory_thornloop-2b7787ec078b.webp"
+    },
+    {
+      "id": "accessory_bluehour",
+      "name": "蓝时沙坠",
+      "kind": "accessory",
+      "category": "equipment",
+      "rarity": 1,
+      "description": "攻击力 +2.5；魔法回复 +0.4/秒",
+      "flavor": "蓝砂一粒粒越过细颈，从不替谁追回过去。它只把每次停顿的余地交回掌心，让下一句咒语能够从容说完。",
+      "image": "/games/pixelrogue/codex/accessory_bluehour-097d186ac149.webp"
+    },
+    {
+      "id": "accessory_leafwhistle",
+      "name": "叶鸣哨",
+      "kind": "accessory",
+      "category": "equipment",
+      "rarity": 1,
+      "description": "攻击速度 +0.12；魔法回复 +0.2/秒",
+      "flavor": "哨声短得像一片叶落在肩上，却足够让远处的旅伴抬头。没有谁需要一直走在前面，只要仍认得相互回应的声音。",
+      "image": "/games/pixelrogue/codex/accessory_leafwhistle-7b59abea9917.webp"
+    },
+    {
+      "id": "relic_spentmatch",
+      "name": "余温火柴",
+      "kind": "buff",
+      "category": "relic",
+      "rarity": 0,
+      "description": "普攻首次有效命中燃烧目标，追加1.5点装备伤害，全局冷却2秒。同名机制持有1／2／3件时，数值合计为基础的1／1.5／1.75倍；目标数、次数、持续时间与冷却不增加。附加伤害不暴击、不吸血，不递归触发装备。",
+      "flavor": "火柴已经燃过，微弱余温仍替下一点火星守着位置。",
+      "image": "/games/pixelrogue/codex/relic_spentmatch-3da4b027e778.webp"
+    },
+    {
+      "id": "relic_dryreed",
+      "name": "空心苇管",
+      "kind": "buff",
+      "category": "relic",
+      "rarity": 0,
+      "description": "MP低于50%时，普攻首次有效命中回复1MP，全局冷却3秒。 同名遗物持有1／2／3件时，数值为100%／150%／175%；目标数、积累次数、持续时间与冷却不增加。附加伤害不暴击、不吸血，也不触发装备或同类派生。",
+      "flavor": "中空的苇管藏不住江风，却能留住一次长长的呼吸。",
+      "image": "/games/pixelrogue/codex/relic_dryreed-970e092ff688.webp"
+    },
+    {
+      "id": "relic_wornbutton",
+      "name": "旧袍纽扣",
+      "kind": "buff",
+      "category": "relic",
+      "rarity": 0,
+      "description": "直接主动技能命中后获得5点护盾，持续3秒，全局冷却8秒。同名机制持有1／2／3件时，数值合计为基础的1／1.5／1.75倍；目标数、次数、持续时间与冷却不增加。附加伤害不暴击、不吸血，不递归触发装备。",
+      "flavor": "旧线绕了四次，终于将破开的衣襟重新拉在一起。",
+      "image": "/games/pixelrogue/codex/relic_wornbutton-d7dd76ea957b.webp"
+    },
+    {
+      "id": "relic_smoothpebble",
+      "name": "掌心卵石",
+      "kind": "buff",
+      "category": "relic",
+      "rarity": 0,
+      "description": "直接主动技能命中使目标减速12%，持续1.5秒，全局冷却4秒；首领减速减半。 同名遗物持有1／2／3件时，数值为100%／150%／175%；目标数、积累次数、持续时间与冷却不增加。附加伤害不暴击、不吸血，也不触发装备或同类派生。",
+      "flavor": "溪水把锋角磨成圆润，仍没有抹掉石心的一线青色。",
+      "image": "/games/pixelrogue/codex/relic_smoothpebble-5019397fd53a.webp"
+    },
+    {
+      "id": "relic_twinebobbin",
+      "name": "结线木轴",
+      "kind": "buff",
+      "category": "relic",
+      "rarity": 0,
+      "description": "角色四格内友军有效直击时回复1MP，全局冷却4秒。 同名遗物持有1／2／3件时，数值为100%／150%／175%；目标数、积累次数、持续时间与冷却不增加。附加伤害不暴击、不吸血，也不触发装备或同类派生。",
+      "flavor": "木轴只剩一段线，却刚好足够替旅伴补好袖口。",
+      "image": "/games/pixelrogue/codex/relic_twinebobbin-4353dc18db42.webp"
+    },
+    {
+      "id": "relic_crackedchime",
+      "name": "裂纹风铃",
+      "kind": "buff",
+      "category": "relic",
+      "rarity": 0,
+      "description": "自身护盾因承伤耗尽时，减少当前基础闪避剩余冷却0.2秒，全局冷却6秒。 同名遗物持有1／2／3件时，数值为100%／150%／175%；目标数、积累次数、持续时间与冷却不增加。附加伤害不暴击、不吸血，也不触发装备或同类派生。",
+      "flavor": "铃身有了裂纹，风经过时仍肯认真响一声。",
+      "image": "/games/pixelrogue/codex/relic_crackedchime-2b0337c8b256.webp"
+    },
+    {
+      "id": "relic_amberbeetle",
+      "name": "琥珀灯甲",
+      "kind": "buff",
+      "category": "relic",
+      "rarity": 2,
+      "description": "自身有护盾时，普攻首次有效命中追加0.18倍攻击的装备伤害，并使目标减速15%、持续2秒，冷却2秒；首领减速减半。 同名遗物持有1／2／3件时，数值为100%／150%／175%；目标数、积累次数、持续时间与冷却不增加。附加伤害不暴击、不吸血，也不触发装备或同类派生。",
+      "flavor": "琥珀壳里封着一盏不曾熄灭的灯，六足却仍保持向前攀援的姿态。它曾在废城漫长的寒夜里护住最后一粒火种，如今也把克制的锋芒交给仍愿守望的人。",
+      "image": "/games/pixelrogue/codex/relic_amberbeetle-0ce5c156fa81.webp"
+    },
+    {
+      "id": "relic_riverledger",
+      "name": "回澜账页",
+      "kind": "buff",
+      "category": "relic",
+      "rarity": 2,
+      "description": "2秒内直接主动技能命中三名不同敌人，回复5MP并获得最大生命5%的护盾、持续4秒，全局冷却5秒；多段命中同一目标只计一次。 同名遗物持有1／2／3件时，数值为100%／150%／175%；目标数、积累次数、持续时间与冷却不增加。附加伤害不暴击、不吸血，也不触发装备或同类派生。",
+      "flavor": "账页没有记下欠债者的姓名，只画着三道最终汇入同一条河的水纹。旧城的医者用它记住被接回岸上的人，而把每一次索还的权利，留给了永远不会开口的潮水。",
+      "image": "/games/pixelrogue/codex/relic_riverledger-b027269ed139.webp"
+    },
+    {
+      "id": "relic_pactspindle",
+      "name": "契语纺锤",
+      "kind": "buff",
+      "category": "relic",
+      "rarity": 2,
+      "description": "角色四格内友军有效直击，向该目标追加0.25倍角色攻击的装备伤害并回复2MP，全局冷却4秒。 同名遗物持有1／2／3件时，数值为100%／150%／175%；目标数、积累次数、持续时间与冷却不增加。附加伤害不暴击、不吸血，也不触发装备或同类派生。",
+      "flavor": "纺锤在无人牵引时缓慢旋转，细线上藏着许多不同的回答。它从不把伙伴的声音织成命令，只在彼此愿意应声的瞬间，让一段短短的同行拥有更坚韧的形状。",
+      "image": "/games/pixelrogue/codex/relic_pactspindle-ae833b817dc4.webp"
+    },
+    {
+      "id": "relic_sunseal",
+      "name": "黎明封缄",
+      "kind": "buff",
+      "category": "relic",
+      "rarity": 3,
+      "description": "普攻首次有效命中积累晨辉，最多3层，持续10秒。直接主动技能命中时消耗全部层数，每层在目标两格内造成0.18倍攻击的装备伤害并回复2MP，触发冷却4秒；冷却中不积层。 同名遗物持有1／2／3件时，数值为100%／150%／175%；目标数、积累次数、持续时间与冷却不增加。附加伤害不暴击、不吸血，也不触发装备或同类派生。",
+      "flavor": "封缄上没有王室的印记，只有三道朝向黎明的金羽。它曾封住一封无人有勇气寄出的求救信，直到最后一位守夜人拆开蜡印，把其中的名字逐一念给天亮。光终于越过城墙时，人们没有找到那位守夜人的座位，只找到这枚仍然温热的印。后来者将它带上长路，不为证明自己永不疲惫，而为在每一次出手以后，仍留有回应呼唤的余力。",
+      "image": "/games/pixelrogue/codex/relic_sunseal-428f8846d3f6.webp"
+    },
+    {
+      "id": "relic_nightloom",
+      "name": "长夜织星仪",
+      "kind": "buff",
+      "category": "relic",
+      "rarity": 3,
+      "description": "角色六格内友军有效直击积累星线，6秒内累计5次后，获得最大生命8%的护盾、持续4秒，并向角色六格内最近两名可见敌人各追加0.35倍攻击的装备伤害，冷却5秒；同一时刻齐射每0.2秒至多计一次。 同名遗物持有1／2／3件时，数值为100%／150%／175%；目标数、积累次数、持续时间与冷却不增加。附加伤害不暴击、不吸血，也不触发装备或同类派生。",
+      "flavor": "失名的工匠曾试图为整座城织一片不会熄灭的夜空，最终只留下这架能被双手捧起的小仪器。它的银轮不再记录命令，而辨认旅伴在黑暗中相互应答的节拍。每一缕星线都来自一次自愿的靠近，每一道光也都愿意为离去的人让路。将它带在身边的人终于明白，守住漫长黑夜的，从来不是某一个人永不衰竭的力量，而是许多声音仍肯彼此回应。",
+      "image": "/games/pixelrogue/codex/relic_nightloom-94f351b3172a.webp"
+    },
+    {
+      "id": "relic_rootcrown",
+      "name": "万籽归冠",
+      "kind": "buff",
+      "category": "relic",
+      "rarity": 3,
+      "description": "5秒内普攻首次有效命中三名不同的燃烧或减速敌人，在第三名目标三格内引发0.75倍攻击的装备伤害并回复6MP，全局冷却5秒；同一支主攻击至多登记一名目标。 同名遗物持有1／2／3件时，数值为100%／150%／175%；目标数、积累次数、持续时间与冷却不增加。附加伤害不暴击、不吸血，也不触发装备或同类派生。",
+      "flavor": "根须从破碎冠冕的缝隙长出，将曾经象征统治的黄金缓缓托起。林地没有要求每一粒种子长成同一棵树，也没有要求每一条根记住同一个方向。大火和寒霜经过以后，仍有新芽从旧伤间探出头来。它被交给愿意等待的人，提醒他们，真正能够延续的生命不是永远不变的昨日，而是那些终于拥有机会、亲手选择明天的微小可能。",
+      "image": "/games/pixelrogue/codex/relic_rootcrown-b65b94166ed9.webp"
+    },
+    {
+      "id": "staff_softlight",
+      "name": "暖灯木杖",
+      "kind": "weapon",
+      "category": "equipment",
+      "rarity": 0,
+      "description": "攻击力 +1.5、魔力上限 +8",
+      "flavor": "艾莉娅试着拿它照看过药箱。光不刺眼，标签上的小字也能看清。",
+      "image": "/games/pixelrogue/codex/staff_waylight-75226b035da0.webp"
+    },
+    {
+      "id": "staff_labelcord",
+      "name": "结绳短杖",
+      "kind": "weapon",
+      "category": "equipment",
+      "rarity": 0,
+      "description": "攻击力 +1.5、生命上限 +10",
+      "flavor": "希希芙把备用细绳缠在杖柄上：“这是留给同伴的，别又替我起个吓人的名字。”",
+      "image": "/games/pixelrogue/codex/staff_threadroot-946a4bb4183b.webp"
+    },
+    {
+      "id": "bow_pathfinder",
+      "name": "试路短弓",
+      "kind": "weapon",
+      "category": "equipment",
+      "rarity": 0,
+      "description": "攻击力 +1.5、移动速度 +6",
+      "flavor": "伊露雅沿着弓背摸了一遍，确认没有倒刺，才把它交给第一次练习的人。",
+      "image": "/games/pixelrogue/codex/bow_reed-cc7cb05ba5d0.webp"
+    },
+    {
+      "id": "staff_clearread",
+      "name": "明字灯杖",
+      "kind": "weapon",
+      "category": "equipment",
+      "rarity": 1,
+      "description": "攻击力 +5、魔力上限 +14",
+      "flavor": "希露媞雅把杖端的光调暗了一点：“这样看书舒服，也不会晃到别人。”",
+      "image": "/games/pixelrogue/codex/staff_dawnbranch-1df0bf17d614.webp"
+    },
+    {
+      "id": "staff_replybell",
+      "name": "应声铃杖",
+      "kind": "weapon",
+      "category": "equipment",
+      "rarity": 1,
+      "description": "攻击力 +4.5、生命上限 +18",
+      "flavor": "铃声响过，希希芙先回了一声“我在”。这次不用任何人猜她想说什么。",
+      "image": "/games/pixelrogue/codex/staff_littlebell-4a3ff37c2de9.webp"
+    },
+    {
+      "id": "bow_eveningwalk",
+      "name": "晚归练弓",
+      "kind": "weapon",
+      "category": "equipment",
+      "rarity": 1,
+      "description": "攻击力 +5、移动速度 +8",
+      "flavor": "伊露雅把弦重新绷好。晚风正合适，她问你要不要一起把最后一轮练完。",
+      "image": "/games/pixelrogue/codex/bow_raincord-555c315531f9.webp"
+    },
+    {
+      "id": "armor_benchpad",
+      "name": "软垫短衣",
+      "kind": "armor",
+      "category": "equipment",
+      "rarity": 0,
+      "description": "生命上限 +20、移动速度 +4",
+      "flavor": "跟门口长凳的软垫用的是同一批布。布琳娜坚持说，舒服也是正经优点。",
+      "image": "/games/pixelrogue/codex/armor_padded-d9ff38fcee27.webp"
+    },
+    {
+      "id": "armor_reading",
+      "name": "夜读罩衣",
+      "kind": "armor",
+      "category": "equipment",
+      "rarity": 0,
+      "description": "生命上限 +16、魔力上限 +10",
+      "flavor": "袖口收得整齐，翻书不会带倒杯子。口袋里还留着一张没写完的材料清单。",
+      "image": "/games/pixelrogue/codex/armor_wickcloth-16647bf4694e.webp"
+    },
+    {
+      "id": "armor_supper",
+      "name": "暖席夹衣",
+      "kind": "armor",
+      "category": "equipment",
+      "rarity": 1,
+      "description": "生命上限 +34、魔力上限 +12",
+      "flavor": "扣子缝得很牢，衣领挡风。温阮递来时只交代了一句：穿着回来吃饭。",
+      "image": "/games/pixelrogue/codex/armor_lamplining-1c25f491c73e.webp"
+    },
+    {
+      "id": "accessory_bookclip",
+      "name": "铜叶书夹",
+      "kind": "accessory",
+      "category": "equipment",
+      "rarity": 0,
+      "description": "攻击力 +1、魔力上限 +6",
+      "flavor": "采样手册上拆下的备用书夹。夹住书角，也夹住了“别用火烤”的新注释。",
+      "image": "/games/pixelrogue/codex/accessory_copperleaf-6e90b2fa531c.webp"
+    },
+    {
+      "id": "accessory_carevial",
+      "name": "随身小药瓶",
+      "kind": "accessory",
+      "category": "equipment",
+      "rarity": 0,
+      "description": "生命上限 +10、魔力上限 +8",
+      "flavor": "示范药包里留下的小空瓶。艾莉娅在瓶口画了醒目的记号，提醒大家别装混。",
+      "image": "/games/pixelrogue/codex/accessory_smallvial-636d49696f83.webp"
+    },
+    {
+      "id": "accessory_callsign",
+      "name": "约定短哨",
+      "kind": "accessory",
+      "category": "equipment",
+      "rarity": 1,
+      "description": "攻击力 +2、移动速度 +9",
+      "flavor": "两声短哨表示人在这里。比起复杂暗号，大家更愿意先把这一条记牢。",
+      "image": "/games/pixelrogue/codex/accessory_leafwhistle-7b59abea9917.webp"
+    },
+    {
+      "id": "relic_practiceblade",
+      "name": "练习旧剑",
+      "kind": "buff",
+      "category": "relic",
+      "rarity": 0,
+      "description": "攻击力 +3、生命上限 +8",
+      "flavor": "刃口不算锋利，握柄却打磨得很顺手。第一堂课是握稳，下一堂才轮到逞强。",
+      "image": "/games/pixelrogue/codex/iron_sword-84e213fc9e75.webp"
+    },
+    {
+      "id": "relic_returnboots",
+      "name": "归路布靴",
+      "kind": "buff",
+      "category": "relic",
+      "rarity": 0,
+      "description": "移动速度 +10、生命上限 +8",
+      "flavor": "鞋底补过一次，仍然轻便。布琳娜说，能走回家的鞋就值得再修一回。",
+      "image": "/games/pixelrogue/codex/feather_boots-e62bab09a3e6.webp"
+    },
+    {
+      "id": "relic_sparelining",
+      "name": "备用护衬",
+      "kind": "buff",
+      "category": "relic",
+      "rarity": 0,
+      "description": "生命上限 +18、魔力上限 +6",
+      "flavor": "寄物架最下面一格放着的备用衬片。取用登记上写着：先用，回来再说。",
+      "image": "/games/pixelrogue/codex/guardian_mail-b0c2f343203b.webp"
+    },
+    {
+      "id": "relic_pressedleaf",
+      "name": "夹页叶签",
+      "kind": "buff",
+      "category": "relic",
+      "rarity": 0,
+      "description": "攻击力 +2、魔力恢复 +0.1/秒",
+      "flavor": "叶片压得很平。旁边的字迹直白得很：这一页还没看完。",
+      "image": "/games/pixelrogue/codex/relic_leaf_page-193090b37300.webp"
+    },
+    {
+      "id": "relic_bellbutton",
+      "name": "铃带旧扣",
+      "kind": "buff",
+      "category": "relic",
+      "rarity": 0,
+      "description": "生命上限 +12、移动速度 +5",
+      "flavor": "闻铃换琴带时留下的旧扣。用来扣小袋子正合适，终于不必每天满地找拨片。",
+      "image": "/games/pixelrogue/codex/relic_wornbutton-d7dd76ea957b.webp"
+    },
+    {
+      "id": "relic_trailstone",
+      "name": "认路小石",
+      "kind": "buff",
+      "category": "relic",
+      "rarity": 0,
+      "description": "魔力上限 +10、移动速度 +5",
+      "flavor": "圆石上画着一道短线，标记转弯的方向。它不指向命运，只帮人少走错一段路。",
+      "image": "/games/pixelrogue/codex/relic_smoothpebble-5019397fd53a.webp"
+    },
+    {
+      "id": "relic_workstone",
+      "name": "修刃磨石",
+      "kind": "buff",
+      "category": "relic",
+      "rarity": 1,
+      "description": "攻击力 +4、生命上限 +14",
+      "flavor": "粗面磨刃，细面收口。布琳娜把顺序写在纸上，怕你为了省事把两步倒过来。",
+      "image": "/games/pixelrogue/codex/whetstone-842dd0f51972.webp"
+    },
+    {
+      "id": "relic_lamphome",
+      "name": "守门小灯",
+      "kind": "buff",
+      "category": "relic",
+      "rarity": 1,
+      "description": "攻击力 +3、魔力上限 +12",
+      "flavor": "灯罩上留着指印。值夜的人换了几班，它一直在门边，照着回来的路。",
+      "image": "/games/pixelrogue/codex/relics_v1-306529f80bd6.webp"
+    },
+    {
+      "id": "relic_letterquill",
+      "name": "留言羽笔",
+      "kind": "buff",
+      "category": "relic",
+      "rarity": 1,
+      "description": "移动速度 +9、魔力恢复 +0.2/秒",
+      "flavor": "留言布边上挂着的备用笔。闻铃说写错可以划掉，不必把一句话想得太完美。",
+      "image": "/games/pixelrogue/codex/relics_v1-2a39f15c8302.webp"
+    },
+    {
+      "id": "relic_dewcheck",
+      "name": "验草露瓶",
+      "kind": "buff",
+      "category": "relic",
+      "rarity": 1,
+      "description": "生命上限 +22、魔力恢复 +0.2/秒",
+      "flavor": "透明小瓶方便查看浸液的颜色。标签只写用途，不再起容易跟汤料混淆的雅名。",
+      "image": "/games/pixelrogue/codex/relic_mist_dew-0a9c77f7ecb6.webp"
+    },
+    {
+      "id": "relic_drythread",
+      "name": "补衣线轴",
+      "kind": "buff",
+      "category": "relic",
+      "rarity": 1,
+      "description": "生命上限 +22、移动速度 +7",
+      "flavor": "线头已经穿过针眼。有人替下一个着急出门的人，省了最费眼神的一步。",
+      "image": "/games/pixelrogue/codex/relic_twinebobbin-4353dc18db42.webp"
+    },
+    {
+      "id": "relic_windowchime",
+      "name": "窗边小铃",
+      "kind": "buff",
+      "category": "relic",
+      "rarity": 1,
+      "description": "攻击力 +3、魔力恢复 +0.3/秒",
+      "flavor": "裂缝粘好后声音轻了许多。休息角的人说这样正好，不会再把午睡的人惊醒。",
+      "image": "/games/pixelrogue/codex/relic_crackedchime-2b0337c8b256.webp"
+    }
+  ],
+  "cards": [
+    {
+      "id": "fool",
+      "name": "愚者",
+      "theme": "重新起步",
+      "upright": "敌方直击实际扣除生命且存活后，获得3秒启程：移速增加15%，下一次成功施放小技能返还实际MP消耗25%；冷却12秒。护盾吸收、自伤、持续伤害及致死伤害不触发。",
+      "reverse": "敌方直击实际扣除生命且存活后，获得4秒险行：自身主普攻与主动技能直击伤害增加18%，受到的普通生命伤害增加8%；冷却12秒。护盾吸收、自伤、持续伤害及致死伤害不触发。",
+      "category": "fate",
+      "image": "/games/pixelrogue/codex/fool-a70fe3fd5d24.webp",
+      "reverseImage": "/games/pixelrogue/codex/fool_reverse-3149741c9346.webp"
+    },
+    {
+      "id": "world",
+      "name": "世界",
+      "theme": "完整轮舞",
+      "upright": "10秒内完成主普攻有效命中、小技能成功施放、基础闪避结束，获得完整生命上限6%护盾5秒，回复最大MP的5%；冷却12秒。每类行动记一次，超时或切房清空；冷却期间不积累。",
+      "reverse": "10秒内完成主普攻有效命中、小技能成功施放、基础闪避结束，在自身三格内造成0.70倍攻击力冲击；冷却10秒。持牌期间新获得护盾量降低10%。每类行动记一次，超时或切房清空；冷却期间不积累。",
+      "category": "fate",
+      "image": "/games/pixelrogue/codex/world-cd71924eb25f.webp",
+      "reverseImage": "/games/pixelrogue/codex/world_reverse-f3435d4a32e4.webp"
+    },
+    {
+      "id": "magician",
+      "name": "魔术师",
+      "theme": "秘术转化",
+      "upright": "成功施放小技能，获得5秒秘术印记。下一次主普攻首个有效命中消耗印记，追加0.30倍攻击力伤害，对目标周围1.5格内其他敌人各溅射0.15倍攻击力。获得印记冷却3秒。",
+      "reverse": "七秒内连续两次成功施放小技能，第二次在六格内最近可见敌人处引发两格秘术爆发，造成0.60倍攻击力伤害；连锁冷却6秒，无目标也消耗连锁。小技能最终MP消耗增加12%。",
+      "category": "fate",
+      "image": "/games/pixelrogue/codex/magician-31894ced5e50.webp",
+      "reverseImage": "/games/pixelrogue/codex/magician_reverse-9aba2aa1af9f.webp"
+    },
+    {
+      "id": "priestess",
+      "name": "女祭司",
+      "theme": "静默预言",
+      "upright": "保持静止0.9秒，获得6秒启示，获得冷却8秒。下一次成功施放小技能消耗启示，返还实际MP消耗的20%，获得4秒先见守护：下一次实际普通生命伤害减少25%，同次新增伤痕另减少25%。完全由护盾吸收的攻击不消耗守护。",
+      "reverse": "保持静止1.3秒，获得6秒禁忌启示，获得冷却9秒。下一次成功施放小技能后，四秒内自身主普攻与主动技能直接伤害增加16%，移速降低10%。不强化召唤物、持续伤害和持续领域。",
+      "category": "fate",
+      "image": "/games/pixelrogue/codex/priestess-b73ee2a44689.webp",
+      "reverseImage": "/games/pixelrogue/codex/priestess_reverse-575bb8f00bea.webp"
+    },
+    {
+      "id": "empress",
+      "name": "女皇",
+      "theme": "丰饶花冠",
+      "upright": "玩家直击积一点生长，四格内友军直击积两点。14点绽放，回复完整生命上限2%的生命并修复1%伤痕，返还等量生命；冷却10秒，每房最多两次。满血且无伤痕时保留满层。每次普攻或施法最多积一次，友军共用0.25秒计数间隔。普通治疗仍受浴血禁疗限制。",
+      "reverse": "玩家直击积一点生长，四格内友军直击积两点。14点绽放，在自身三格内造成0.50倍攻击力冲击，并修复完整生命上限1.5%的伤痕，返还等量生命；冷却10秒，每房最多两次。每次普攻或施法最多积一次，友军共用0.25秒计数间隔。自身受到的普通生命伤害增加8%，不放大真实伤害或伤痕。",
+      "category": "fate",
+      "image": "/games/pixelrogue/codex/empress-b7a57e0dc0b2.webp",
+      "reverseImage": "/games/pixelrogue/codex/empress_reverse-56be2a3e348e.webp"
+    },
+    {
+      "id": "emperor",
+      "name": "皇帝",
+      "theme": "律令壁垒",
+      "upright": "首次进入未清战斗房获得完整生命上限6%的护盾，持续8秒。受击开始时持有护盾，新增伤痕减少35%，每房最多两次。护盾因承伤耗尽，释放2.5格、0.45倍攻击力震荡，冷却7秒。",
+      "reverse": "首次进入未清战斗房获得完整生命上限4%的护盾，持续8秒。持盾时新增伤痕减少20%，每房一次。护盾因承伤耗尽，释放三格、0.75倍攻击力震荡，普通敌人减速20%持续2秒，冷却7秒。所有新获得护盾量减少10%，包括本牌护盾。",
+      "category": "fate",
+      "image": "/games/pixelrogue/codex/emperor-f90ab660a588.webp",
+      "reverseImage": "/games/pixelrogue/codex/emperor_reverse-5f7c901ed213.webp"
+    },
+    {
+      "id": "chariot",
+      "name": "战车",
+      "theme": "破阵冲锋",
+      "upright": "基础闪避结束获得4秒冲锋动能，下一次主普攻首个有效命中追加0.32倍攻击力，目标减速20%持续1.5秒，普通敌人受到小幅击退。每次闪避一次，成功触发冷却2秒。技能位移不触发。",
+      "reverse": "基础闪避结束后，在实际经过的合法道路轨迹留下两秒战轮残影，每名敌人每条轨迹最多受到一次0.50倍攻击力伤害；不穿墙，无实体碰撞。基础闪避冷却增加18%，不获得正位普攻强化。",
+      "category": "fate",
+      "image": "/games/pixelrogue/codex/chariot-602046db5386.webp",
+      "reverseImage": "/games/pixelrogue/codex/chariot_reverse-7687913dac90.webp"
+    },
+    {
+      "id": "hermit",
+      "name": "隐者",
+      "theme": "孤灯求索",
+      "upright": "四格内无存活雇佣或召唤友军、持续4秒后，获得8秒孤灯，下一次主普攻或小技能直击追加0.35倍攻击力，冷却8秒。独行清理战斗房后，随机揭示当前阶段一间隐藏房间的位置及类型，每房一次；不揭示沿途房间，不打开房门。",
+      "reverse": "四格内无存活雇佣或召唤友军、持续3秒后进入断联：独行时自身主普攻与主动技能直接伤害增加14%；玩家直接击杀回复最大MP的4%，冷却12秒。断联期间获得的护盾量减少15%。友军靠近立即终止，不强化持续领域、持续伤害或友军攻击。",
+      "category": "fate",
+      "image": "/games/pixelrogue/codex/hermit-92609b2ba5da.webp",
+      "reverseImage": "/games/pixelrogue/codex/hermit_reverse-88fd03d6c974.webp"
+    },
+    {
+      "id": "star",
+      "name": "星星",
+      "theme": "愈伤之愿",
+      "upright": "首次进入未清战斗房回复最大MP的10%。首次清理该房修复完整生命上限2%的伤痕，返还等量生命；实际修复至少一点，储备下一间未清战斗房4%的护盾，持续6秒，最多储备一次。",
+      "reverse": "首次进入未清战斗房回复最大MP的16%。首次清理该房修复完整生命上限3%的伤痕并返还等量生命。自然MP回复降低15%，不获得正位下一房护盾。",
+      "category": "fate",
+      "image": "/games/pixelrogue/codex/star-e41ed829dfa9.webp",
+      "reverseImage": "/games/pixelrogue/codex/star_reverse-2330c3ff0aaa.webp"
+    },
+    {
+      "id": "moon",
+      "name": "月亮",
+      "theme": "朦胧月蚀",
+      "upright": "主普攻首个有效命中施加4秒月蚀，冷却8秒，同时一个目标。正常走跑累计三格后引爆0.45倍攻击力，普通敌人减速20%持续2秒；到期仅造成0.20倍攻击力。闪避、瞬移、击退和切房不计距离。",
+      "reverse": "主普攻首个有效命中施加4秒血月，冷却8秒，同时一个目标。下一次成功施放小技能后，该技能直击标记目标，引爆0.70倍攻击力，并向1.5格内其他敌人扩散0.25倍攻击力；到期仅造成0.20倍攻击力。主普攻直接伤害降低8%。",
+      "category": "fate",
+      "image": "/games/pixelrogue/codex/moon-bd059383cadc.webp",
+      "reverseImage": "/games/pixelrogue/codex/moon_reverse-fe30102240f6.webp"
+    }
+  ],
+  "costumes": {
+    "sylphiette": {
+      "name": "永昼云祷",
+      "weapon": "staff_cloud_radiance",
+      "armor": "armor_cloud_rites",
+      "accessory": "accessory_eternal_ring",
+      "effect": "攻击+20%、攻击速度+12%、魔法回复+25%。消耗祈光强化小技能后，回复10MP并唤出三枚永昼灵珠，自动追击造成0.35倍攻击；本次圣辉额外给予10%生命护盾4秒，冷却6秒。",
+      "image": "/games/pixelrogue/codex/portrait_set-14100df0bfbf.webp"
+    },
+    "xixifu": {
+      "name": "同归夜行",
+      "weapon": "staff_dusk_lantern",
+      "armor": "armor_dusk_mantle",
+      "accessory": "accessory_companion_bells",
+      "effect": "攻击+20%、攻击速度+12%、魔法回复+25%。小技能给予友军8%生命护盾及20%攻速4秒。友军直击额外造成角色攻击25%的影灯伤害，冷却1秒；三次影灯命中引发72范围、0.6倍攻击交响，冷却4秒。",
+      "image": "/games/pixelrogue/codex/portrait_set-fd9d346fdafb.webp"
+    },
+    "ilyua": {
+      "name": "月叶猎誓",
+      "weapon": "bow_spring_wind",
+      "armor": "armor_lakeleaf_hunt",
+      "accessory": "accessory_moonwind_chime",
+      "effect": "攻击+20%、攻击速度+12%、魔法回复+25%。闪避后5秒内四次主普攻有效命中追加0.3倍攻击风刃，并追击一名邻敌0.2倍攻击；完成四次后回复6MP并返还0.5秒闪避冷却。",
+      "image": "/games/pixelrogue/codex/portrait_set-6c86afe267d2.webp"
+    }
+  },
+  "cityScene": {
+    "width": 2816,
+    "height": 1792,
+    "layers": [
+      {
+        "image": "/games/pixelrogue/codex/background_0_0-d91123a78580.webp",
+        "layer": "background",
+        "rect": [
+          0,
+          0,
+          1408,
+          896
+        ]
+      },
+      {
+        "image": "/games/pixelrogue/codex/background_0_1-f5704d11c2e1.webp",
+        "layer": "background",
+        "rect": [
+          1408,
+          0,
+          1408,
+          896
+        ]
+      },
+      {
+        "image": "/games/pixelrogue/codex/background_1_0-c78011fa9cf4.webp",
+        "layer": "background",
+        "rect": [
+          0,
+          896,
+          1408,
+          896
+        ]
+      },
+      {
+        "image": "/games/pixelrogue/codex/background_1_1-5b44febc7341.webp",
+        "layer": "background",
+        "rect": [
+          1408,
+          896,
+          1408,
+          896
+        ]
+      },
+      {
+        "image": "/games/pixelrogue/codex/walls_0_0-077a10f5c755.webp",
+        "layer": "walls",
+        "rect": [
+          0,
+          0,
+          1408,
+          896
+        ]
+      },
+      {
+        "image": "/games/pixelrogue/codex/walls_0_1-5008dac0ed25.webp",
+        "layer": "walls",
+        "rect": [
+          1408,
+          0,
+          1408,
+          896
+        ]
+      },
+      {
+        "image": "/games/pixelrogue/codex/walls_1_0-5d0b666e4ae3.webp",
+        "layer": "walls",
+        "rect": [
+          0,
+          896,
+          264,
+          571
+        ]
+      },
+      {
+        "image": "/games/pixelrogue/codex/walls_1_1-6913326abe93.webp",
+        "layer": "walls",
+        "rect": [
+          2552,
+          896,
+          264,
+          571
+        ]
+      },
+      {
+        "image": "/games/pixelrogue/codex/foreground_1_0-90c5e2296de1.webp",
+        "layer": "foreground",
+        "rect": [
+          0,
+          1467,
+          1408,
+          325
+        ]
+      },
+      {
+        "image": "/games/pixelrogue/codex/foreground_1_1-0624f611798c.webp",
+        "layer": "foreground",
+        "rect": [
+          1408,
+          1467,
+          1408,
+          325
+        ]
+      },
+      {
+        "image": "/games/pixelrogue/codex/door_north-0f763487cec1.webp",
+        "layer": "gates",
+        "rect": [
+          1270.5,
+          0,
+          275,
+          308
+        ]
+      },
+      {
+        "image": "/games/pixelrogue/codex/door_south-4b9b723c8942.webp",
+        "layer": "gates",
+        "rect": [
+          1270.5,
+          1466.5,
+          275,
+          325.5
+        ]
+      },
+      {
+        "image": "/games/pixelrogue/codex/door_west-4857584f976c.webp",
+        "layer": "gates",
+        "rect": [
+          0,
+          675.5,
+          264,
+          409.5
+        ]
+      },
+      {
+        "image": "/games/pixelrogue/codex/door_east-335d76d9a337.webp",
+        "layer": "gates",
+        "rect": [
+          2552,
+          675.5,
+          264,
+          409.5
+        ]
+      }
+    ]
+  }
+}

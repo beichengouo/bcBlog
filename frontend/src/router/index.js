@@ -19,6 +19,7 @@ const routes = [
       { path: 'resources/:id', component: () => import('@/views/portal/ResourceDetail.vue') },
       { path: 'sandbox', component: () => import('@/views/portal/Sandbox.vue') },
       { path: 'games/pixelrogue', component: () => import('@/views/portal/PixelRogue.vue'), meta: { title: '轮舞于星辉尽头' } },
+      { path: 'games/pixelrogue/codex', component: () => import('@/views/portal/GameCodex.vue'), meta: { title: '星途图鉴 · 轮舞于星辉尽头' } },
       { path: 'login', component: () => import('@/views/portal/UserAuth.vue') },
       { path: 'user', component: () => import('@/views/portal/UserCenter.vue') },
       { path: 'announcements', component: () => import('@/views/portal/Announcements.vue') },
