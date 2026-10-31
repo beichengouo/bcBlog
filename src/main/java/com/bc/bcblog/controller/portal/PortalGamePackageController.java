@@ -16,6 +16,11 @@ import java.util.List;
 @RequiredArgsConstructor
 public class PortalGamePackageController {
     private final GamePackageService service;
+    private final com.bc.bcblog.service.GameCodexService codex;
+    @GetMapping("/codex")
+    public ResponseEntity<Result<com.fasterxml.jackson.databind.JsonNode>> codex() throws java.io.IOException {
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(Result.ok(codex.read()));
+    }
     @GetMapping
     public ResponseEntity<Result<List<GamePackageVO>>> list() {
         return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(Result.ok(service.list(true)));

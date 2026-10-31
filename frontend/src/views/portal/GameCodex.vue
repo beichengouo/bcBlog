@@ -1,6 +1,6 @@
 <template>
   <main class="codex-page">
-    <header class="codex-header"><router-link to="/portal/games/pixelrogue">← 返回游戏主页</router-link><span>THE STARLIGHT ARCHIVE</span><h1>星途图鉴</h1><p>每一件遗珍，都藏着一段未曾熄灭的故事。</p><small>资料更新于 {{ codex.updatedAt }} · 游戏资料快照，实际效果以所安装版本为准</small></header>
+    <header class="codex-header"><router-link to="/portal/games/pixelrogue">← 返回游戏主页</router-link><span>THE STARLIGHT ARCHIVE</span><h1>星途图鉴</h1><p>每一件遗珍，都藏着一段未曾熄灭的故事。</p><small>资料更新于 {{ updatedAt }} · 游戏资料快照，实际效果以所安装版本为准</small></header>
     <section class="codex-library" aria-label="图鉴资料">
       <div class="codex-tabs" role="group" aria-label="图鉴分类"><button v-for="tab in tabs" :key="tab.id" :aria-pressed="category === tab.id" @click="category = tab.id">{{ tab.name }} <small>{{ all.filter(item => item.category === tab.id).length }}</small></button></div>
       <div class="codex-toolbar"><label>搜索图鉴<input v-model="query" type="search" placeholder="名称、效果或故事…" /></label><label v-if="category !== 'fate'">品质<select v-model="rarity"><option value="all">全部品质</option><option v-for="(name, index) in rarities" :key="name" :value="String(index)">{{ name }}</option></select></label><span role="status">共 {{ filtered.length }} 项</span></div>
@@ -14,16 +14,19 @@
   </main>
 </template>
 <script setup>
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch, onMounted } from 'vue'
+import request from '@/utils/request'
 import codex from '@/config/gameCodex.json'
 const tabs = [{ id: 'equipment', name: '装备' }, { id: 'relic', name: '遗物' }, { id: 'fate', name: '命运牌' }]
 const rarities = ['普通', '精良', '稀有', '传说'], kinds = { weapon: '武器', armor: '护甲', accessory: '饰品', buff: '遗物' }
-const all = [...codex.items, ...codex.cards]
+const importedItems = ref(codex.items), updatedAt = ref(codex.updatedAt)
+const all = computed(() => [...importedItems.value, ...codex.cards])
+onMounted(async () => { try { const data = await request.get('/portal/game-packages/codex'); if (data?.format === 'pixelrogue-codex' && Array.isArray(data.items)) { importedItems.value = data.items; updatedAt.value = String(data.exportedAt || codex.updatedAt).slice(0,10) } } catch { /* Bundled catalogue remains available. */ } })
 const category = ref('equipment'), query = ref(''), rarity = ref('all'), page = ref(1), selected = ref(null), reverse = ref(false), dialog = ref(null)
-const filtered = computed(() => all.filter(item => item.category === category.value && (category.value === 'fate' || rarity.value === 'all' || item.rarity === Number(rarity.value)) && [item.name, item.description, item.flavor, item.theme, item.upright, item.reverse].filter(Boolean).join(' ').toLowerCase().includes(query.value.trim().toLowerCase())))
+const filtered = computed(() => all.value.filter(item => item.category === category.value && (category.value === 'fate' || rarity.value === 'all' || item.rarity === Number(rarity.value)) && [item.name, item.description, item.flavor, item.theme, item.upright, item.reverse].filter(Boolean).join(' ').toLowerCase().includes(query.value.trim().toLowerCase())))
 const pages = computed(() => Math.max(1, Math.ceil(filtered.value.length / 24)))
 const pageItems = computed(() => filtered.value.slice((page.value - 1) * 24, page.value * 24))
-watch([category, query, rarity], () => { page.value = 1 })
+watch([category, query, rarity, importedItems], () => { page.value = 1 })
 async function openEntry(item) { selected.value = item; reverse.value = false; await nextTick(); dialog.value.showModal() }
 function closeBackdrop(event) { if (event.target === dialog.value) { const rect = dialog.value.getBoundingClientRect(); if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) dialog.value.close() } }
 </script>
@@ -50,7 +53,8 @@ function closeBackdrop(event) { if (event.target === dialog.value) { const rect 
 .codex-entry:hover { transform: translateY(-4px); border-color: #d9c19a; }
 .codex-entry[data-rarity="3"] { border-color: #b59b6055; background: radial-gradient(ellipse at top,#ceb99418,transparent 70%),#101725; }
 .codex-art { height: 140px; display: grid; place-items: center; margin-bottom: 20px; }
-.codex-art img { max-height: 100%; max-width: 100%; object-fit: contain; }
+.codex-art { overflow: hidden; min-height: 0; }
+.codex-art img { display: block; width: 100%; height: 100%; min-height: 0; object-fit: contain; }
 .is-fate .codex-art { height: 240px; }
 .codex-entry small { color: #b9a686; font-size: 10px; }
 .codex-entry h2 { font-size: 17px; font-family: SimSun,serif; font-weight: 400; margin: 12px 0; }

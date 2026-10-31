@@ -22,6 +22,7 @@
     </section>
 
     <div class="game-codex-invitation"><span>ARCHIVE / 星途图鉴</span><h2>将每一次发现，记入旅途。</h2><p>查阅装备、遗物与命运牌，寻找属于你的构筑。</p><router-link to="/portal/games/pixelrogue/codex" class="game-button">打开游戏图鉴 ↗</router-link></div>
+    <GameFateShowcase />
     <section id="game-play" class="game-section game-play">
       <div class="game-section-heading game-reveal"><span>03 / GAMEPLAY</span><h2>每一次出发，<br />都写下不同的答案。</h2></div>
       <div class="game-play-grid"><article class="game-reveal" v-for="(feature, index) in features" :key="feature.title"><span class="game-feature-number">0{{ index + 1 }}</span><div><h3>{{ feature.title }}</h3><p>{{ feature.description }}</p></div></article></div>
@@ -41,6 +42,7 @@
 import { ref } from 'vue'
 import GameCityScene from '@/components/portal/GameCityScene.vue'
 import GameCompanions from '@/components/portal/GameCompanions.vue'
+import GameFateShowcase from '@/components/portal/GameFateShowcase.vue'
 import { useGameReleases } from '@/composables/useGameReleases'
 const { packages, loading, failed, load } = useGameReleases()
 import { pixelrogue } from '@/config/pixelrogue'

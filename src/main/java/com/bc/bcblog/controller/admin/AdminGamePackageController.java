@@ -13,6 +13,9 @@ import java.util.List;
 @RequiredArgsConstructor
 public class AdminGamePackageController {
     private final GamePackageService service;
+    private final com.bc.bcblog.service.GameCodexService codex;
+    @PostMapping("/codex")
+    public Result<Integer> importCodex(@RequestBody com.fasterxml.jackson.databind.JsonNode data) throws java.io.IOException { return Result.ok(codex.save(data)); }
     private final com.bc.bcblog.service.GamePackageUploadService uploads;
     @PostMapping("/sessions")
     public Result<com.bc.bcblog.service.GamePackageUploadService.Session> start(@RequestBody com.bc.bcblog.service.GamePackageUploadService.Session input) throws java.io.IOException {

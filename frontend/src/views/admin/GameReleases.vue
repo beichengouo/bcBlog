@@ -1,5 +1,6 @@
 <template>
   <div class="release-manager" v-loading="loading">
+    <GameCodexImport />
     <el-alert title="支持3 GiB分片续传。新平台首次上传为草稿；更新已发布平台会自动替换线上版本。校验成功后删除旧包，失败则保留旧版。" type="info" :closable="false" show-icon />
     <el-card v-for="platform in platforms" :key="platform.id">
       <template #header><div class="release-card-head"><div><strong>{{ platform.name }}</strong><span>{{ platform.hint }}</span></div><el-tag :type="packages[platform.id]?.published ? 'success' : 'info'">{{ packages[platform.id]?.published ? '已发布' : '未发布' }}</el-tag></div></template>
@@ -45,6 +46,7 @@ import { adminGamePackages, publishGamePackage, startGameUpload, gameUploadStatu
 import { formatPackageSize, validateGamePackageFile } from '@/utils/gamePackages'
 import { readReleaseNotesFile, RELEASE_NOTES_MAX_LENGTH } from '@/utils/gameReleaseNotes'
 import ReleaseNotes from '@/components/ReleaseNotes.vue'
+import GameCodexImport from '@/components/GameCodexImport.vue'
 const platforms = [{ id: 'android', name: 'Android 安卓版', hint: 'APK 安装包', accept: '.apk' }, { id: 'pc', name: 'Windows PC版', hint: 'EXE 安装程序 / ZIP 压缩包', accept: '.exe,.zip' }]
 const forms = reactive({ android: { version: '', notes: '', file: null }, pc: { version: '', notes: '', file: null } })
 const packages = ref({})

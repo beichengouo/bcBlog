@@ -92,7 +92,7 @@ class GamePackageServiceTest {
     @Test void downloadSupportsAttachmentAndByteRanges() throws Exception {
         GamePackageService service = service();
         service.upload("pc", "v1", "", new MockMultipartFile("file", "game.zip", "", apk())); service.publish("pc", true);
-        org.springframework.test.web.servlet.MockMvc mvc = org.springframework.test.web.servlet.setup.MockMvcBuilders.standaloneSetup(new com.bc.bcblog.controller.portal.PortalGamePackageController(service)).build();
+        org.springframework.test.web.servlet.MockMvc mvc = org.springframework.test.web.servlet.setup.MockMvcBuilders.standaloneSetup(new com.bc.bcblog.controller.portal.PortalGamePackageController(service, null)).build();
         mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/api/portal/game-packages/pc/download").header("Range", "bytes=0-3"))
             .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isPartialContent())
             .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header().string("Content-Range", "bytes 0-3/8"))

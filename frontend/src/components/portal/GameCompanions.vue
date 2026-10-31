@@ -1,11 +1,11 @@
 <template>
   <div class="companions" :style="{ '--accent': active.color }">
-    <div class="companion-lineup" role="group" aria-label="切换同行者">
+    <TransitionGroup name="lineup" tag="div" class="companion-lineup" role="group" aria-label="切换同行者">
       <button v-for="hero in lineup" :key="hero.id" class="companion-portrait" :class="{ active: hero.id === selected }" :aria-pressed="hero.id === selected" :aria-label="`展示${hero.name}`" @click="selected = hero.id">
-        <img :src="legendary && hero.id === selected ? codex.costumes[hero.id].image : hero.image" :alt="hero.id === selected ? `${hero.name} · ${legendary ? codex.costumes[hero.id].name : '初始装束'}` : `${hero.name}剪影`" loading="lazy" />
+        <div class="portrait-frame"><Transition name="costume"><img :key="hero.id + (legendary && hero.id === selected ? 'set' : 'normal')" :src="legendary && hero.id === selected ? codex.costumes[hero.id].image : hero.image" :alt="hero.id === selected ? `${hero.name} · ${legendary ? codex.costumes[hero.id].name : '初始装束'}` : `${hero.name}剪影`" loading="eager" /></Transition></div>
         <span>{{ hero.name }}<small>{{ hero.id === selected ? '正在展示' : '点击唤醒' }}</small></span>
       </button>
-    </div>
+    </TransitionGroup>
     <div class="companion-details">
       <div><span class="companion-role">{{ active.role }}</span><h3>{{ active.name }}</h3><p class="companion-motif">{{ active.motif }}</p><p>{{ active.description }}</p></div>
       <div class="companion-costume">
@@ -49,4 +49,12 @@ const lineup = computed(() => { const others = pixelrogue.heroes.filter(hero => 
 button:focus-visible { outline: 2px solid #ceb994; outline-offset: -3px; }
 @media(max-width:600px) { .companion-lineup { padding: 20px 4px 0; } .companion-portrait img { height: 300px; } .companion-portrait.active { flex: 2.2; } .companion-portrait > span { font-size: 14px; } .companion-details { grid-template-columns: 1fr; padding: 24px; gap: 24px; } }
 @media(prefers-reduced-motion:reduce) { .companion-portrait img { transition: none; } }
+.portrait-frame { position: relative; height: clamp(270px,44vw,580px); }
+.companion-portrait, .companion-portrait.active { flex: 1; }
+.companion-portrait .portrait-frame img { position: absolute; inset: 0; height: 100%; }
+.lineup-move { transition: transform .7s cubic-bezier(.22,.75,.16,1); }
+.costume-enter-active, .costume-leave-active { transition: opacity .5s ease, filter .5s ease !important; }
+.costume-enter-from, .costume-leave-to { opacity: 0 !important; }
+@media(max-width:600px) { .portrait-frame { height: 300px; } }
+@media(prefers-reduced-motion:reduce) { .lineup-move,.costume-enter-active,.costume-leave-active { transition: none !important; } }
 </style>
