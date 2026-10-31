@@ -1,0 +1,24 @@
+const fs=require('fs'),path=require('path'),assert=require('node:assert/strict');
+const root=path.resolve(__dirname,'..'),Vue=require('vue'),Pinia=require('pinia'),{parse,compileScript,compileTemplate}=require('@vue/compiler-sfc');
+Pinia.setActivePinia(Pinia.createPinia());
+const pending=new Map();const fetch=(url)=>new Promise(resolve=>pending.set(url,resolve));
+const storeCode=fs.readFileSync(path.join(root,'src/store/music.js'),'utf8').replace(/import[^\n]+\n/g,'').replace('export const useMusicStore','const useMusicStore');
+const useMusicStore=new Function('defineStore','fetch',storeCode+'; return useMusicStore')(Pinia.defineStore,fetch),music=useMusicStore();
+const {descriptor}=parse(fs.readFileSync(path.join(root,'src/components/portal/HomeMusicPlayer.vue'),'utf8'));assert.deepEqual(compileTemplate({source:descriptor.template.content,filename:'HomeMusicPlayer.vue',id:'qa'}).errors,[]);
+const code=compileScript(descriptor,{id:'qa'}).content.replace(/import[^\n]+\n/g,'').replace('export default','return');
+let disconnected=false;const observer=class{observe(){}unobserve(){}disconnect(){disconnected=true}};
+const component=new Function('ref','computed','watch','onMounted','onUnmounted','nextTick','storeToRefs','useMusicStore','ResizeObserver','window',code)(Vue.ref,Vue.computed,Vue.watch,Vue.onMounted,Vue.onUnmounted,Vue.nextTick,Pinia.storeToRefs,()=>music,observer,{matchMedia:()=>({matches:false})});
+const node=()=>({children:[]}),renderer=Vue.createRenderer({createElement:node,createText:node,createComment:node,setText(){},setElementText(){},patchProp(){},parentNode:()=>null,nextSibling:()=>null,insert(e,p){p.children.push(e)},remove(){}});
+let state;const setup=component.setup;component.setup=(p,c)=>{state=setup(p,c);return()=>Vue.h('div')};music.init=()=>{};
+const flush=async()=>{await Vue.nextTick();await Vue.nextTick()};
+(async()=>{
+ const a=music.loadLyrics({lrc:'first'}),b=music.loadLyrics({lrc:'second'});
+ pending.get('second')({ok:true,text:async()=>'[00:10.00]Second song'});await b;
+ pending.get('first')({ok:true,text:async()=>'[00:10.00]Old song'});await a;assert.equal(music.lyrics[0].text,'Second song');
+ const app=renderer.createApp(component);app.mount(node());const scrolls=[];
+ state.lyricViewport.value={clientHeight:260,querySelector:()=>({offsetTop:206,offsetHeight:48}),scrollTo:o=>scrolls.push(o)};
+ music.lyrics=[{time:10,text:'First'},{time:10,text:'Translation'},{time:20,text:'Second'},{time:30,text:'Third'}];music.currentTime=0;await flush();assert.equal(state.activeLine.value,-1);assert.equal(state.lyricLines.value.length,3);assert.equal(state.lyricLines.value[0].text,'First\nTranslation');
+ music.currentTime=25;await flush();assert.equal(state.activeLine.value,1);assert.equal(scrolls.at(-1).top,100);assert.equal(scrolls.at(-1).behavior,'smooth');
+ music.currentTime=11;await flush();assert.equal(state.activeLine.value,0);music.lyrics=[];await flush();assert.equal(state.activeLine.value,-1);app.unmount();assert(disconnected);
+ console.log('PASS: stale lyric requests, grouped translations, intro/seek sync, centered scroll and cleanup');
+})().catch(e=>{console.error(e);process.exitCode=1});

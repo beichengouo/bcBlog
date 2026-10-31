@@ -37,44 +37,58 @@
       </div>
     </div>
 
-    <!-- 歌词栏 -->
-    <div class="lyric-bar glass">
-      <span class="wave" :class="{ active: playing }">
-        <i></i><i></i><i></i><i></i><i></i>
-      </span>
-      <p class="lyric-text">
-        {{ displayed || (current.title ? '♪ ' + current.title : '暂无歌词') }}
-        <span class="caret"></span>
-      </p>
-    </div>
+    <section class="lyric-panel glass" aria-label="同步歌词">
+      <header class="lyric-heading"><span>歌词 <small>LYRICS</small></span><span class="wave" :class="{ active: playing }" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span></header>
+      <div ref="lyricViewport" class="lyric-viewport" tabindex="0" aria-label="歌词列表，可滚动查看">
+        <div v-if="lyricLines.length" ref="lyricTrack" class="lyric-track">
+          <p v-for="(line, index) in lyricLines" :key="line.time" class="lyric-row" :class="{ 'is-current': index === activeLine, 'is-near': Math.abs(index - activeLine) === 1 }" :aria-current="index === activeLine ? 'true' : undefined" :data-lyric-index="index">{{ line.text }}</p>
+        </div>
+        <div v-else class="lyric-empty"><span>♪</span><p>{{ current.title || '等待音乐响起' }}</p><small>暂无可用歌词，静静听一会儿吧</small></div>
+      </div>
+    </section>
   </div>
 </template>
 
 <script setup>
-import { ref, watch, onMounted, onUnmounted } from 'vue'
+import { computed, nextTick, ref, watch, onMounted, onUnmounted } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useMusicStore } from '@/store/music'
 
 const music = useMusicStore()
-const { current, progress, playing, currentTime, duration, currentLyric } = storeToRefs(music)
+const { current, progress, playing, currentTime, duration, lyrics } = storeToRefs(music)
 const { prev, toggle, next } = music
 
-const displayed = ref('')
-let typeTimer = 0
-
-/** 歌词打字机效果 */
-watch(currentLyric, (text) => {
-  clearInterval(typeTimer)
-  displayed.value = ''
-  if (!text) return
-  let i = 0
-  typeTimer = setInterval(() => {
-    displayed.value = text.slice(0, i)
-    i++
-    if (i > text.length) {
-      clearInterval(typeTimer)
-    }
-  }, 45)
+const lyricViewport = ref(null), lyricTrack = ref(null)
+let lyricResizeObserver
+// Keep translations sharing a timestamp with their original line.
+const lyricLines = computed(() => {
+  const lines = []
+  for (const line of lyrics.value) {
+    const previous = lines[lines.length - 1]
+    if (previous && previous.time === line.time) previous.text += '\n' + line.text
+    else lines.push({ ...line })
+  }
+  return lines
+})
+const activeLine = computed(() => {
+  let index = -1
+  for (let i = 0; i < lyricLines.value.length && lyricLines.value[i].time <= currentTime.value; i++) index = i
+  return index
+})
+async function centerLyric(smooth = true) {
+  await nextTick()
+  const viewport = lyricViewport.value
+  if (!viewport) return
+  const row = viewport.querySelector(`[data-lyric-index="${Math.max(0, activeLine.value)}"]`)
+  const top = row ? Math.max(0, row.offsetTop + row.offsetHeight / 2 - viewport.clientHeight / 2) : 0
+  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  viewport.scrollTo({ top, behavior: smooth && !reduced ? 'smooth' : 'auto' })
+}
+watch(activeLine, () => centerLyric())
+watch(lyricLines, () => centerLyric(false), { flush: 'post' })
+watch(lyricTrack, (track, oldTrack) => {
+  if (oldTrack) lyricResizeObserver?.unobserve(oldTrack)
+  if (track) lyricResizeObserver?.observe(track)
 })
 
 function fmt(s) {
@@ -91,8 +105,12 @@ function seek(e) {
 
 onMounted(() => {
   music.init()
+  lyricResizeObserver = new ResizeObserver(() => centerLyric(false))
+  lyricResizeObserver.observe(lyricViewport.value)
+  if (lyricTrack.value) lyricResizeObserver.observe(lyricTrack.value)
+  centerLyric(false)
 })
-onUnmounted(() => clearInterval(typeTimer))
+onUnmounted(() => lyricResizeObserver?.disconnect())
 </script>
 
 <style scoped>
@@ -233,15 +251,18 @@ onUnmounted(() => clearInterval(typeTimer))
 }
 
 /* 歌词栏 */
-.lyric-bar {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 14px 18px;
-  border-radius: 18px;
-  box-shadow: var(--shadow);
-  min-height: 60px;
-}
+.lyric-panel { flex-shrink: 0; padding: 18px 20px 8px; border-radius: 18px; box-shadow: var(--shadow); min-width: 0; }
+.lyric-heading { display: flex; align-items: center; justify-content: space-between; color: var(--text-strong); font-size: 13px; font-weight: 600; }
+.lyric-heading small { margin-left: 8px; font-size: 9px; letter-spacing: 2px; font-weight: 400; color: var(--text-muted); }
+.lyric-viewport { position: relative; height: 260px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; mask-image: linear-gradient(transparent, #000 20%, #000 80%, transparent); -webkit-mask-image: linear-gradient(transparent, #000 20%, #000 80%, transparent); }
+.lyric-viewport::-webkit-scrollbar { display: none; }
+.lyric-viewport:focus-visible { outline: 1px solid var(--accent); outline-offset: -2px; border-radius: 8px; }
+.lyric-track { position: relative; padding: 110px 5px; }
+.lyric-row { margin: 0; min-height: 48px; box-sizing: border-box; display: flex; align-items: center; justify-content: center; padding: 12px 4px; white-space: pre-line; overflow-wrap: anywhere; text-align: center; color: var(--text-muted); opacity: .42; font-size: 14px; line-height: 1.8; transition: opacity .35s ease, color .35s ease, transform .35s ease; }
+.lyric-row.is-near { opacity: .7; }
+.lyric-row.is-current { opacity: 1; color: var(--text-strong); font-weight: 650; transform: scale(1.035); text-shadow: 0 0 20px var(--accent-soft); }
+.lyric-empty { min-height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; color: var(--text-muted); }
+.lyric-empty > span { color: var(--accent); font-size: 28px; }.lyric-empty p { font-size: 14px; margin: 12px 0; }.lyric-empty small { font-size: 11px; }
 .wave {
   display: flex;
   align-items: flex-end;
@@ -267,31 +288,11 @@ onUnmounted(() => clearInterval(typeTimer))
   0%, 100% { height: 6px; }
   50% { height: 24px; }
 }
-.lyric-text {
-  margin: 0;
-  flex: 1;
-  min-width: 0;
-  color: var(--text-strong);
-  font-size: 14px;
-  font-weight: 600;
-  letter-spacing: 1px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.caret {
-  display: inline-block;
-  width: 2px;
-  height: 1em;
-  margin-left: 3px;
-  vertical-align: -2px;
-  background: var(--accent);
-  animation: blink 0.9s steps(1) infinite;
-}
-@keyframes blink {
-  50% { opacity: 0; }
-}
+@media (prefers-reduced-motion: reduce) { .lyric-row { transition: none; }.cover.spin,.wave.active i { animation: none; } }
 @media (max-width: 560px) {
+  .lyric-viewport { height: 220px; }
+  .lyric-track { padding-block: 90px; }
+  .lyric-panel { padding-inline: 16px; }
   .player-card {
     min-height: 260px;
     padding: 18px;

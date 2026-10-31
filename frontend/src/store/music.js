@@ -15,6 +15,7 @@ const BUILTIN_FALLBACK = [
 // Audio 对象不放进 Pinia state，避免被响应式代理包裹
 let audio = null
 let errorStreak = 0
+let lyricRequestId = 0
 
 /** 解析 LRC 歌词文本为 [{ time, text }] */
 function parseLrc(raw) {
@@ -183,6 +184,8 @@ export const useMusicStore = defineStore('music', {
         this.toggle()
         return
       }
+      this.currentTime = 0
+      this.duration = 0
       this.index = i
       audio.src = this.songs[i].src
       this.loadLyrics(this.songs[i])
@@ -215,6 +218,7 @@ export const useMusicStore = defineStore('music', {
       const r = Math.max(0, Math.min(1, ratio))
       audio.currentTime = r * this.duration
       this.currentTime = audio.currentTime
+      this.updateLyric()
     },
 
     setVolume(v) {
@@ -224,6 +228,7 @@ export const useMusicStore = defineStore('music', {
 
     /** 读取并解析当前歌曲歌词，失败时静默显示空歌词 */
     async loadLyrics(song) {
+      const requestId = ++lyricRequestId
       this.lyrics = []
       this.currentLyric = ''
       const lrc = song && song.lrc ? String(song.lrc).trim() : ''
@@ -236,9 +241,11 @@ export const useMusicStore = defineStore('music', {
           if (!res.ok) return
           text = await res.text()
         }
+        if (requestId !== lyricRequestId) return
         this.lyrics = parseLrc(text)
         this.updateLyric()
       } catch (e) {
+        if (requestId !== lyricRequestId) return
         this.lyrics = []
         this.currentLyric = ''
       }
