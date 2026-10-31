@@ -34,6 +34,7 @@
 import { ref, onMounted } from 'vue'
 import { getPortalConfig } from '@/api/config'
 import { copyText } from '@/utils/content'
+import { fetchHitokoto } from '@/utils/dailyQuote'
 
 const open = ref(false)
 const loading = ref(false)
@@ -44,10 +45,9 @@ const categories = ref('d,i,k')
 async function load() {
   loading.value = true
   try {
-    const res = await fetch(`https://v1.hitokoto.cn/?${categories.value.split(',').filter(Boolean).map((c) => `c=${c.trim()}`).join('&')}`)
-    const data = await res.json()
-    text.value = data.hitokoto || '世界那么大，还是遇见你。'
-    source.value = data.from_who ? `${data.from} · ${data.from_who}` : data.from || ''
+    const quote = await fetchHitokoto(categories.value)
+    text.value = quote.text
+    source.value = quote.source
   } catch (e) {
     text.value = '愿你历尽千帆，归来仍是少年。'
     source.value = '备用语'

@@ -1,7 +1,7 @@
 <template>
   <div class="posts-carousel glass">
     <template v-if="posts.length">
-      <div class="slide" @click="go(current.id)">
+      <router-link class="slide" :to="`/portal/article/${current.id}`">
         <img v-if="current.cover" class="slide-cover" :src="current.cover" alt="" />
         <div v-else class="slide-cover fallback"></div>
         <div class="slide-mask"></div>
@@ -13,7 +13,7 @@
           <h3 class="slide-title">{{ current.title }}</h3>
           <p v-if="current.summary" class="slide-summary">{{ current.summary }}</p>
         </div>
-      </div>
+      </router-link>
       <div v-if="posts.length > 1" class="dots">
         <button
           v-for="(p, i) in posts"
@@ -30,17 +30,16 @@
 
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
-import { useRouter } from 'vue-router'
 import { listPortalArticles } from '@/api/article'
 
 const props = defineProps({
   count: { type: Number, default: 5 }
 })
 
-const router = useRouter()
 const posts = ref([])
 const currentIndex = ref(0)
 let timer = 0
+let requestId = 0
 
 const current = computed(() => posts.value[currentIndex.value] || {})
 
@@ -48,18 +47,17 @@ function shortDate(dt) {
   return dt ? String(dt).slice(0, 10) : ''
 }
 
-function go(id) {
-  if (!id) return
-  router.push(`/portal/article/${id}`)
-}
-
 async function load() {
+  const id = ++requestId
+  clearInterval(timer)
   try {
     const size = Math.max(1, Math.min(10, props.count || 5))
     const data = await listPortalArticles({ page: 1, size })
-    posts.value = data.list || []
+    if (id !== requestId) return
+    posts.value = Array.isArray(data?.list) ? data.list : []
     currentIndex.value = 0
   } catch (e) {
+    if (id !== requestId) return
     posts.value = []
   }
   startTimer()
@@ -75,7 +73,7 @@ function startTimer() {
 
 watch(() => props.count, load)
 onMounted(load)
-onUnmounted(() => clearInterval(timer))
+onUnmounted(() => { requestId++; clearInterval(timer) })
 </script>
 
 <style scoped>
@@ -88,6 +86,7 @@ onUnmounted(() => clearInterval(timer))
   overflow: hidden;
 }
 .slide {
+  display: block;
   position: relative;
   width: 100%;
   height: 100%;

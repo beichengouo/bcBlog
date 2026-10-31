@@ -1,8 +1,15 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="dark" class="dark">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script>
+      try {
+        const mode = localStorage.getItem('bcblog-theme') === 'light' ? 'light' : 'dark'
+        document.documentElement.dataset.theme = mode
+        document.documentElement.classList.toggle('dark', mode === 'dark')
+      } catch (_) {}
+    </script>
     <title>bcBlog</title>
     <link rel="icon" href="/uploads/logo/avatar.png" />
   </head>

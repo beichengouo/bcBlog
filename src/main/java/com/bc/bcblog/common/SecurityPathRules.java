@@ -26,6 +26,7 @@ public final class SecurityPathRules {
      * 现在把会碰到密钥、其他用户数据、AI 消耗、站点配置的后台接口都列进来。
      */
     public static final String[] PROTECTED_PATHS = {
+            "/api/admin/game-packages/**",
             "/api/admin/user/**",
             "/api/admin/member/**",
             "/api/admin/invite/**",

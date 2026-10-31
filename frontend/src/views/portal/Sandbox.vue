@@ -1,6 +1,7 @@
 <template>
   <div class="sandbox">
     <header class="sandbox-head">
+      <div class="sandbox-eyebrow"><span></span> THE LIVING WORLD <span class="sandbox-edition">沙盒世界 · 旅人手记</span></div>
       <div class="head-title">
         <!-- 多个世界时标题本身就是切换入口；只有一个世界时用纯文字标题 -->
         <el-dropdown
@@ -36,12 +37,28 @@
       <span v-if="!enabled" class="paused">
         {{ currentWorldStopped ? '这个世界已停止运行，当前只展示历史记录' : 'AI 自动行动已暂停，当前只展示历史记录' }}
       </span>
+      <div class="world-overview" aria-label="世界概览">
+        <div><span>在此相遇</span><strong>{{ worldReady ? characters.length : '—' }}<small>位角色</small></strong></div>
+        <div><span>探索足迹</span><strong>{{ worldReady ? locations.length : '—' }}<small>处地点</small></strong></div>
+        <div><span>当前故事</span><strong>{{ worldReady ? timelineTotal : '—' }}<small>{{ activeId || locationFilter ? '条筛选记录' : '条行动记录' }}</small></strong></div>
+        <a href="#sandbox-profiles" class="overview-cta">翻开旅人档案 <span aria-hidden="true">↗</span></a>
+      </div>
     </header>
 
-    <section class="map-card">
+    <nav class="sandbox-sections" aria-label="沙盒页内导航">
+      <a href="#sandbox-map"><span>01</span> 世界地图</a>
+      <a href="#sandbox-profiles"><span>02</span> 角色与故事</a>
+      <a v-if="shopEnabled" href="#sandbox-market"><span>03</span> 旅人集市</a>
+      <a v-if="questEnabled" href="#sandbox-quests"><span>{{ shopEnabled ? '04' : '03' }}</span> 委托板</a>
+    </nav>
+
+    <section id="sandbox-map" class="map-card">
+      <div class="map-section-head"><div><span class="section-index">01 / EXPLORE</span><h2>世界地图</h2></div><span class="map-section-note">{{ world.mapImage ? '点击地点，发现旅人的踪迹' : '一段新的旅程，从这里开始' }}</span></div>
       <div v-if="!world.mapImage" class="map-empty">
-        <p>管理员还没有上传地图背景</p>
-        <p class="sub">可以在后台「站点管理 → 沙盒世界」上传地图并添加地点</p>
+        <span class="map-empty-symbol" aria-hidden="true">✧</span>
+        <p>世界的轮廓，正在慢慢展开</p>
+        <p class="sub">地图尚未发布，先去看看旅人们的故事吧。</p>
+        <a href="#sandbox-profiles" class="empty-map-link">浏览角色档案 →</a>
       </div>
       <div v-else class="map-stage" @click="activeLocationId = null">
         <img class="map-bg" :src="world.mapImage" alt="地图" />
@@ -185,11 +202,11 @@
       </div>
     </section>
 
-    <section ref="profileRef" class="card panel">
+    <section id="sandbox-profiles" ref="profileRef" class="card panel">
       <div class="panel-head">
         <h3>角色档案</h3>
         <div class="panel-tools">
-          <input v-model="keyword" class="char-search" type="search" placeholder="搜索角色名 / 称号 / 所在地" />
+          <input v-model="keyword" class="char-search" type="search" placeholder="搜索角色名 / 称号 / 所在地" aria-label="搜索沙盒角色" />
           <!-- 收起只作用于"角色详情"；看「全部」时没有详情可收，按钮就不显示 -->
           <button v-if="active" class="ghost-btn" @click="collapsed = !collapsed">
             {{ collapsed ? '展开' : '收起' }}
@@ -201,7 +218,7 @@
       <div class="panel-body">
         <div class="char-chips">
           <!-- 「全部」= 只按"全部角色"看行动记录；点具体角色才展开上面的角色详情 -->
-          <button class="char-chip" :class="{ on: !activeId }" @click="selectAllCharacters">
+          <button class="char-chip" :class="{ on: !activeId }" :aria-pressed="!activeId" @click="selectAllCharacters">
             <span class="chip-avatar fallback">全</span>
             <span class="chip-text">
               <span class="chip-name">全部</span>
@@ -213,6 +230,7 @@
             :key="'chip-' + c.id"
             class="char-chip"
             :class="{ on: activeId === c.id }"
+            :aria-pressed="activeId === c.id"
             @click="selectCharacter(c)"
           >
             <img v-if="c.avatar" class="chip-avatar" :src="c.avatar" :alt="c.name" />
@@ -683,7 +701,7 @@
 
     <!-- 旅人集市：AI 定时刷新的商品，商品用金币标价；角色会自己掏金币买，
          前台用户购买时按汇率把金币价折算成积分扣款，买下后直接赠送给角色（商品进角色背包） -->
-    <section v-if="shopEnabled" class="card shop">
+    <section v-if="shopEnabled" id="sandbox-market" class="card shop">
       <div class="shop-head">
         <h3>{{ shopTitle || '旅人集市' }}</h3>
         <span class="muted">
@@ -724,7 +742,7 @@
 
     <!-- 旅人委托板：最新一批可接 + 所有接取中 + 近三天已完成。
          角色会自己挑着接，接了要自己赶路、自己推进；完成后奖励直接进 TA 的账 -->
-    <section v-if="questEnabled" class="card quest-board">
+    <section v-if="questEnabled" id="sandbox-quests" class="card quest-board">
       <div class="quest-head">
         <h3>{{ questTitle || '旅人委托板' }}</h3>
         <span class="muted">
@@ -915,6 +933,7 @@ const isLogin = computed(() => !!userInfo.value)
 const myPoints = computed(() => (userInfo.value ? userInfo.value.points : 0))
 
 const world = reactive({ name: '', description: '', mapImage: '' })
+const worldReady = ref(false)
 const locations = ref([])
 const characters = ref([])
 const enabled = ref(true)
@@ -1464,6 +1483,7 @@ async function load() {
   questEnabled.value = data.questEnabled === true
   questTitle.value = data.questTitle || '旅人委托板'
   quests.value = data.quests || []
+  worldReady.value = true
   kmMapWidth.value = data.kmMapWidth == null ? 200 : data.kmMapWidth
   news.value = data.news || []
   newsTitle.value = data.newsTitle || ''
@@ -3245,4 +3265,7 @@ onBeforeUnmount(() => {
   .quest-board { padding: 16px 14px 18px; }
   .quest-grid { grid-template-columns: 1fr; gap: 12px; }
   .quest-card { padding: 13px 13px 14px 17px; }
-}</style>
+}
+</style>
+
+<style scoped src="@/styles/sandbox.css"></style>

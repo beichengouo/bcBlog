@@ -3,17 +3,37 @@
     <!-- 首屏 Hero -->
     <section class="hero">
       <div class="hero-inner">
-        <p class="hero-kicker">Welcome to</p>
+        <div class="hero-copy">
+        <p class="hero-kicker"><span></span> A LITTLE SPACE FOR IDEAS</p>
         <h1 class="hero-title">{{ siteName }}</h1>
-        <div class="hero-sub">
-          <span class="typed">{{ typedText }}</span>
-          <span class="caret"></span>
-        </div>
-        <div class="hero-scroll" @click="scrollToArticles">
-          <span>向下探索</span>
+        <figure class="hero-sub daily-quote" :aria-busy="quoteLoading">
+          <blockquote>{{ quoteLoading ? '正在拾取今天的一句话…' : dailyQuote.text }}</blockquote>
+          <figcaption v-if="!quoteLoading"><span>{{ dailyQuote.stale ? '最近一言' : '今日一言' }}</span> — {{ dailyQuote.source }}</figcaption>
+        </figure>
+        <p class="hero-description">把灵感写成文字，把日常收藏成光。<br />在这里，慢慢记录，也慢慢遇见。</p>
+        <div class="hero-actions">
+        <button type="button" class="hero-scroll" @click="scrollToArticles">
+          <span>开始阅读</span>
           <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M12 5v14M19 12l-7 7-7-7" />
           </svg>
+        </button>
+        <router-link to="/portal/photos" class="hero-secondary">去看看流光忆庭 <span aria-hidden="true">↗</span></router-link>
+        </div>
+        <p class="hero-note">文字有迹，热爱有声。</p>
+        </div>
+        <div class="hero-directory">
+          <div class="directory-heading"><span>随心漫游</span><span class="directory-label">EXPLORE / 01—03</span></div>
+          <router-link to="/portal/photos" class="directory-link">
+            <span class="directory-number">01</span><div><strong>流光忆庭</strong><span>让值得记住的瞬间，留在这里</span></div><span class="directory-arrow" aria-hidden="true">↗</span>
+          </router-link>
+          <router-link to="/portal/resources" class="directory-link">
+            <span class="directory-number">02</span><div><strong>智库</strong><span>收集好用的工具与闪光的想法</span></div><span class="directory-arrow" aria-hidden="true">↗</span>
+          </router-link>
+          <router-link to="/portal/sandbox" class="directory-link">
+            <span class="directory-number">03</span><div><strong>沙盒世界</strong><span>推开另一扇门，发现新的故事</span></div><span class="directory-arrow" aria-hidden="true">↗</span>
+          </router-link>
+          <div class="directory-footer"><span class="directory-star" aria-hidden="true">✳</span> 保持好奇，故事还在继续。</div>
         </div>
       </div>
     </section>
@@ -29,6 +49,8 @@
         </div>
       </div>
     </section>
+
+    <GameFeature />
 
     <!-- 最近评论：原生评论取自本站，Gitalk 模式取自 GitHub Issues -->
     <section v-if="recentComments.length" class="recent-comments">
@@ -62,11 +84,16 @@
     </section>
 
     <div id="articles" class="container">
-      <aside class="sidebar">
+      <aside class="sidebar" aria-label="公告与文章筛选">
         <AnnouncementBoard />
-        <div class="side-card glass">
-          <div class="side-title">分类</div>
+        <section class="side-card glass category-card" aria-labelledby="category-heading">
+          <div class="side-heading"><span class="side-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M3 6h7l2 3h9v11H3z M3 6V4h7l2 2h9v3" /></svg></span><div><span class="side-kicker">CATEGORIES</span><h2 id="category-heading">文章分类</h2></div><span v-if="!filtersLoading && !categoryLoadError" class="side-count">{{ categoryCount }}</span></div>
+          <p class="side-description">按主题，找到想读的内容。</p>
+          <div v-if="filtersLoading" class="filter-placeholder" role="status">分类整理中…</div>
+          <div v-else-if="categoryLoadError" class="filter-placeholder" role="alert">分类暂时无法加载 <button type="button" @click="loadFilters">重试</button></div>
           <el-tree
+            v-else-if="categories.length"
+            ref="categoryTreeRef"
             :data="categories"
             :props="catProps"
             node-key="id"
@@ -77,39 +104,52 @@
             @node-click="onCategoryClick"
           >
             <template #default="{ data }">
-              <span>{{ data.name }}</span>
+              <span class="category-label" :title="data.name">{{ data.name }}</span>
             </template>
           </el-tree>
-          <div v-if="currentCategory" class="clear-filter" @click="clearFilter">清除筛选</div>
-        </div>
+          <p v-else class="filter-placeholder">分类还在整理，先随心读读吧。</p>
+          <button v-if="currentCategory" type="button" class="clear-filter" @click="clearQueryFilter('category')">清除分类筛选 <span aria-hidden="true">×</span></button>
+        </section>
 
-        <div class="side-card glass">
-          <div class="side-title">标签</div>
-          <div class="tag-cloud">
-            <span
-              v-for="t in tags"
+        <section class="side-card glass tags-card" aria-labelledby="tags-heading">
+          <div class="side-heading"><span class="side-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M3 3h8l10 10-8 8L3 11z" /><circle cx="7.5" cy="7.5" r="1" /></svg></span><div><span class="side-kicker">TOPICS</span><h2 id="tags-heading">灵感标签</h2></div><span v-if="!filtersLoading && !tagLoadError" class="side-count">{{ tags.length }}</span></div>
+          <p class="side-description">跟着一个关键词，继续探索。</p>
+          <div v-if="filtersLoading" class="filter-placeholder" role="status">标签整理中…</div>
+          <div v-else-if="tagLoadError" class="filter-placeholder" role="alert">标签暂时无法加载 <button type="button" @click="loadFilters">重试</button></div>
+          <div v-else-if="tags.length" id="home-tag-cloud" class="tag-cloud">
+            <button
+              v-for="t in visibleTags"
               :key="t.id"
+              type="button"
               class="tag-chip"
               :class="{ active: currentTag === t.id }"
+              :aria-pressed="currentTag === t.id"
               @click="onTagClick(t)"
-            >{{ t.name }}</span>
+              :title="t.name"
+            ><span class="tag-hash" aria-hidden="true">#</span>{{ t.name }}</button>
           </div>
-        </div>
+          <p v-else class="filter-placeholder">还没有标签，灵感正在路上。</p>
+          <div v-if="!filtersLoading && !tagLoadError && (tags.length > 12 || currentTag)" class="filter-footer">
+            <button v-if="tags.length > 12" type="button" class="tags-expand" :aria-expanded="tagsExpanded" aria-controls="home-tag-cloud" @click="tagsExpanded = !tagsExpanded">{{ tagsExpanded ? '收起标签' : '查看全部标签' }} <span aria-hidden="true">{{ tagsExpanded ? '−' : '+' }}</span></button>
+            <button v-if="currentTag" type="button" class="clear-tag" @click="clearQueryFilter('tag')">清除选择 ×</button>
+          </div>
+        </section>
       </aside>
 
       <section class="content">
         <div class="content-head">
-          <div class="switch">
-            <button :class="{ active: mode === 'masonry' }" @click="mode = 'masonry'">
+          <div class="section-heading"><p>THE JOURNAL</p><h2>{{ currentKeyword ? '搜索结果' : (currentCategory || currentTag ? '筛选文章' : '最近更新') }}</h2><span v-if="currentKeyword" class="search-context">关于「{{ currentKeyword }}」</span></div>
+          <div class="switch" role="group" aria-label="文章展示方式">
+            <button :class="{ active: mode === 'masonry' }" :aria-pressed="mode === 'masonry'" @click="mode = 'masonry'">
               <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
                 <rect x="3" y="3" width="7" height="7" rx="1" />
                 <rect x="14" y="3" width="7" height="10" rx="1" />
                 <rect x="3" y="14" width="7" height="7" rx="1" />
                 <rect x="14" y="17" width="7" height="4" rx="1" />
               </svg>
-              瀑布流
+              卡片
             </button>
-            <button :class="{ active: mode === 'timeline' }" @click="mode = 'timeline'">
+            <button :class="{ active: mode === 'timeline' }" :aria-pressed="mode === 'timeline'" @click="mode = 'timeline'">
               <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
                 <circle cx="12" cy="12" r="9" />
                 <path d="M12 7v5l3 3" />
@@ -118,6 +158,10 @@
             </button>
           </div>
         </div>
+        <div class="journal-context">
+          <span>一些记录，一些思考，还有正在发生的故事。</span>
+          <button v-if="currentCategory || currentTag || currentKeyword" type="button" @click="clearFilter">查看全部文章 <span aria-hidden="true">↗</span></button>
+        </div>
         <ArticleList :params="listParams" :mode="mode" />
       </section>
     </div>
@@ -125,25 +169,35 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { portalCategoryTree } from '@/api/category'
 import { portalTagList } from '@/api/tag'
 import { getRecentGitalkComments } from '@/api/gitalk'
 import { recentComments as recentNativeComments } from '@/api/comment'
-import { getPortalConfig } from '@/api/config'
 import { useSiteStore } from '@/store/site'
 import ArticleList from '@/components/portal/ArticleList.vue'
 import AnnouncementBoard from '@/components/portal/AnnouncementBoard.vue'
 import LatestPostsCarousel from '@/components/portal/LatestPostsCarousel.vue'
 import HomeMusicPlayer from '@/components/portal/HomeMusicPlayer.vue'
+import GameFeature from '@/components/portal/GameFeature.vue'
+import { getDailyQuote, nextQuoteRefresh, shanghaiDay } from '@/utils/dailyQuote'
 
 const route = useRoute()
 const router = useRouter()
 const siteStore = useSiteStore()
 
 const categories = ref([])
+const categoryTreeRef = ref(null)
 const tags = ref([])
+const filtersLoading = ref(true)
+const categoryLoadError = ref(false)
+const tagLoadError = ref(false)
+const tagsExpanded = ref(false)
+const categoryCount = computed(() => {
+  const count = (items) => items.reduce((sum, item) => sum + 1 + count(item.children || []), 0)
+  return count(categories.value)
+})
 const catProps = { label: 'name', children: 'children' }
 const mode = ref('masonry')
 const siteName = ref('bcBlog')
@@ -154,17 +208,26 @@ const recentComments = ref([])
 const commentSystem = ref('gitalk')
 const commentsOpen = ref(false)
 
-const typedText = ref('')
-const phrases = ref([])
-let typeTimer = 0
-let phraseIdx = 0
-let charIdx = 0
-let deleting = false
-let snapLocked = false
+const dailyQuote = ref({ text: '', source: '', day: '', stale: false })
+const quoteLoading = ref(true)
+let quoteCategories = 'd,i,k'
+let quoteTimer = 0
+let disposed = false
 
 const currentCategory = computed(() => (route.query.category ? Number(route.query.category) : null))
 const currentTag = computed(() => (route.query.tag ? Number(route.query.tag) : null))
 const currentKeyword = computed(() => route.query.keyword || '')
+watch(currentCategory, async (value) => {
+  await nextTick()
+  if (!disposed) categoryTreeRef.value?.setCurrentKey(value)
+})
+const visibleTags = computed(() => {
+  if (tagsExpanded.value) return tags.value
+  const first = tags.value.slice(0, 12)
+  const selected = tags.value.find((tag) => tag.id === currentTag.value)
+  if (selected && !first.includes(selected)) first.push(selected)
+  return first
+})
 
 const listParams = computed(() => {
   const params = {}
@@ -175,11 +238,28 @@ const listParams = computed(() => {
 })
 
 function onCategoryClick(node) {
-  router.push({ path: '/portal', query: { category: node.id } })
+  router.push({ path: '/portal', query: { ...route.query, category: node.id } })
 }
 
 function onTagClick(tag) {
-  router.push({ path: '/portal', query: { tag: tag.id } })
+  router.push({ path: '/portal', query: { ...route.query, tag: currentTag.value === tag.id ? undefined : tag.id } })
+}
+
+function clearQueryFilter(key) {
+  const query = { ...route.query }
+  delete query[key]
+  router.push({ path: '/portal', query })
+}
+
+async function loadFilters() {
+  filtersLoading.value = true
+  const [categoryResult, tagResult] = await Promise.allSettled([portalCategoryTree(), portalTagList()])
+  if (disposed) return
+  categoryLoadError.value = categoryResult.status === 'rejected'
+  tagLoadError.value = tagResult.status === 'rejected'
+  categories.value = categoryLoadError.value ? [] : categoryResult.value || []
+  tags.value = tagLoadError.value ? [] : tagResult.value || []
+  filtersLoading.value = false
 }
 
 function clearFilter() {
@@ -209,96 +289,39 @@ function goComment(c) {
 
 // 点击向下箭头，直接平滑滚动到文章展示区
 function scrollToArticles() {
-  // 有首页中段时先滚到中段，没有时直接滚到文章列表
-  const el = document.getElementById('showcase') || document.getElementById('articles')
+  const el = document.getElementById('articles')
   if (!el) return
-  const headerH = document.querySelector('.portal-header')?.offsetHeight || 64
-  const targetY = el.getBoundingClientRect().top + window.scrollY - headerH - 20
-  const startY = window.scrollY
-  const diff = targetY - startY
-  const duration = Math.min(900, Math.max(450, Math.abs(diff) * 0.45))
-  const docEl = document.documentElement
-  const prev = docEl.style.scrollBehavior
-  docEl.style.scrollBehavior = 'auto'
-  const start = performance.now()
-  const ease = (t) => (t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t)
-  function step(now) {
-    const p = Math.min(1, (now - start) / duration)
-    window.scrollTo(0, startY + diff * ease(p))
-    if (p < 1) {
-      requestAnimationFrame(step)
-    } else {
-      docEl.style.scrollBehavior = prev
-    }
-  }
-  requestAnimationFrame(step)
+  el.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth' })
 }
 
-// 首页顶部向下滚动时，直接平滑滚到文章区，而不是一步步滚动
-function onWheel(e) {
-  if (e.deltaY <= 0) return
-  if (window.scrollY > 10) return
-  e.preventDefault()
-  if (snapLocked) return
-  snapLocked = true
-  scrollToArticles()
-  window.setTimeout(() => {
-    snapLocked = false
-  }, 900)
+async function refreshDailyQuote() {
+  quoteLoading.value = true
+  const quote = await getDailyQuote(quoteCategories)
+  if (disposed) return
+  dailyQuote.value = quote
+  quoteLoading.value = false
+  clearTimeout(quoteTimer)
+  quoteTimer = window.setTimeout(refreshDailyQuote, nextQuoteRefresh())
 }
-
-// 打字机效果：轮流打出站点描述 / 关键词
-function type() {
-  if (!phrases.value.length) return
-  const current = phrases.value[phraseIdx]
-  if (!deleting) {
-    charIdx++
-    typedText.value = current.slice(0, charIdx)
-    if (charIdx >= current.length) {
-      deleting = true
-      typeTimer = window.setTimeout(type, 1600)
-      return
-    }
-    typeTimer = window.setTimeout(type, 70)
-  } else {
-    charIdx--
-    typedText.value = current.slice(0, charIdx)
-    if (charIdx <= 0) {
-      deleting = false
-      phraseIdx = (phraseIdx + 1) % phrases.value.length
-      typeTimer = window.setTimeout(type, 400)
-      return
-    }
-    typeTimer = window.setTimeout(type, 35)
-  }
+function checkQuoteDay() {
+  if (document.visibilityState === 'visible' && dailyQuote.value.day !== shanghaiDay()) refreshDailyQuote()
 }
 
 onMounted(async () => {
-  window.addEventListener('wheel', onWheel, { passive: false })
   const config = await siteStore.load()
+  if (disposed) return
   siteName.value = config.siteName || 'bcBlog'
   showShowcase.value = config.homeCarouselEnabled !== 0
   carouselCount.value = config.homeCarouselCount || 5
 
-  const arr = []
-  if (config.siteSlogan) arr.push(config.siteSlogan)
-  if (config.siteDescription && config.siteDescription !== config.siteSlogan) arr.push(config.siteDescription)
-  if (config.siteKeywords) {
-    config.siteKeywords.split(/[,，]/).filter(Boolean).forEach((k) => arr.push('#' + k.trim()))
-  }
-  if (!arr.length) arr.push('愿每一次点击都有温度')
-  phrases.value = arr
-  type()
+  quoteCategories = config.hitokotoCategories || 'd,i,k'
+  refreshDailyQuote()
+  document.addEventListener('visibilitychange', checkQuoteDay)
 
-  categories.value = await portalCategoryTree()
-  tags.value = await portalTagList()
+  await loadFilters()
+  if (disposed) return
   // 「最近评论」跟着后台的评论系统走：原生评论就读本站评论，Gitalk 才去读 GitHub Issues
-  try {
-    const cfg = await getPortalConfig()
-    commentSystem.value = (cfg && cfg.commentSystem) || 'gitalk'
-  } catch (e) {
-    commentSystem.value = 'gitalk'
-  }
+  commentSystem.value = config.commentSystem || 'gitalk'
   try {
     if (commentSystem.value === 'native') {
       const list = (await recentNativeComments(10)) || []
@@ -320,8 +343,9 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
-  clearTimeout(typeTimer)
-  window.removeEventListener('wheel', onWheel)
+  disposed = true
+  clearTimeout(quoteTimer)
+  document.removeEventListener('visibilitychange', checkQuoteDay)
 })
 </script>
 
@@ -332,39 +356,72 @@ onUnmounted(() => {
 
 /* Hero 首屏 */
 .hero {
-  min-height: 100vh;
+  min-height: min(800px, 85svh);
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: var(--header-height) 20px 40px;
-  text-align: center;
+  padding: calc(var(--header-height) + 88px) 28px 80px;
 }
 .hero-inner {
-  max-width: 720px;
+  width: 100%;
+  max-width: 1224px;
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+  gap: clamp(36px, 7vw, 110px);
+  align-items: center;
 }
 .hero-kicker {
-  margin: 0 0 10px;
-  font-size: 14px;
-  letter-spacing: 4px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 28px;
+  font-size: 11px;
+  letter-spacing: 2.6px;
   color: var(--text-muted);
   text-transform: uppercase;
 }
+.hero-kicker > span { width: 26px; height: 2px; background: var(--accent); }
 .hero-title {
   margin: 0;
-  font-size: clamp(40px, 8vw, 72px);
+  font-size: clamp(44px, 6vw, 80px);
   font-weight: 800;
-  line-height: 1.1;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+  letter-spacing: -2px;
   background: linear-gradient(120deg, var(--accent), var(--accent-2));
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
 }
 .hero-sub {
-  margin-top: 22px;
-  min-height: 28px;
+  margin-top: 18px;
+  min-height: 30px;
   font-size: 17px;
-  color: var(--text-muted);
+  color: var(--text);
 }
+.daily-quote { margin-left: 0; margin-right: 0; max-width: 580px; }
+.daily-quote blockquote { margin: 0; font-size: 17px; line-height: 1.9; color: var(--text); overflow-wrap: anywhere; }
+.daily-quote figcaption { margin-top: 13px; font-size: 11px; line-height: 1.8; color: var(--text-muted); }
+.daily-quote figcaption > span { font-size: 9px; letter-spacing: 1px; color: var(--accent); }
+.hero-description { margin: 22px 0 30px; font-size: 15px; line-height: 2; color: var(--text-muted); }
+.hero-actions { display: flex; align-items: center; gap: 24px; flex-wrap: wrap; }
+.hero-secondary { font-size: 13px; color: var(--text); }
+.hero-secondary span { margin-left: 8px; color: var(--accent); }
+.hero-secondary:hover { color: var(--accent); }
+.hero-note { margin: 26px 0 0; color: var(--text-muted); font-size: 11px; letter-spacing: 2px; }
+.hero-directory { position: relative; padding: 28px; border: 1px solid var(--glass-border); border-radius: 24px; background: var(--card); backdrop-filter: blur(18px); box-shadow: var(--shadow); transform: rotate(2deg); }
+.hero-directory::before { content: ''; position: absolute; inset: 14px -12px -14px 12px; border-radius: inherit; border: 1px solid var(--border); z-index: -1; pointer-events: none; }
+.directory-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 22px; font-size: 14px; font-weight: 600; }
+.directory-label { color: var(--text-muted); font-size: 9px; font-weight: 400; letter-spacing: 1px; }
+.directory-link { display: flex; align-items: center; gap: 18px; padding: 22px 0; border-top: 1px solid var(--border); transition: color .2s, transform .2s; }
+.directory-link:hover { color: var(--accent); transform: translateX(4px); }
+.directory-number { font-family: Georgia, serif; font-size: 28px; font-style: italic; color: var(--accent); opacity: .7; }
+.directory-link > div { flex: 1; min-width: 0; }
+.directory-link strong { display: block; margin-bottom: 7px; font-size: 17px; font-weight: 600; }
+.directory-link div > span { display: block; color: var(--text-muted); font-size: 12px; line-height: 1.7; }
+.directory-arrow { font-size: 21px; color: var(--text-muted); }
+.directory-footer { display: flex; align-items: center; gap: 10px; border-top: 1px solid var(--border); padding-top: 20px; color: var(--text-muted); font-size: 11px; }
+.directory-star { font-size: 23px; color: var(--accent); }
 .caret {
   display: inline-block;
   width: 2px;
@@ -378,16 +435,19 @@ onUnmounted(() => {
   50% { opacity: 0; }
 }
 .hero-scroll {
-  margin-top: 44px;
   display: inline-flex;
-  flex-direction: column;
   align-items: center;
-  gap: 6px;
-  color: var(--text-muted);
+  gap: 22px;
+  border: 0;
+  border-radius: 12px;
+  padding: 15px 22px;
+  background: var(--text-strong);
+  color: var(--card-solid);
   font-size: 13px;
   cursor: pointer;
-  animation: float 2.2s ease-in-out infinite;
+  transition: transform .2s, box-shadow .2s;
 }
+.hero-scroll:hover { transform: translateY(-2px); box-shadow: var(--shadow); }
 @keyframes float {
   0%, 100% { transform: translateY(0); }
   50% { transform: translateY(8px); }
@@ -402,7 +462,7 @@ onUnmounted(() => {
 }
 .showcase-inner {
   display: grid;
-  grid-template-columns: 5fr 7fr;
+  grid-template-columns: 7fr 5fr;
   gap: 20px;
   align-items: stretch;
 }
@@ -557,29 +617,43 @@ onUnmounted(() => {
   scroll-margin-top: calc(var(--header-height) + 20px);
 }
 .sidebar {
-  width: 220px;
+  width: 240px;
   flex-shrink: 0;
 }
 .side-card {
+  min-width: 0;
   border-radius: var(--radius);
   box-shadow: var(--shadow);
-  padding: 18px;
-  margin-bottom: 18px;
+  padding: 22px 20px;
+  margin-bottom: 16px;
+  background: var(--card);
+  border: 1px solid var(--border);
 }
-.side-title {
-  font-weight: 700;
-  color: var(--text-strong);
-  margin-bottom: 12px;
-}
+.side-heading { display: flex; align-items: center; gap: 11px; }
+.side-icon { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 34px; height: 34px; border-radius: 11px; color: var(--accent-2); background: var(--accent-soft); }
+.side-kicker { display: block; margin-bottom: 5px; color: var(--text-muted); font-size: 8px; letter-spacing: 1.6px; }
+.side-heading h2 { margin: 0; font-size: 15px; font-weight: 650; color: var(--text-strong); }
+.side-count { display: inline-flex; align-items: center; justify-content: center; min-width: 22px; height: 22px; padding: 0 5px; margin-left: auto; border: 1px solid var(--border); border-radius: 7px; color: var(--text-muted); font-size: 10px; font-variant-numeric: tabular-nums; }
+.side-description { color: var(--text-muted); font-size: 10px; line-height: 1.9; margin: 16px 0; }
+.filter-placeholder { color: var(--text-muted); font-size: 11px; line-height: 1.9; padding: 4px 0; }
+.filter-placeholder button { border: 0; padding: 5px; background: transparent; color: var(--accent); font-size: 11px; cursor: pointer; }
 .cat-tree {
   background: transparent;
+  max-height: 260px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
 }
 .cat-tree :deep(.el-tree-node__content) {
   background: transparent;
   color: var(--text);
   border-radius: 8px;
-  height: 34px;
+  height: 38px;
+  margin-bottom: 3px;
+  padding-right: 10px;
+  font-size: 12px;
 }
+.category-label { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; flex: 1; }
 .cat-tree :deep(.el-tree-node__content:hover) {
   background: var(--accent-soft);
 }
@@ -588,42 +662,75 @@ onUnmounted(() => {
   color: var(--accent);
 }
 .clear-filter {
+  border: 0;
+  padding: 12px 0 0;
+  background: transparent;
   margin-top: 12px;
-  font-size: 13px;
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  border-top: 1px solid var(--border);
   color: var(--accent);
   cursor: pointer;
 }
 .tag-cloud {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 7px;
+  max-height: 260px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  padding: 3px;
+  margin: -3px;
 }
 .tag-chip {
-  padding: 5px 12px;
-  font-size: 13px;
-  border-radius: 999px;
+  padding: 7px 10px;
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 11px;
+  line-height: 1.6;
+  border-radius: 8px;
   color: var(--text);
-  background: var(--accent-soft);
-  border: 1px solid transparent;
+  background: var(--glass-bg);
+  border: 1px solid var(--border);
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: background .2s, color .2s, border-color .2s;
 }
+.tag-hash { margin-right: 5px; color: var(--accent-2); opacity: .6; }
 .tag-chip:hover {
   border-color: var(--accent);
 }
 .tag-chip.active {
-  color: #fff;
-  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-soft);
 }
+.tag-chip.active .tag-hash { color: currentColor; opacity: 1; }
+.filter-footer { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); }
+.filter-footer button { border: 0; padding: 3px 0; background: transparent; color: var(--text-muted); font-size: 10px; cursor: pointer; }
+.filter-footer .clear-tag { color: var(--accent); }
+.tags-expand > span { margin-left: 6px; }
 .content {
   flex: 1;
   min-width: 0;
 }
 .content-head {
   display: flex;
-  justify-content: flex-end;
-  margin-bottom: 20px;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 24px;
 }
+.journal-context { display: flex; justify-content: space-between; gap: 12px; align-items: center; margin: -8px 0 24px; font-size: 12px; line-height: 1.8; color: var(--text-muted); }
+.journal-context button { border: 0; padding: 6px 0 6px 12px; color: var(--accent); background: transparent; font-size: 11px; cursor: pointer; flex-shrink: 0; }
+.section-heading > p { margin: 0 0 8px; color: var(--text-muted); font-size: 10px; letter-spacing: 2px; }
+.section-heading > h2 { margin: 0; color: var(--text-strong); font-size: 26px; font-weight: 650; letter-spacing: 1px; }
+.search-context { display: block; margin-top: 8px; font-size: 12px; color: var(--text-muted); overflow-wrap: anywhere; }
 .switch {
   display: inline-flex;
   gap: 4px;
@@ -653,6 +760,11 @@ onUnmounted(() => {
 }
 
 @media (max-width: 860px) {
+  .hero { min-height: auto; padding: 128px 24px 56px; }
+  .hero-inner { gap: 32px; }
+  .hero-directory { padding: 20px; transform: none; }
+  .directory-label { display: none; }
+  .directory-link { gap: 12px; padding: 18px 0; }
   .showcase-inner {
     grid-template-columns: 1fr;
   }
@@ -663,15 +775,48 @@ onUnmounted(() => {
     width: 100%;
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 18px;
+    gap: 16px;
   }
+  .content { width: 100%; }
   .side-card {
     margin-bottom: 0;
   }
+  .cat-tree, .tag-cloud { max-height: 180px; }
 }
 @media (max-width: 560px) {
+  .journal-context { flex-wrap: wrap; margin-bottom: 20px; }
+  .journal-context button { padding-left: 0; }
+  .hero { padding: 116px 20px 44px; }
+  .hero-inner { grid-template-columns: 1fr; gap: 32px; }
+  .hero-title { font-size: clamp(42px, 12vw, 64px); }
+  .hero-kicker { margin-bottom: 20px; font-size: 9px; letter-spacing: 2px; }
+  .hero-description { font-size: 14px; }
+  .hero-actions { gap: 18px; }
+  .hero-note { display: none; }
+  .hero-directory { border-radius: 18px; }
+  .hero-directory::before { display: none; }
+  .directory-heading { padding-bottom: 16px; }
+  .directory-label { display: inline; }
+  .directory-link { padding: 14px 0; }
+  .directory-link strong { font-size: 15px; }
+  .directory-footer { padding-top: 14px; }
+  .content-head { align-items: flex-start; }
+  .section-heading > h2 { font-size: 22px; }
+  .switch button { padding: 8px 10px; font-size: 12px; }
+  .switch button svg { display: none; }
   .sidebar {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
   }
+  .side-card { padding: 18px 12px; }
+  .side-heading { gap: 8px; flex-wrap: wrap; }
+  .side-icon { width: 28px; height: 28px; border-radius: 9px; }
+  .side-heading h2 { font-size: 13px; }
+  .side-kicker { font-size: 7px; letter-spacing: .8px; }
+  .side-count { display: none; }
+  .side-description { font-size: 9px; margin: 12px 0; }
+  .tag-chip { font-size: 10px; padding: 6px 8px; }
+  .tag-hash { margin-right: 3px; }
+  .cat-tree, .tag-cloud { max-height: 154px; }
 }
 </style>

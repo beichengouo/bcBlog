@@ -15,6 +15,7 @@ const routes = [
       { path: 'resources', component: () => import('@/views/portal/Resources.vue') },
       { path: 'resources/:id', component: () => import('@/views/portal/ResourceDetail.vue') },
       { path: 'sandbox', component: () => import('@/views/portal/Sandbox.vue') },
+      { path: 'games/pixelrogue', component: () => import('@/views/portal/PixelRogue.vue'), meta: { title: '轮舞于星辉尽头' } },
       { path: 'login', component: () => import('@/views/portal/UserAuth.vue') },
       { path: 'user', component: () => import('@/views/portal/UserCenter.vue') },
       { path: 'announcements', component: () => import('@/views/portal/Announcements.vue') },
@@ -50,6 +51,7 @@ const routes = [
       { path: 'emoji', component: () => import('@/views/admin/EmojiManage.vue'), meta: { title: '表情包管理', menu: 'emoji' } },
       { path: 'photos', component: () => import('@/views/admin/PhotoManage.vue'), meta: { title: '流光忆庭', menu: 'photos' } },
       { path: 'resources', component: () => import('@/views/admin/ResourceManage.vue'), meta: { title: '智库', menu: 'resources' } },
+      { path: 'game-releases', component: () => import('@/views/admin/GameReleases.vue'), meta: { title: '游戏发布', menu: 'gameReleases', superOnly: true } },
       { path: 'sandbox/world', component: () => import('@/views/admin/SandboxWorld.vue'), meta: { title: '沙盒世界', menu: 'sandboxWorld' } },
       { path: 'sandbox/characters', component: () => import('@/views/admin/SandboxCharacter.vue'), meta: { title: '沙盒角色', menu: 'sandboxCharacters' } },
       { path: 'sandbox/acts', component: () => import('@/views/admin/SandboxAct.vue'), meta: { title: '沙盒日志', menu: 'sandboxActs' } },
@@ -71,6 +73,7 @@ const routes = [
 // 需要「安全密码」二次验证的后台菜单（与后端 WebConfig.SECURITY_PROTECTED_PATHS 对应）。
 // 说明：「安全设置」本身不在其中，否则没设过安全密码的人将无处可设。
 const SECURITY_MENUS = new Set([
+  'gameReleases',
   'settings',
   'logs',
   'audit',
@@ -94,7 +97,12 @@ const SECURITY_MENUS = new Set([
 
 const router = createRouter({
   history: createWebHistory(),
-  routes
+  routes,
+  scrollBehavior(to, from, savedPosition) {
+    if (savedPosition) return savedPosition
+    if (to.hash) return { el: to.hash, top: 96, behavior: 'smooth' }
+    if (to.path !== from.path) return { top: 0 }
+  }
 })
 
 router.beforeEach(async (to, from) => {

@@ -7,141 +7,72 @@
     <ClickRipple />
     <ReadingProgress />
 
-    <header class="portal-header" :class="{ scrolled }">
+    <button v-if="mobileMenuOpen || mobileSearchOpen" class="nav-backdrop" type="button" tabindex="-1" aria-label="关闭导航面板" @click="closeHeaderPanels" />
+    <header class="portal-header" :class="{ scrolled, 'panels-open': mobileMenuOpen || mobileSearchOpen }" @keydown.esc.stop.prevent="dismissHeaderPanels">
       <div class="header-inner">
-        <router-link to="/portal" class="brand">
-          <img v-if="siteLogo" class="brand-logo" :src="siteLogo" alt="站点 Logo" />
-          <span class="brand-text">{{ siteName }}</span>
+        <router-link to="/portal" class="brand" :aria-label="siteName + '首页'" @click="closeHeaderPanels">
+          <img v-if="siteLogo && !logoFailed" class="brand-logo" :src="siteLogo" alt="" @error="logoFailed = true" />
+          <span v-else class="brand-mark" aria-hidden="true">{{ siteName.slice(0, 1) }}</span>
+          <span class="brand-copy"><span class="brand-text">{{ siteName }}</span><span class="brand-caption">记录 · 分享 · 探索</span></span>
         </router-link>
 
-        <!-- 手机端栏目导航：拆成两半——左边「点了就跳」，右边▾「切换跳到哪」 -->
-        <div class="mobile-nav">
-          <button type="button" class="mobile-nav-go" :aria-label="'前往' + mobileNavLabel" @click="goMobileNav">
-            {{ mobileNavLabel }}
-          </button>
-          <el-dropdown trigger="click" @command="pickMobileNav">
-            <button type="button" class="mobile-nav-caret" aria-label="切换要前往的栏目">
-              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="m6 9 6 6 6-6" />
-              </svg>
-            </button>
-            <template #dropdown>
-              <el-dropdown-menu>
-                <el-dropdown-item command="/portal/sandbox">沙盒</el-dropdown-item>
-              <el-dropdown-item command="/portal/iris">IRIS</el-dropdown-item>
-                <el-dropdown-item command="/portal/photos">流光忆庭</el-dropdown-item>
-                <el-dropdown-item command="/portal/resources">智库</el-dropdown-item>
-              </el-dropdown-menu>
-            </template>
-          </el-dropdown>
-        </div>
-        <nav class="portal-nav">
-          <router-link to="/portal/iris" class="nav-pill">
-            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="12" cy="12" r="9" />
-              <path d="M12 3v18M3 12h18" />
-            </svg>
-            <span>IRIS</span>
-          </router-link>          <router-link to="/portal/photos" class="nav-pill">
-            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <rect x="3" y="4" width="18" height="16" rx="3" />
-              <circle cx="9" cy="10" r="2" />
-              <path d="m21 16-4.5-4.5L9 19" />
-            </svg>
-            <span>流光忆庭</span>
-          </router-link>
-          <router-link to="/portal/resources" class="nav-pill">
-            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5z" />
-              <path d="M4 5.5v15" />
-              <path d="M9 7h7M9 11h5" />
-            </svg>
-            <span>智库</span>
-          </router-link>
-          <router-link to="/portal/sandbox" class="nav-pill">
-            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M9 3 3 6v15l6-3 6 3 6-3V3l-6 3z" />
-              <path d="M9 3v15M15 6v15" />
-            </svg>
-            <span>沙盒</span>
+        <nav class="portal-nav" aria-label="主导航">
+          <router-link v-for="item in navItems" :key="item.path" :to="item.path" class="nav-pill" :class="{ 'is-active': isNavActive(item.path) }" :aria-current="isNavActive(item.path) ? 'page' : undefined">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path :d="item.icon" /></svg>
+            <span>{{ item.label }}</span>
           </router-link>
         </nav>
 
-        <!-- 手机端：搜索收成一个放大镜，点开再展开成整行，避免把登录/注册挤到第二行 -->
-        <button
-          class="theme-toggle search-toggle"
-          type="button"
-          :aria-label="mobileSearchOpen ? '收起搜索' : '搜索文章'"
-          @click="mobileSearchOpen = !mobileSearchOpen"
-        >
-          <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="11" cy="11" r="7" />
-            <path d="m21 21-4.3-4.3" />
-          </svg>
-        </button>
-        <form class="search" :class="{ 'search-open': mobileSearchOpen }" @submit.prevent="onSearch">
-          <input v-model="keyword" placeholder="搜索文章..." aria-label="搜索" />
-          <button type="submit">
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="11" cy="11" r="7" />
-              <path d="m21 21-4.3-4.3" />
-            </svg>
+        <div class="header-actions">
+          <button ref="searchToggleRef" class="theme-toggle search-toggle" type="button" :class="{ on: mobileSearchOpen }" :aria-label="mobileSearchOpen ? '收起搜索' : '搜索文章'" :aria-expanded="mobileSearchOpen" aria-controls="header-search" @click="toggleHeaderSearch">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" /><path d="m16 16 4 4" /></svg>
           </button>
-        </form>
+          <form id="header-search" class="search" :class="{ 'search-open': mobileSearchOpen }" role="search" @submit.prevent="onSearch">
+            <input ref="searchInputRef" v-model="keyword" type="search" placeholder="发现一篇好文章…" aria-label="搜索文章" />
+            <button type="submit" aria-label="提交搜索"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" /><path d="m16 16 4 4" /></svg></button>
+          </form>
 
-        <button class="theme-toggle" @click="themeStore.toggle()" :aria-label="themeStore.isDark ? '切换到白天' : '切换到夜晚'">
-          <svg v-if="themeStore.isDark" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="12" cy="12" r="5" />
-            <path d="M12 1v2M12 21v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M1 12h2M21 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4" />
-          </svg>
-          <svg v-else viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" />
-          </svg>
-        </button>
-        <button
-          class="theme-toggle"
-          :class="{ on: showParticles }"
-          @click="toggleParticles"
-          :aria-label="showParticles ? '关闭樱花特效' : '开启樱花特效'"
-          :title="showParticles ? '关闭樱花特效' : '开启樱花特效'"
-        >
-          <svg viewBox="0 0 24 24" width="19" height="19" fill="currentColor">
-            <path d="M12 2c.6 4.8 2.4 6.6 7 7-4.6.6-6.4 2.4-7 7-.6-4.6-2.4-6.4-7-7 4.6-.4 6.4-2.2 7-7z" />
-            <path d="M19 14c.3 2.3 1.1 3.1 3.4 3.4-2.3.3-3.1 1.1-3.4 3.4-.3-2.3-1.1-3.1-3.4-3.4 2.3-.3 3.1-1.1 3.4-3.4z" opacity=".7" />
-          </svg>
-        </button>
-        <router-link class="theme-toggle announcement-link" to="/portal/announcements" title="站点公告" aria-label="站点公告">
-          <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M4 9v6M2 10v4M6 8l3-4 3 4v9H6z" />
-            <path d="M12 17h4a3 3 0 0 0 0-6h-1" />
-            <path d="M15 11h1a3 3 0 0 1 0 6h-1" />
-          </svg>
-        </router-link>
+          <div class="appearance-tools" role="group" aria-label="外观设置">
+            <button type="button" class="theme-toggle" @click="themeStore.toggle()" :title="themeStore.isDark ? '切换到白天' : '切换到夜晚'" :aria-label="themeStore.isDark ? '切换到白天' : '切换到夜晚'">
+              <svg v-if="themeStore.isDark" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4" /><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.4 1.4m11.2 11.2L19 19M5 19l1.4-1.4M17.6 6.4 19 5" /></svg>
+              <svg v-else viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" /></svg>
+            </button>
+            <button type="button" class="theme-toggle ambient-toggle" :class="{ on: showParticles }" :aria-pressed="showParticles" @click="toggleParticles" :aria-label="showParticles ? '关闭粒子特效' : '开启粒子特效'" :title="showParticles ? '关闭粒子特效' : '开启粒子特效'">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true"><path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5z" /></svg>
+            </button>
+            <router-link class="theme-toggle announcement-link" to="/portal/announcements" title="站点公告" aria-label="站点公告">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" /></svg>
+            </router-link>
+          </div>
 
-        <!-- 用户入口 -->
-        <div class="user-entry">
-          <el-dropdown v-if="memberStore.isLogin" trigger="click" @command="onMemberCommand">
-            <span class="member-info">
-              <img v-if="memberStore.userInfo?.avatar" class="member-avatar" :src="memberStore.userInfo.avatar" alt="" />
-              <span v-else class="member-avatar placeholder">{{ (memberStore.userInfo?.nickname || memberStore.userInfo?.username || 'U').slice(0, 1) }}</span>
-              <span class="member-name">{{ memberStore.userInfo?.nickname || memberStore.userInfo?.username }}</span>
-            </span>
-            <template #dropdown>
-              <el-dropdown-menu>
-                <el-dropdown-item command="center">用户中心</el-dropdown-item>
-                <el-dropdown-item command="logout" divided>退出登录</el-dropdown-item>
-              </el-dropdown-menu>
-            </template>
-          </el-dropdown>
-          <template v-else>
-            <router-link class="user-link" to="/portal/login">登录</router-link>
-            <router-link class="user-link primary" to="/portal/login?tab=register">注册</router-link>
-          </template>
+          <div class="user-entry">
+            <el-dropdown v-if="memberStore.isLogin" trigger="click" @command="onMemberCommand">
+              <button type="button" class="member-info" aria-label="打开用户菜单">
+                <img v-if="memberStore.userInfo?.avatar" class="member-avatar" :src="memberStore.userInfo.avatar" alt="" />
+                <span v-else class="member-avatar placeholder">{{ (memberStore.userInfo?.nickname || memberStore.userInfo?.username || 'U').slice(0, 1) }}</span>
+                <span class="member-name">{{ memberStore.userInfo?.nickname || memberStore.userInfo?.username }}</span>
+              </button>
+              <template #dropdown><el-dropdown-menu><el-dropdown-item command="center">用户中心</el-dropdown-item><el-dropdown-item command="logout" divided>退出登录</el-dropdown-item></el-dropdown-menu></template>
+            </el-dropdown>
+            <template v-else><router-link class="user-link" to="/portal/login">登录</router-link><router-link class="user-link primary" to="/portal/login?tab=register">加入小站 <span aria-hidden="true">↗</span></router-link></template>
+          </div>
+          <button ref="menuToggleRef" class="menu-toggle" type="button" :aria-expanded="mobileMenuOpen" aria-controls="mobile-site-menu" :aria-label="mobileMenuOpen ? '收起栏目菜单' : '打开栏目菜单'" @click="toggleHeaderMenu">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path v-if="mobileMenuOpen" d="m6 6 12 12M6 18 18 6" /><path v-else d="M4 7h16M4 12h16M4 17h10" /></svg>
+          </button>
         </div>
       </div>
+
+      <nav v-if="mobileMenuOpen" id="mobile-site-menu" class="mobile-menu" aria-label="移动端栏目">
+        <div class="mobile-menu-heading"><span>找一处，随心逛逛</span><span>EXPLORE</span></div>
+        <router-link v-for="item in navItems" :key="item.path" :to="item.path" class="mobile-menu-link" :class="{ 'is-active': isNavActive(item.path) }" :aria-current="isNavActive(item.path) ? 'page' : undefined" @click="closeHeaderPanels">
+          <span class="mobile-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path :d="item.icon" /></svg></span>
+          <span class="mobile-menu-copy"><strong>{{ item.label }}</strong><small>{{ item.description }}</small></span><span class="mobile-menu-arrow" aria-hidden="true">↗</span>
+        </router-link>
+        <router-link to="/portal/announcements" class="mobile-announcement" @click="closeHeaderPanels">站点公告 <span aria-hidden="true">→</span></router-link>
+      </nav>
     </header>
 
-    <main class="portal-main">
+    <main id="main-content" class="portal-main">
       <router-view />
     </main>
 
@@ -167,6 +98,7 @@
           <router-link class="footer-link" to="/portal/photos">流光忆庭</router-link>
           <router-link class="footer-link" to="/portal/resources">智库</router-link>
           <router-link class="footer-link" to="/portal/iris">IRIS</router-link>
+          <router-link class="footer-link" to="/portal/games/pixelrogue">游戏作品</router-link>
           <router-link class="footer-link" to="/portal/terms">用户协议</router-link>
           <router-link class="footer-link" to="/portal/privacy">隐私政策</router-link>
           <span>Powered by bcBlog</span>
@@ -184,7 +116,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ref, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useThemeStore } from '@/store/theme'
@@ -213,33 +145,47 @@ const keyword = ref(route.query.keyword || '')
 const scrolled = ref(false)
 /** 手机端搜索框是否展开（默认收起成一个放大镜图标） */
 const mobileSearchOpen = ref(false)
-/**
- * 手机端栏目导航：右边▾选中"要前往哪"，左边按钮点一下就跳过去。
- * 默认「沙盒」，选过一次会记在本地，下次打开还是上次那个。
- */
-const MOBILE_NAV_OPTIONS = [
-  { path: '/portal/sandbox', label: '沙盒' },
-  { path: '/portal/iris', label: 'IRIS' },
-  { path: '/portal/photos', label: '流光忆庭' },
-  { path: '/portal/resources', label: '智库' }
+const mobileMenuOpen = ref(false)
+const searchInputRef = ref(null)
+const searchToggleRef = ref(null)
+const menuToggleRef = ref(null)
+const logoFailed = ref(false)
+const navItems = [
+  { path: '/portal', label: '首页', description: '从最新的记录开始', icon: 'm3 10 9-7 9 7v10H3z M9 20v-7h6v7' },
+  { path: '/portal/games/pixelrogue', label: '游戏', description: '轮舞于星辉尽头 · 独立游戏', icon: 'M7 7h10l4 10-3 3-4-4h-4l-4 4-3-3z M7 10v5 M4.5 12.5h5 M16 11h.01 M18 14h.01' },
+  { path: '/portal/iris', label: 'IRIS', description: '和伊莉丝交换一点灵感', icon: 'm12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5z' },
+  { path: '/portal/photos', label: '流光忆庭', description: '收藏光影与日常', icon: 'M4 4h16v16H4z M8 9h.01 M4 17l5-5 4 4 3-3 4 4' },
+  { path: '/portal/resources', label: '智库', description: '好工具与好想法，都在这里', icon: 'M4 5c3-2 6-2 8 0 2-2 5-2 8 0v15c-3-2-6-2-8 0-2-2-5-2-8 0z M12 5v15' },
+  { path: '/portal/sandbox', label: '沙盒', description: '走进旅人们的故事', icon: 'm3 6 6-3 6 3 6-3v15l-6 3-6-3-6 3z M9 3v15 M15 6v15' }
 ]
-const mobileNavTarget = ref(localStorage.getItem('portalMobileNav') || '/portal/sandbox')
-const mobileNavLabel = computed(() => {
-  const hit = MOBILE_NAV_OPTIONS.find((o) => o.path === mobileNavTarget.value)
-  return hit ? hit.label : '沙盒'
+function isNavActive(path) {
+  if (path === '/portal') return /^\/portal\/?$/.test(route.path)
+  return route.path === path || route.path.startsWith(path + '/')
+}
+function closeHeaderPanels() {
+  mobileMenuOpen.value = false
+  mobileSearchOpen.value = false
+}
+function toggleHeaderMenu() {
+  mobileSearchOpen.value = false
+  mobileMenuOpen.value = !mobileMenuOpen.value
+}
+function toggleHeaderSearch() {
+  mobileMenuOpen.value = false
+  mobileSearchOpen.value = !mobileSearchOpen.value
+}
+async function dismissHeaderPanels() {
+  const trigger = mobileMenuOpen.value ? menuToggleRef.value : searchToggleRef.value
+  closeHeaderPanels()
+  await nextTick()
+  trigger?.focus()
+}
+watch(() => route.fullPath, closeHeaderPanels)
+watch(mobileSearchOpen, async (open) => {
+  if (!open) return
+  await nextTick()
+  if (mobileSearchOpen.value) searchInputRef.value?.focus()
 })
-
-/** 右边▾：只切换"要去哪"，不跳转（跳转交给左边的按钮） */
-function pickMobileNav(path) {
-  if (!path) return
-  mobileNavTarget.value = path
-  try { localStorage.setItem('portalMobileNav', path) } catch (e) { /* 隐私模式下忽略 */ }
-}
-
-/** 左边按钮：跳到选中的栏目 */
-function goMobileNav() {
-  router.push(mobileNavTarget.value || '/portal/sandbox')
-}
 let headerObserver = null
 
 /**
@@ -250,6 +196,8 @@ let headerObserver = null
  * 各页面的顶部留白也会偏小。这里统一量一次，全站跟着走。
  */
 function syncHeaderHeight() {
+  if (window.innerWidth > 1240) mobileSearchOpen.value = false
+  if (window.innerWidth > 1100) mobileMenuOpen.value = false
   const el = document.querySelector('.portal-header')
   if (el) {
     document.documentElement.style.setProperty(
@@ -269,7 +217,7 @@ let baseUptime = 0
 let uptimeFetchedAt = 0
 let particleTimer = 0
 
-watch(mobileSearchOpen, () => setTimeout(syncHeaderHeight, 60))
+watch(siteLogo, () => { logoFailed.value = false })
 
 watch(
   () => route.query.keyword,
@@ -295,6 +243,7 @@ watch(
 )
 
 function onSearch() {
+  closeHeaderPanels()
   const kw = keyword.value.trim()
   if (kw) {
     router.push({ path: '/portal', query: { keyword: kw } })
@@ -408,260 +357,9 @@ onUnmounted(() => {
   min-height: 100vh;
   z-index: 1;
 }
-.portal-header {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  z-index: 50;
-  height: var(--header-height);
-  transition: background 0.35s ease, box-shadow 0.35s ease, border-color 0.35s ease;
-  border-bottom: 1px solid transparent;
-}
-.portal-header.scrolled {
-  background: var(--nav-bg);
-  border-bottom-color: var(--border);
-  box-shadow: var(--shadow);
-  backdrop-filter: blur(18px) saturate(1.4);
-  -webkit-backdrop-filter: blur(18px) saturate(1.4);
-}
-.header-inner {
-  max-width: 1320px;
-  margin: 0 auto;
-  padding: 0 20px;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  gap: 18px;
-}
-.brand {
-  display: inline-flex;
-  align-items: center;
-  gap: 9px;
-  font-size: 22px;
-  font-weight: 800;
-  color: var(--text-strong);
-  white-space: nowrap;
-}
-.brand-text {
-  background: linear-gradient(90deg, var(--accent), var(--accent-2));
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-}
-.brand-logo {
-  width: 34px;
-  height: 34px;
-  border-radius: 50%;
-  object-fit: cover;
-  flex-shrink: 0;
-  box-shadow: var(--shadow);
-}
-.portal-nav {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px;
-  border-radius: 999px;
-  background: var(--glass-bg);
-  border: 1px solid var(--border);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-  box-shadow: var(--shadow);
-  white-space: nowrap;
-}
-.portal-nav .nav-pill {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 7px 14px;
-  border-radius: 999px;
-  overflow: hidden;
-  color: var(--text-muted);
-  text-decoration: none;
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.5px;
-  transition: color 0.3s ease, background 0.3s ease, box-shadow 0.3s ease, transform 0.3s ease;
-}
-.portal-nav .nav-pill svg {
-  flex-shrink: 0;
-  transition: transform 0.3s ease;
-}
-.portal-nav .nav-pill::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(120deg, transparent 0%, rgba(255, 255, 255, 0.38) 50%, transparent 100%);
-  transform: translateX(-130%);
-  transition: transform 0.6s ease;
-  pointer-events: none;
-}
-.portal-nav .nav-pill:hover {
-  color: var(--text-strong);
-  background: var(--accent-soft);
-  transform: translateY(-1px);
-}
-.portal-nav .nav-pill:hover::before {
-  transform: translateX(130%);
-}
-.portal-nav .nav-pill:hover svg {
-  transform: scale(1.12) rotate(-4deg);
-}
-.portal-nav .nav-pill.router-link-active {
-  color: #fff;
-  background: linear-gradient(135deg, var(--accent), var(--accent-2));
-  box-shadow: 0 6px 18px var(--accent-soft), inset 0 0 0 1px rgba(255, 255, 255, 0.18);
-}
-.portal-nav .nav-pill.router-link-active svg {
-  transform: scale(1.08);
-}
-/* 手机端的栏目下拉：默认隐藏，只在 ≤640px 出现 */
-.mobile-nav {
-  display: none;
-}
-/* 两半拼成一个胶囊：左半边「前往」，右半边「切换目标」 */
-.mobile-nav-go,
-.mobile-nav-caret {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  height: 30px;
-  border: none;
-  background: transparent;
-  color: var(--text);
-  cursor: pointer;
-  font-size: 13px;
-  white-space: nowrap;
-  transition: color 0.2s ease, background 0.2s ease;
-}
-.mobile-nav-go {
-  padding: 0 4px 0 12px;
-}
-.mobile-nav-caret {
-  padding: 0 8px 0 6px;
-  border-left: 1px solid var(--border);
-}
-.mobile-nav-go:hover,
-.mobile-nav-caret:hover {
-  color: var(--accent);
-  background: var(--accent-soft);
-}
-/* 放大镜按钮：只在手机端出现（见下面的媒体查询） */
-.search-toggle {
-  display: none;
-}
-.search {
-  margin-left: auto;
-  display: flex;
-  align-items: center;
-  width: 260px;
-  max-width: 46vw;
-  background: var(--glass-bg);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  overflow: hidden;
-  backdrop-filter: blur(12px);
-}
-.search input {
-  flex: 1;
-  min-width: 0;
-  border: none;
-  outline: none;
-  background: transparent;
-  color: var(--text);
-  padding: 9px 14px;
-  font-size: 14px;
-}
-.search button {
-  border: none;
-  background: transparent;
-  color: var(--text-muted);
-  padding: 0 12px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-}
-.theme-toggle {
-  width: 40px;
-  height: 40px;
-  border: 1px solid var(--border);
-  border-radius: 50%;
-  background: var(--glass-bg);
-  color: var(--text);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: transform 0.3s ease;
-  backdrop-filter: blur(12px);
-}
-.theme-toggle:hover {
-  transform: rotate(20deg) scale(1.06);
-}
-.theme-toggle.on {
-  color: var(--accent);
-  border-color: var(--accent);
-  background: var(--accent-soft);
-}
 .portal-main {
   position: relative;
   z-index: 1;
-}
-.announcement-link {
-  text-decoration: none;
-}
-.user-entry {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  white-space: nowrap;
-}
-.member-info {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  cursor: pointer;
-  outline: none;
-}
-.member-avatar {
-  width: 34px;
-  height: 34px;
-  border-radius: 50%;
-  object-fit: cover;
-  border: 1px solid var(--border);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-.member-avatar.placeholder {
-  color: #fff;
-  font-weight: 700;
-  background: linear-gradient(135deg, var(--accent), var(--accent-2));
-}
-.member-name {
-  color: var(--text);
-  font-size: 13px;
-  max-width: 90px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.user-link {
-  color: var(--text-muted);
-  text-decoration: none;
-  font-size: 13px;
-  padding: 6px 10px;
-  border-radius: 999px;
-  transition: all 0.25s ease;
-}
-.user-link:hover {
-  color: var(--accent);
-}
-.user-link.primary {
-  color: #fff;
-  background: linear-gradient(135deg, var(--accent), var(--accent-2));
-  box-shadow: var(--shadow);
 }
 .portal-footer {
   position: relative;
@@ -714,6 +412,8 @@ onUnmounted(() => {
   gap: 16px;
   color: var(--text-muted);
   font-size: 13px;
+  flex-wrap: wrap;
+  row-gap: 10px;
 }
 .icp {
   color: var(--text-muted);
@@ -731,68 +431,6 @@ onUnmounted(() => {
 .footer-link:hover {
   color: var(--accent);
 }
-@media (max-width: 640px) {
-  .header-inner {
-    padding: 0 12px;
-    gap: 10px;
-    /* 手机端也只占一行：搜索收成放大镜、三个入口收成下拉，都塞进这一行 */
-    flex-wrap: nowrap;
-    gap: 8px;
-  }
-  .brand {
-    font-size: 19px;
-    flex-shrink: 0;
-  }
-  .search {
-    /* 手机端搜索默认收起（用上面的放大镜图标展开），否则一定挤到第二行 */
-    display: none;
-  }
-  /* 展开搜索时临时允许换行，让输入框独占一行 */
-  .header-inner:has(.search-open) {
-    flex-wrap: wrap;
-  }
-  .search.search-open {
-    display: flex;
-    order: 8;
-    flex: 1 0 100%;
-    width: 100%;
-    max-width: none;
-    margin-top: 2px;
-  }
-  .search-toggle {
-    display: inline-flex;
-  }
-  /* 一行放不下三个入口：手机端收成一个"两半胶囊"（左边跳转 / 右边切换目标） */
-  .portal-nav {
-    display: none;
-  }
-  .mobile-nav {
-    display: inline-flex;
-    align-items: center;
-    flex-shrink: 0;
-    border: 1px solid var(--border);
-    border-radius: 999px;
-    background: var(--glass-bg);
-    overflow: hidden;
-  }
-  .member-name {
-    display: none;
-  }
-}
-
-/* 更窄的手机（≤420px）：公告图标收起来，免得把站点名和搜索挤变形 */
-@media (max-width: 480px) {
-  /* 窄屏只留站点 Logo，文字收起来——这样第一行一定放得下：Logo + 搜索/主题/登录注册 */
-  .brand-text {
-    display: none;
-  }
-}
-@media (max-width: 420px) {
-  .announcement-link {
-    display: none;
-  }
-  .portal-nav .nav-pill {
-    font-size: 12px;
-  }
-}
 </style>
+
+<style scoped src="@/styles/portal-navigation.css"></style>

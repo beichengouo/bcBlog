@@ -2,14 +2,18 @@ import { defineStore } from 'pinia'
 
 const THEME_KEY = 'bcblog-theme'
 
-function systemPrefersDark() {
-  return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
+function initialTheme() {
+  try {
+    const saved = localStorage.getItem(THEME_KEY)
+    if (saved === 'light' || saved === 'dark') return saved
+  } catch { /* Use the site's default if storage is unavailable. */ }
+  return 'dark'
 }
 
 export const useThemeStore = defineStore('theme', {
   state: () => ({
-    // 首次进入跟随系统，之后用户手动切换会持久化
-    mode: localStorage.getItem(THEME_KEY) || (systemPrefersDark() ? 'dark' : 'light')
+    // 首次进入默认星空暗色；继续尊重访客主动保存的主题。
+    mode: initialTheme()
   }),
   getters: {
     isDark: (state) => state.mode === 'dark'
@@ -20,7 +24,7 @@ export const useThemeStore = defineStore('theme', {
     },
     setMode(mode) {
       this.mode = mode
-      localStorage.setItem(THEME_KEY, mode)
+      try { localStorage.setItem(THEME_KEY, mode) } catch { /* The theme can still change in memory. */ }
       this.apply()
     },
     // 把主题写到 html 标签，供 CSS 变量切换

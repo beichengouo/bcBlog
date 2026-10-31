@@ -75,6 +75,7 @@ request.interceptors.response.use(
     return Promise.reject(new Error(res.msg || '请求失败'))
   },
   (error) => {
+    if (axios.isCancel(error)) return Promise.reject(error)
     ElMessage.error(error.message || '网络异常')
     return Promise.reject(error)
   }

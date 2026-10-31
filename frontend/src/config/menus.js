@@ -34,6 +34,7 @@ export const adminMenus = [
       { key: 'emoji', path: '/admin/emoji', title: '表情包管理', icon: 'Star' },
       { key: 'photos', path: '/admin/photos', title: '流光忆庭', icon: 'PictureFilled' },
       { key: 'resources', path: '/admin/resources', title: '智库', icon: 'Collection' },
+      { key: 'gameReleases', path: '/admin/game-releases', title: '游戏发布', icon: 'Download', superOnly: true },
       { key: 'background', path: '/admin/background', title: '背景管理', icon: 'Picture' },
       { key: 'live2d', path: '/admin/live2d', title: '看板娘管理', icon: 'User' }
     ]

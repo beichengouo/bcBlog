@@ -1,0 +1,131 @@
+.game-site { --game-paper: #eee7d8; --game-gold: #ceb994; --game-muted: #9fa9b9; color: var(--game-paper); background: #0b101b; padding-top: var(--header-height); overflow: clip; }
+.game-hero { min-height: min(960px, calc(100svh - var(--header-height))); position: relative; display: flex; align-items: flex-end; isolation: isolate; padding: 8vw max(7vw, calc((100vw - 1280px)/2)); }
+.game-hero-art, .game-hero-shade { position: absolute; inset: 0; width: 100%; height: 100%; z-index: -2; object-fit: cover; object-position: center 36%; }
+.game-hero-shade { z-index: -1; background: linear-gradient(0deg, #0b101b 0%, #0b101be6 14%, #0b101b40 75%), linear-gradient(90deg, #0b101b85, transparent 75%); }
+.game-hero-shade { pointer-events: none; }
+.game-hero-content { max-width: 780px; padding-top: 60px; }
+.game-eyebrow { color: var(--game-gold); font-size: 10px; letter-spacing: 3px; line-height: 1.8; }
+.game-eyebrow > span { display: inline-block; margin-left: 18px; font-size: 9px; letter-spacing: 1px; border: 1px solid #ceb99460; padding: 3px 10px; border-radius: 3px; }
+.game-hero h1 { font-family: 'Noto Serif SC', 'Songti SC', SimSun, serif; font-size: clamp(48px, 6.5vw, 92px); font-weight: 400; line-height: 1.25; letter-spacing: 6px; margin: 24px 0 16px; text-shadow: 0 3px 30px #0008; }
+.game-hero h1 em { font-style: normal; color: #e0cda9; }
+.game-english { font-family: Georgia, serif; font-size: clamp(14px, 1.5vw, 20px); letter-spacing: 2px; color: #e2d8c6; margin: 0; }
+.game-lead { color: #c8cdd6; font-size: 13px; line-height: 2.1; letter-spacing: 1px; margin: 28px 0; }
+.game-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 26px; }
+.game-button { display: inline-flex; align-items: center; justify-content: space-between; gap: 38px; background: #d4c3a4; color: #18202d; padding: 16px 24px; border: 1px solid #f1e2c5; border-radius: 3px; font-size: 12px; letter-spacing: 1px; transition: background .2s, transform .2s; }
+.game-button:hover { background: #ede1cb; transform: translateY(-2px); }
+.game-text-link { color: #ddd4c4; font-size: 11px; padding: 10px 0; border-bottom: 1px solid #ddd4c44d; }
+.game-hero-index { position: absolute; right: 6vw; bottom: 50px; color: #b9c0ce; font-size: 8px; letter-spacing: 3px; writing-mode: vertical-rl; }
+.game-section-nav { position: sticky; top: var(--header-height); z-index: 10; display: flex; justify-content: center; gap: clamp(12px, 4vw, 60px); padding: 20px; border-block: 1px solid #ceb99426; background: #0b101bf0; backdrop-filter: blur(16px); overflow-x: auto; }
+.game-section-nav a { color: #b7bfcc; white-space: nowrap; font-size: 11px; letter-spacing: 2px; padding: 4px 0; }
+.game-section-nav a:hover { color: var(--game-gold); }
+.game-section { max-width: 1280px; margin: 0 auto; padding: 100px 40px; scroll-margin-top: calc(var(--header-height) + 75px); }
+.game-section-heading { margin-bottom: 44px; }
+.game-section-heading > span { color: var(--game-gold); font-size: 9px; letter-spacing: 3px; }
+.game-section-heading h2 { font-family: 'Noto Serif SC', 'Songti SC', SimSun, serif; font-size: clamp(30px, 3.5vw, 48px); font-weight: 400; line-height: 1.6; letter-spacing: 3px; margin: 22px 0; }
+.game-section-heading p { font-size: 13px; color: var(--game-muted); line-height: 2.1; }
+.game-world-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
+.game-world-grid figure { margin: 0; border: 1px solid #ceb99426; background: #101724; overflow: hidden; }
+.game-world-grid img { width: 100%; aspect-ratio: 16/10; object-fit: cover; display: block; opacity: .9; }
+.game-world-grid figcaption { padding: 26px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; }
+.game-world-grid small { font-size: 8px; letter-spacing: 2px; color: var(--game-gold); }
+.game-world-grid h3 { margin: 10px 0 0; font-family: SimSun, serif; font-weight: 400; font-size: 23px; letter-spacing: 2px; }
+.game-world-grid figcaption > span { font-size: 11px; color: var(--game-muted); line-height: 1.8; }
+.game-art-note { text-align: right; color: #78869a; font-size: 10px; letter-spacing: 1px; margin-top: 16px; }
+.game-characters, .game-play, .game-release { border-top: 1px solid #ceb99426; }
+.game-character-stage { display: grid; grid-template-columns: 1.05fr 1fr; align-items: center; min-height: 620px; gap: 50px; background: radial-gradient(ellipse at 27% 65%, #697eaa18, transparent 65%); }
+.game-character-art { display: flex; justify-content: center; align-self: stretch; position: relative; min-width: 0; }
+.game-character-art::before { content: ''; position: absolute; width: 85%; aspect-ratio: 1; top: 10%; border-radius: 50%; border: 1px solid #ceb99430; pointer-events: none; }
+.game-character-art img { display: block; width: 100%; max-height: 680px; height: auto; object-fit: contain; object-position: center top; position: relative; mask-image: linear-gradient(#000 85%, transparent); animation: companion-enter .45s ease both; }
+.game-character-role { font-size: 11px; letter-spacing: 4px; color: var(--hero-accent); }
+.game-character-copy h3 { margin: 22px 0 16px; font-family: SimSun, serif; font-size: clamp(38px, 4vw, 56px); letter-spacing: 5px; font-weight: 400; }
+.game-character-motif { font-family: SimSun, serif; font-size: 21px; color: var(--hero-accent); letter-spacing: 2px; }
+.game-character-copy > p:not(.game-character-motif) { font-size: 13px; line-height: 2.2; max-width: 420px; color: var(--game-muted); }
+.game-character-focus { padding-top: 22px; margin-top: 24px; border-top: 1px solid #ceb99430; font-size: 10px; color: var(--game-gold); letter-spacing: 2px; }
+.game-character-switch { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 34px; }
+.game-character-switch button { cursor: pointer; padding: 12px 15px; background: transparent; color: #9ca9bd; border: 1px solid #52607866; border-radius: 3px; font-size: 11px; transition: color .2s, background .2s; }
+.game-character-switch button > span { font-family: Georgia, serif; margin-right: 8px; font-size: 12px; opacity: .7; }
+.game-character-switch button.selected { color: #ece1d0; border-color: var(--hero-accent); background: #b0b7df10; }
+.game-play-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 64px; row-gap: 20px; }
+.game-play-grid article { display: flex; gap: 24px; padding: 28px 0; border-top: 1px solid #ceb99430; }
+.game-feature-number { flex-shrink: 0; font-family: Georgia, serif; font-style: italic; font-size: 30px; color: var(--game-gold); opacity: .65; }
+.game-play-grid h3 { margin: 0 0 16px; font-size: 17px; font-weight: 400; letter-spacing: 1px; }
+.game-play-grid p { font-size: 12px; line-height: 2.1; color: var(--game-muted); margin: 0; }
+.game-journey { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 18px; border: 1px solid #ceb99426; padding: 28px 32px; margin-top: 40px; font-size: 12px; letter-spacing: 2px; }
+.game-journey i { font-style: normal; color: var(--game-gold); }
+.game-release { display: grid; grid-template-columns: .7fr 1fr; gap: 60px; align-items: center; }
+.game-release-mark { font-family: Georgia, serif; font-size: clamp(66px, 10vw, 140px); color: #9f926e40; letter-spacing: -5px; }
+.game-release-copy h2 { font-family: SimSun, serif; font-size: clamp(28px, 3vw, 38px); font-weight: 400; letter-spacing: 2px; line-height: 1.6; }
+.game-release-copy > p { font-size: 13px; line-height: 2.1; color: var(--game-muted); }
+.game-release-status { display: flex; align-items: center; gap: 10px; font-size: 11px; color: var(--game-gold); margin: 26px 0; }
+.game-release-status > span { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+.game-release-copy > small { display: block; margin-top: 22px; color: #8895aa; font-size: 10px; line-height: 1.9; }
+.game-colophon { display: flex; justify-content: space-between; gap: 20px; max-width: 1200px; margin: 0 auto; padding: 32px 40px; border-top: 1px solid #ceb99426; font-family: Georgia, serif; color: #8895aa; font-size: 11px; }
+.game-hero-content > * { animation: game-title-enter 1s cubic-bezier(.2,.7,.2,1) both; }
+.game-hero-content h1 { animation-delay: .12s; }
+.game-hero-content .game-english { animation-delay: .24s; }
+.game-hero-content .game-lead { animation-delay: .34s; }
+.game-hero-content .game-actions { animation-delay: .44s; }
+.game-hero-index::before { content: ''; display: inline-block; width: 1px; height: 64px; margin-bottom: 16px; background: linear-gradient(transparent, #d4c3a4, transparent); animation: game-scroll-light 2.6s ease-in-out infinite; }
+.game-site.reveal-ready .game-reveal { opacity: 0; translate: 0 34px; transition: opacity .85s ease var(--enter-delay, 0ms), translate .85s cubic-bezier(.2,.7,.2,1) var(--enter-delay, 0ms); }
+.game-site.reveal-ready .game-reveal.is-visible, .game-site.reveal-ready .game-reveal:focus-within { opacity: 1; translate: 0 0; }
+.game-section-nav a { position: relative; transition: color .3s; }
+.game-section-nav a::after { content: ''; position: absolute; bottom: -8px; left: 0; right: 2px; height: 1px; background: #d4c3a4; scale: 0 1; transition: scale .3s; }
+.game-section-nav a.is-current { color: #e3d1ad; }
+.game-section-nav a.is-current::after { scale: 1 1; }
+.game-page-progress { position: absolute; bottom: 0; left: 0; right: 0; height: 2px; background: linear-gradient(90deg, #7d9aca, #e5cfa1); transform: scaleX(var(--page-progress, 0)); transform-origin: left; transition: transform .15s linear; }
+.game-world-grid figure { position: relative; transition: border-color .4s, box-shadow .4s; }
+.game-world-grid figure:hover { border-color: #ceb99488; box-shadow: 0 16px 40px #0004; }
+.game-world-grid figure img { transition: scale 1s cubic-bezier(.2,.7,.2,1), opacity .5s; }
+.game-world-grid figure:hover img { scale: 1.035; opacity: 1; }
+.game-world-grid figure::after { content: ''; position: absolute; top: -80%; left: -120%; width: 50%; height: 200%; background: linear-gradient(90deg, transparent, #e8e2ce12, transparent); rotate: 24deg; pointer-events: none; transition: left 1s; }
+.game-world-grid figure:hover::after { left: 140%; }
+.game-character-art::after { content: ''; position: absolute; top: 8%; width: 88%; aspect-ratio: 1; border-radius: 50%; border: 1px dashed #ceb99433; border-right-color: #decfa5a0; animation: game-orbit 42s linear infinite; pointer-events: none; }
+.game-character-story { min-height: 280px; animation: game-story-enter .55s cubic-bezier(.2,.7,.2,1) both; }
+.game-character-story > p:not(.game-character-motif) { color: var(--game-muted); font-size: 13px; line-height: 2.2; max-width: 420px; }
+.game-character-switch button { position: relative; overflow: hidden; transition: color .25s, border-color .25s, background .25s, translate .25s; }
+.game-character-switch button:hover { color: #eee2cf; border-color: #ceb99499; translate: 0 -3px; }
+.game-play-grid article { transition: border-color .3s; }
+.game-play-grid article:hover { border-color: #ceb99499; }
+.game-feature-number { transition: color .3s, opacity .3s; }
+.game-play-grid article:hover .game-feature-number { color: #ebd3a7; opacity: 1; }
+.game-journey > span { position: relative; padding-bottom: 8px; }
+.game-journey > span::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 1px; background: #ceb994; scale: 0 1; transform-origin: left; transition: scale .6s; }
+.game-journey.is-visible > span::after { scale: 1 1; }
+.game-journey > span:nth-of-type(2)::after { transition-delay: .15s; }
+.game-journey > span:nth-of-type(3)::after { transition-delay: .3s; }
+.game-journey > span:nth-of-type(4)::after { transition-delay: .45s; }
+.game-button { position: relative; overflow: hidden; }
+.game-button::after { content: ''; position: absolute; inset: 0; background: linear-gradient(110deg, transparent 25%, #fff6 50%, transparent 75%); translate: -130% 0; transition: translate .6s; pointer-events: none; }
+.game-button:hover::after { translate: 130% 0; }
+@keyframes game-title-enter { from { opacity: 0; translate: 0 22px; } to { opacity: 1; translate: 0 0; } }
+@keyframes game-story-enter { from { opacity: 0; translate: 18px 0; } to { opacity: 1; translate: 0 0; } }
+@keyframes game-scroll-light { 50% { translate: 0 12px; opacity: .4; } }
+@keyframes game-orbit { to { rotate: 360deg; } }
+@media (prefers-reduced-motion: reduce) {
+  .game-site.reveal-ready .game-reveal { opacity: 1; translate: none; transition: none; }
+  .game-hero-content > *, .game-character-art::after, .game-character-story, .game-hero-index::before { animation: none; }
+}
+@keyframes companion-enter { from { opacity: 0; translate: 16px 0; } to { opacity: 1; translate: 0 0; } }
+@media (max-width: 800px) {
+  .game-hero { min-height: 740px; padding: 80px 28px; }
+  .game-hero-art { object-position: 38% center; }
+  .game-hero-content { padding-top: 90px; }
+  .game-eyebrow { font-size: 8px; letter-spacing: 2px; }
+  .game-eyebrow > span { margin: 12px 0 0; display: block; width: fit-content; }
+  .game-hero-index { display: none; }
+  .game-section { padding: 64px 24px; }
+  .game-section-nav { justify-content: flex-start; gap: 28px; padding: 16px 24px; }
+  .game-section-nav a { font-size: 10px; }
+  .game-world-grid, .game-play-grid { grid-template-columns: minmax(0, 1fr); }
+  .game-character-stage { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .game-character-art { max-height: 520px; }
+  .game-character-art img { max-height: 520px; width: auto; max-width: 100%; }
+  .game-character-copy { padding: 18px 6px 0; }
+  .game-character-copy h3 { margin-top: 16px; }
+  .game-character-switch { gap: 7px; }
+  .game-character-switch button { padding: 12px 10px; }
+  .game-journey { padding: 22px 16px; gap: 10px; font-size: 10px; letter-spacing: 0; }
+  .game-release { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .game-release-mark { font-size: 76px; }
+  .game-colophon { padding: 28px 24px; font-size: 9px; }
+}

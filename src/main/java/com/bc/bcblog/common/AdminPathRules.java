@@ -23,6 +23,7 @@ public final class AdminPathRules {
      * 普通管理员即使被授权了对应菜单，接口也一律 403 并记一条越权审计。
      */
     public static final String[] SUPER_ONLY_PATHS = {
+            "/api/admin/game-packages/**",
             // 管理账号 / 其他用户数据
             "/api/admin/user/**",
             "/api/admin/member/**",

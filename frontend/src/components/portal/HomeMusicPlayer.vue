@@ -51,7 +51,7 @@
 </template>
 
 <script setup>
-import { ref, watch, onMounted } from 'vue'
+import { ref, watch, onMounted, onUnmounted } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useMusicStore } from '@/store/music'
 
@@ -92,6 +92,7 @@ function seek(e) {
 onMounted(() => {
   music.init()
 })
+onUnmounted(() => clearInterval(typeTimer))
 </script>
 
 <style scoped>

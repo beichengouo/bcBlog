@@ -2,9 +2,9 @@
   <div class="dashboard">
     <!-- 核心数据 -->
     <div class="stat-grid">
-      <el-card v-for="item in cards" :key="item.label" class="stat-card">
+      <el-card v-for="item in cards" :key="item.label" class="stat-card" :style="{ '--stat-accent': item.color }">
+        <div class="stat-label"><span>{{ item.label }}</span><span class="stat-marker" aria-hidden="true"></span></div>
         <div class="stat-value" :style="{ color: item.color }">{{ item.value }}</div>
-        <div class="stat-label">{{ item.label }}</div>
       </el-card>
     </div>
 
@@ -307,25 +307,36 @@ onUnmounted(() => {
 .dashboard {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 24px;
 }
 .stat-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 14px;
 }
 .stat-card {
-  text-align: center;
+  position: relative;
+  overflow: hidden;
+  transition: transform .2s ease, box-shadow .2s ease;
 }
+.stat-card:hover { transform: translateY(-3px); box-shadow: 0 8px 24px #25304a0d; }
+.stat-card::after { content: ''; position: absolute; height: 3px; bottom: 0; left: 24px; right: 24px; border-radius: 3px; background: var(--stat-accent); opacity: .35; }
+.stat-marker { width: 7px; height: 7px; border-radius: 2px; background: var(--stat-accent); opacity: .7; }
 .stat-value {
-  font-size: 26px;
-  font-weight: 700;
+  font-size: 32px;
+  font-weight: 650;
   line-height: 1.2;
+  margin-top: 18px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -.8px;
 }
 .stat-label {
-  margin-top: 8px;
-  color: #909399;
-  font-size: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: #758097;
+  font-size: 12px;
 }
 .section {
   margin: 0;
@@ -370,8 +381,10 @@ onUnmounted(() => {
   display: flex;
   align-items: flex-end;
   gap: 14px;
-  height: 140px;
-  padding-top: 10px;
+  height: 180px;
+  padding-top: 16px;
+  border-bottom: 1px solid #eceef4;
+  background: repeating-linear-gradient(to top, transparent 0, transparent 39px, #f1f2f7 39px, #f1f2f7 40px);
 }
 .chart-col {
   flex: 1;
@@ -392,8 +405,8 @@ onUnmounted(() => {
   width: 60%;
   max-width: 34px;
   min-height: 3px;
-  border-radius: 6px 6px 0 0;
-  background: linear-gradient(180deg, #a06bd8, #ff6f9f);
+  border-radius: 7px 7px 0 0;
+  background: linear-gradient(180deg, #9b88ca, #c7bce5);
   transition: height 0.5s ease;
 }
 .chart-date {
@@ -631,5 +644,17 @@ onUnmounted(() => {
   color: #909399;
   font-family: Consolas, monospace;
   font-size: 12px;
+}
+@media (max-width: 1200px) {
+  .stat-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 600px) {
+  .dashboard { gap: 18px; }
+  .stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  .stat-value { font-size: 28px; }
+  .sys-info-grid, .dep-list { grid-template-columns: minmax(0, 1fr); }
+  .progress-grid { grid-template-columns: minmax(0, 1fr); }
+  .chart { gap: 6px; }
+  .section.el-row { row-gap: 18px; }
 }
 </style>

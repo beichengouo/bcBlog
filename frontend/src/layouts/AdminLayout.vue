@@ -3,15 +3,19 @@
     <!-- 管理后台背景壁纸 -->
     <BackgroundLayer scope="admin" />
     <!-- 桌面端侧边栏 -->
-    <el-aside v-if="!isMobile" :width="collapsed ? '64px' : '220px'" class="aside">
-      <div class="logo">{{ collapsed ? 'B' : 'bcBlog 后台' }}</div>
+    <el-aside v-if="!isMobile" :width="collapsed ? '76px' : '248px'" class="aside">
+      <router-link to="/admin/dashboard" class="logo" aria-label="返回管理仪表盘">
+        <span class="logo-mark">B<span></span></span>
+        <span v-if="!collapsed" class="logo-copy"><strong>bcBlog</strong><small>创作与管理空间</small></span>
+      </router-link>
+      <div v-if="!collapsed" class="nav-caption">WORKSPACE <span>工作台</span></div>
       <el-menu
         :default-active="$route.path"
         router
         :collapse="collapsed"
-        background-color="#001529"
-        text-color="#ffffffb3"
-        active-text-color="#409eff"
+        background-color="#141c2e"
+        text-color="#a9b4cb"
+        active-text-color="#ffffff"
       >
         <template v-for="m in visibleMenus" :key="m.key">
           <!-- API 管理这类带 children 的菜单，渲染为父菜单 + 子菜单 -->
@@ -40,15 +44,15 @@
       direction="ltr"
       size="220px"
       :with-header="false"
-      class="mobile-drawer"
+      class="admin-mobile-drawer"
     >
-      <div class="logo">bcBlog 后台</div>
+      <router-link to="/admin/dashboard" class="logo" @click="drawerVisible = false"><span class="logo-mark">B<span></span></span><span class="logo-copy"><strong>bcBlog</strong><small>创作与管理空间</small></span></router-link>
       <el-menu
         :default-active="$route.path"
         router
-        background-color="#001529"
-        text-color="#ffffffb3"
-        active-text-color="#409eff"
+        background-color="#141c2e"
+        text-color="#a9b4cb"
+        active-text-color="#ffffff"
         @select="drawerVisible = false"
       >
         <template v-for="m in visibleMenus" :key="m.key">
@@ -70,21 +74,22 @@
       </el-menu>
     </el-drawer>
 
-    <el-container>
-      <el-header class="header">
+    <el-container class="workspace">
+      <el-header class="header" height="72px">
         <div class="header-left">
-          <el-icon class="collapse-btn" @click="toggleSidebar">
-            <component :is="isMobile ? 'Expand' : collapsed ? 'Expand' : 'Fold'" />
-          </el-icon>
-          <div class="header-title">{{ $route.meta.title || '后台管理' }}</div>
+          <button type="button" class="collapse-btn" :aria-label="isMobile ? '打开菜单' : collapsed ? '展开侧栏' : '收起侧栏'" :aria-expanded="isMobile ? drawerVisible : !collapsed" @click="toggleSidebar">
+            <el-icon><component :is="isMobile ? 'Expand' : collapsed ? 'Expand' : 'Fold'" /></el-icon>
+          </button>
+          <div class="header-title"><span class="header-root">管理空间 <span aria-hidden="true">/</span></span>{{ $route.meta.title || '后台管理' }}</div>
         </div>
         <div class="header-right">
+          <router-link to="/portal" class="visit-site" target="_blank" rel="noopener noreferrer">访问站点 <span aria-hidden="true">↗</span></router-link>
           <el-dropdown trigger="click" @command="onCommand">
-            <span class="user-info">
-              <el-icon><UserFilled /></el-icon>
+            <button type="button" class="user-info">
+              <span class="user-avatar"><el-icon><UserFilled /></el-icon></span>
               {{ userStore.userInfo?.nickname || userStore.userInfo?.username || '管理员' }}
               <el-icon><ArrowDown /></el-icon>
-            </span>
+            </button>
             <template #dropdown>
               <el-dropdown-menu>
                 <el-dropdown-item command="password">修改密码</el-dropdown-item>
@@ -95,7 +100,10 @@
         </div>
       </el-header>
       <el-main class="main">
-        <router-view />
+        <div class="page-shell">
+          <div class="page-heading"><div><p>BCBLOG / CONSOLE</p><h1>{{ $route.meta.title || '后台管理' }}</h1></div><span class="page-heading-note">让记录有序，让创作轻盈。</span></div>
+          <router-view />
+        </div>
       </el-main>
     </el-container>
 
@@ -234,88 +242,4 @@ onUnmounted(() => {
 })
 </script>
 
-<style scoped>
-.admin-container {
-  height: 100vh;
-  position: relative;
-  z-index: 1;
-}
-.aside {
-  background: rgba(0, 21, 41, 0.9);
-  transition: width 0.2s;
-  position: relative;
-  z-index: 1;
-}
-.logo {
-  height: 60px;
-  line-height: 60px;
-  text-align: center;
-  color: #fff;
-  font-weight: 600;
-  white-space: nowrap;
-  overflow: hidden;
-}
-.aside :deep(.el-menu) {
-  border-right: none;
-}
-.mobile-drawer :deep(.el-drawer__body) {
-  padding: 0;
-  background: #001529;
-}
-.header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  border-bottom: 1px solid #eee;
-  background: rgba(255, 255, 255, 0.75);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  padding: 0 16px;
-  position: relative;
-  z-index: 1;
-}
-.header-left {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-width: 0;
-}
-.collapse-btn {
-  font-size: 20px;
-  cursor: pointer;
-}
-.header-title {
-  font-weight: 600;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.header-right {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-.user-info {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  cursor: pointer;
-  outline: none;
-}
-.main {
-  background: rgba(244, 246, 250, 0.72);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  padding: 16px;
-  position: relative;
-  z-index: 1;
-}
-@media (max-width: 768px) {
-  .main {
-    padding: 10px;
-  }
-  .header {
-    padding: 0 10px;
-  }
-}
-</style>
+<style src="@/styles/admin.css"></style>
