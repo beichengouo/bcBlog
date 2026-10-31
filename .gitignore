@@ -54,3 +54,6 @@ docs/sql/schema/server_*.sql
 # Uploaded installers and resumable chunks stay on the server, never in Git.
 game-packages/
 blog.pem
+
+# Private visitor hash salt and offline IP database
+visitor-data/

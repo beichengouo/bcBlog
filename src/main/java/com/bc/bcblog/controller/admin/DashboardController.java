@@ -18,6 +18,13 @@ public class DashboardController {
 
     private final DashboardService dashboardService;
 
+    private final com.bc.bcblog.service.VisitGeoService visitGeoService;
+
+    @GetMapping("/visitors")
+    public Result<java.util.Map<String,Object>> visitors(@org.springframework.web.bind.annotation.RequestParam(defaultValue="7") int days) {
+        return Result.ok(visitGeoService.stats(days));
+    }
+
     @GetMapping("/stats")
     public Result<DashboardStatsVO> stats() {
         return Result.ok(dashboardService.stats());

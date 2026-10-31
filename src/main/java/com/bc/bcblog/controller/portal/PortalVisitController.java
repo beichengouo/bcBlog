@@ -15,9 +15,12 @@ public class PortalVisitController {
 
     private final VisitService visitService;
 
+    private final com.bc.bcblog.service.VisitGeoService visitGeoService;
+
     @PostMapping("/report")
-    public Result<Void> report() {
+    public Result<Void> report(javax.servlet.http.HttpServletRequest request) {
         visitService.report();
+        visitGeoService.record(com.bc.bcblog.service.VisitorGeoService.clientIp(request));
         return Result.ok();
     }
 }

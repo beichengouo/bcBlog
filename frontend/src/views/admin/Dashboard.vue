@@ -37,6 +37,8 @@
       </div>
     </el-card>
 
+    <VisitorMap />
+
     <!-- 系统性能监控 -->
     <el-card class="section" v-loading="!monitor">
       <template #header>
@@ -193,6 +195,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
+import VisitorMap from '@/components/VisitorMap.vue'
 import { getStats } from '@/api/dashboard'
 import { getSystemMonitor } from '@/api/system'
 
