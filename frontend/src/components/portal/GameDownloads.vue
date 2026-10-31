@@ -8,7 +8,7 @@
         <div class="download-platform"><span>{{ platform.name }}</span><small>{{ packages[platform.id] ? packages[platform.id].version : '敬请期待' }}</small></div>
         <template v-if="packages[platform.id]">
           <p class="download-meta">{{ formatPackageSize(packages[platform.id].size) }} · {{ (packages[platform.id].uploadedAt || '').slice(0, 10) }}</p>
-          <p class="download-notes">{{ packages[platform.id].notes || '新的旅途，等待与你相遇。' }}</p>
+          <ReleaseNotes class="download-notes" :text="packages[platform.id].notes || '新的旅途，等待与你相遇。'" />
           <a class="download-button" :href="packageDownloadUrl(platform.id)" download>下载{{ platform.name }} <span aria-hidden="true">↓</span></a>
           <details><summary>文件信息与 SHA-256 校验</summary><p>{{ packages[platform.id].fileName }}</p><code>{{ packages[platform.id].sha256 }}</code></details>
         </template>
@@ -21,6 +21,7 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import { portalGamePackages } from '@/api/gamePackages'
 import { formatPackageSize, packageDownloadUrl } from '@/utils/gamePackages'
+import ReleaseNotes from '@/components/ReleaseNotes.vue'
 const platforms = [{ id: 'pc', name: 'Windows PC版' }, { id: 'android', name: 'Android 安卓版' }]
 const packages = ref({}), loading = ref(true), failed = ref(false)
 let disposed = false
@@ -43,7 +44,7 @@ onUnmounted(() => { disposed = true })
 .download-platform { display: flex; justify-content: space-between; gap: 20px; color: #eadbbf; }
 .download-platform small { color: var(--game-muted); font-size: 11px; }
 .download-meta { font-size: 11px; color: var(--game-gold); margin: 18px 0; }
-.download-notes { white-space: pre-line; font-size: 12px; line-height: 2; color: var(--game-muted); max-height: 180px; overflow-y: auto; overflow-wrap: anywhere; }
+.download-notes { font-size: 12px; line-height: 2; color: var(--game-muted); max-height: 240px; overflow-y: auto; overflow-wrap: anywhere; }
 .download-button { display: flex; justify-content: space-between; padding: 16px 20px; border: 1px solid #ceb99477; margin-top: 24px; font-size: 12px; color: #e4d2b0; transition: background .25s; }
 .download-button:hover { background: #ceb99422; }
 .download-card details { color: var(--game-muted); font-size: 10px; margin-top: 20px; }
