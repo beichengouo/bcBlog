@@ -41,6 +41,12 @@ public class AdminSandboxController {
 
     private final SandboxService sandboxService;
 
+    private final com.bc.bcblog.service.SandboxModelReplaceService modelReplaceService;
+    @PostMapping("/models/replace-all")
+    public Result<Map<String,Integer>> replaceAllModels(@RequestBody Map<String,Object> body) {
+        return Result.ok(modelReplaceService.replace(Convert.toLong(body.get("providerId"), null), body.get("model") instanceof String ? (String)body.get("model") : null));
+    }
+
     // ---------------- 世界与地图 ----------------
 
     @GetMapping("/world")

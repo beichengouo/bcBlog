@@ -2,11 +2,12 @@ const fs=require('fs'),path=require('path'),assert=require('node:assert/strict')
 const root=path.resolve(__dirname,'..');let now=0,serial=0;const timers=new Map();const timeout=(fn,delay)=>{const id=++serial;timers.set(id,{fn,at:now+delay});return id},clear=id=>timers.delete(id);
 function tick(ms){now+=ms;for(const [id,t] of [...timers])if(t.at<=now){timers.delete(id);t.fn()}}
 const code=fs.readFileSync(path.join(root,'src/utils/navigationLoading.js'),'utf8').replace(/import[^\n]+\n/g,'').replace(/export /g,'');
-const api=new Function('reactive','setTimeout','clearTimeout',code+';return {state:navigationLoading,startNavigation,finishNavigation,failNavigation}')(Vue.reactive,timeout,clear);
+const api=new Function('reactive','setTimeout','clearTimeout',code+';return {state:navigationLoading,startNavigation,finishNavigation,failNavigation,completeArticleNavigation}')(Vue.reactive,timeout,clear);
 const a={fullPath:'/portal/a'},b={fullPath:'/portal/b'};
 api.startNavigation(a);tick(100);assert(!api.state.visible);api.finishNavigation(a);tick(300);assert(!api.state.visible);
 api.startNavigation(a);tick(160);assert(api.state.visible);api.startNavigation(b);api.finishNavigation(a,true);tick(300);assert(api.state.visible);api.finishNavigation(b);assert(api.state.done);tick(200);assert(!api.state.visible);
 api.startNavigation(a);tick(170);api.failNavigation(a);assert(api.state.error);assert.equal(api.state.retryPath,a.fullPath);assert(!api.state.visible);api.startNavigation(b);assert(!api.state.error);api.finishNavigation(b,true);tick(200);assert(!api.state.visible);api.failNavigation(undefined);
+const article={path:'/portal/article/1',fullPath:'/portal/article/1'};api.startNavigation(article);assert(api.state.visible);api.finishNavigation(article);assert(!api.state.done);api.completeArticleNavigation('/portal/article/2');assert(!api.state.done);api.completeArticleNavigation(article.fullPath);assert(api.state.done);tick(200);assert(!api.state.visible);
 let removed=false,ready=false;const nodes={'iris-boot':{classList:{add(){ready=true}},setAttribute(){},remove(){removed=true}},'iris-boot-message':{}};
 const scripts=[...fs.readFileSync(path.join(root,'index.html'),'utf8').matchAll(/<script>([\s\S]*?)<\/script>/g)];const boot=scripts.find(x=>x[1].includes('__irisBoot'))[1];
 const context={document:{getElementById:id=>nodes[id]},window:{setTimeout:timeout},setTimeout:timeout,clearTimeout:clear};vm.runInNewContext(boot,context);tick(20000);assert(ready);tick(230);assert(removed);context.window.__irisBoot.progress({total:1,loaded:1,requestsPending:0});context.window.__irisBoot.partial();context.window.__irisBoot.fail();assert.equal(timers.size,0);

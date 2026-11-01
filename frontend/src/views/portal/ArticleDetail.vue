@@ -50,6 +50,7 @@
 </template>
 
 <script setup>
+import { completeArticleNavigation, waitForArticleCover } from '@/utils/navigationLoading'
 import { ref, reactive, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
@@ -79,18 +80,23 @@ const commentForm = reactive({ nickname: '', email: '', content: '' })
 const contentEl = ref()
 const lightbox = ref({ src: '', alt: '', images: [] })
 
+let articleRequest = 0
 async function load() {
+  const requestId = ++articleRequest, path = route.fullPath
   loading.value = true
   try {
     const data = await getPortalArticle(route.params.id)
+    if (requestId !== articleRequest) return
     article.value = data.article
     prev.value = data.prev
     next.value = data.next
     window.scrollTo(0, 0)
     await nextTick()
     decorateContent(contentEl.value)
+    await waitForArticleCover(data.article?.cover)
   } finally {
-    loading.value = false
+    if (requestId === articleRequest) loading.value = false
+    completeArticleNavigation(path)
   }
 }
 

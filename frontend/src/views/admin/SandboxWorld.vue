@@ -642,6 +642,10 @@
             从上面所选服务商拉取模型列表；模型名必须是该系统服务商上真实存在的（也可以直接手填）
           </span>
         </el-form-item>
+        <el-form-item label="全部沙盒模型">
+          <el-button type="warning" :loading="replacingModels" :disabled="!settings.systemProviderId || !settings.systemModel" @click="replaceAllModels">一键替换全部 API 调用</el-button>
+          <span class="tip">使用上方选定的系统服务商和模型，替换全部世界的系统、纪闻、集市、委托及所有角色绑定。</span>
+        </el-form-item>
         <el-form-item label="记忆总结时间">
           <el-input v-model="settings.memoryTime" style="width: 90px" placeholder="23:50" />
           <span class="tip">服务器时间 HH:mm，建议放在夜间静默开始之前</span>
@@ -692,6 +696,7 @@
 </template>
 
 <script setup>
+import request from '@/utils/request'
 import { ref, reactive, computed, onMounted, onBeforeUnmount } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import LocationIcon from '@/components/sandbox/LocationIcon.vue'
@@ -796,6 +801,19 @@ const loading = ref(false)
 /** 可选服务商：只有 ownerId 为空的是「系统服务商」（定时任务/记忆总结只能用它们） */
 const providers = ref([])
 const systemProviders = computed(() => providers.value.filter((p) => p.ownerId == null))
+const replacingModels = ref(false)
+async function replaceAllModels() {
+  if (!settings.systemProviderId || !settings.systemModel?.trim()) return
+  try {
+    await ElMessageBox.confirm('将替换全部世界与角色的模型调用配置。确认使用所选系统服务商和模型？', '一键替换沙盒 API', { type: 'warning', confirmButtonText: '确认全部替换', cancelButtonText: '取消' })
+  } catch { return }
+  replacingModels.value = true
+  try {
+    const result = await request.post('/admin/sandbox/models/replace-all', { providerId: Number(settings.systemProviderId), model: settings.systemModel.trim() })
+    Object.assign(settings, await sandboxSettings(selectedWorldId.value))
+    ElMessage.success(`已替换 ${result.worlds} 个世界、${result.characters} 个角色的模型配置`)
+  } finally { replacingModels.value = false }
+}
 const systemModels = ref([])
 const systemModelLoading = ref(false)
 
